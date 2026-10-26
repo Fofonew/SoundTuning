@@ -27,6 +27,8 @@ const COHERENCE_FILL_ALPHA: f32 = 0.75;
 const COHERENCE_LOW_ALPHA: f32 = 0.55;
 const EMPTY_STATE_WIDTH: f32 = 360.0;
 const MIN_PLOT_SIZE: f32 = 80.0;
+const BAND_FILL_ALPHA: f32 = 0.12;
+const BAND_EDGE_ALPHA: f32 = 0.6;
 
 pub struct OverlayTrace<'a> {
     pub label: &'a str,
@@ -41,12 +43,21 @@ pub struct PlotInputs<'a> {
     pub show_live: bool,
     pub running: bool,
     pub overlays: &'a [OverlayTrace<'a>],
+    pub band_hz: Option<(f64, f64)>,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct PlotEvents {
     pub double_click_hz_db: Option<(f64, f64)>,
     pub plot_rect: Option<Rect>,
+    pub band_selection: Option<BandSelection>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct BandSelection {
+    pub low_hz: f64,
+    pub high_hz: f64,
+    pub finished: bool,
 }
 
 #[derive(Debug, Default)]
@@ -54,6 +65,8 @@ pub struct PlotPanel {
     pub view: PlotView,
     frame: PlotFrame,
     overlay_polylines: Vec<Polyline>,
+    band_drag_start_hz: Option<f64>,
+    band_drag_current: Option<(f64, f64)>,
 }
 
 impl PlotPanel {
@@ -62,6 +75,8 @@ impl PlotPanel {
             view,
             frame: PlotFrame::with_capacity(1024),
             overlay_polylines: Vec::new(),
+            band_drag_start_hz: None,
+            band_drag_current: None,
         }
     }
 
@@ -133,7 +148,7 @@ impl PlotPanel {
             plot_rect: Some(plot_rect),
             ..PlotEvents::default()
         };
-        self.handle_interaction(ui, &response, plot_rect, &mut events);
+        self.handle_interaction(ui, &response, plot_rect, inputs, &mut events);
         self.prepare(plot_rect, inputs);
 
         let painter = ui.painter_at(outer);
@@ -143,6 +158,9 @@ impl PlotPanel {
             palette.plot_background,
         );
         self.paint_grid(&painter, palette, plot_rect);
+        if let Some(band) = inputs.band_hz {
+            self.paint_band(&painter, palette, plot_rect, band);
+        }
         for (polyline, overlay) in self.overlay_polylines.iter().zip(inputs.overlays) {
             paint_polyline(&painter, polyline, overlay.style);
         }
@@ -188,6 +206,7 @@ impl PlotPanel {
         ui: &egui::Ui,
         response: &egui::Response,
         plot_rect: Rect,
+        inputs: &PlotInputs<'_>,
         events: &mut PlotEvents,
     ) {
         if response.double_clicked()
@@ -198,7 +217,35 @@ impl PlotPanel {
                 self.view.y_to_db(plot_rect, position.y),
             ));
         }
-        if response.dragged() {
+        let shift = ui.input(|input| input.modifiers.shift);
+        if response.drag_started() && shift && inputs.band_hz.is_some() {
+            self.band_drag_start_hz = response
+                .interact_pointer_pos()
+                .map(|position| self.view.x_to_frequency(plot_rect, position.x));
+        }
+        if let Some(start_hz) = self.band_drag_start_hz {
+            if let Some(position) = response.interact_pointer_pos()
+                && response.dragged()
+            {
+                let current_hz = self.view.x_to_frequency(
+                    plot_rect,
+                    position.x.clamp(plot_rect.left(), plot_rect.right()),
+                );
+                self.band_drag_current = Some((start_hz.min(current_hz), start_hz.max(current_hz)));
+            }
+            let finished = !response.dragged() || response.drag_stopped();
+            events.band_selection = self
+                .band_drag_current
+                .map(|(low_hz, high_hz)| BandSelection {
+                    low_hz,
+                    high_hz,
+                    finished,
+                });
+            if finished {
+                self.band_drag_start_hz = None;
+                self.band_drag_current = None;
+            }
+        } else if response.dragged() {
             let delta = response.drag_delta();
             self.view.pan(plot_rect, delta.x, delta.y);
         }
@@ -229,6 +276,49 @@ impl PlotPanel {
                 self.view.pan(plot_rect, scroll.x, 0.0);
             }
         }
+    }
+
+    fn paint_band(
+        &self,
+        painter: &egui::Painter,
+        palette: &Palette,
+        plot_rect: Rect,
+        (low_hz, high_hz): (f64, f64),
+    ) {
+        let left = self
+            .view
+            .frequency_to_x(plot_rect, low_hz)
+            .clamp(plot_rect.left(), plot_rect.right());
+        let right = self
+            .view
+            .frequency_to_x(plot_rect, high_hz)
+            .clamp(plot_rect.left(), plot_rect.right());
+        if right - left < 1.0 {
+            return;
+        }
+        let band = Rect::from_x_y_ranges(left..=right, plot_rect.y_range());
+        painter.rect_filled(
+            band,
+            CornerRadius::ZERO,
+            palette.accent.gamma_multiply(BAND_FILL_ALPHA),
+        );
+        let edge = Stroke::new(
+            stroke::GRID_MAJOR,
+            palette.accent.gamma_multiply(BAND_EDGE_ALPHA),
+        );
+        for x in [left, right] {
+            painter.line_segment(
+                [pos2(x, plot_rect.top()), pos2(x, plot_rect.bottom())],
+                edge,
+            );
+        }
+        painter.text(
+            pos2(left + spacing::XS, plot_rect.bottom() - spacing::XS),
+            Align2::LEFT_BOTTOM,
+            text::band_label(low_hz, high_hz),
+            fonts::value(text_size::CAPTION),
+            palette.accent,
+        );
     }
 
     fn paint_grid(&self, painter: &egui::Painter, palette: &Palette, plot_rect: Rect) {

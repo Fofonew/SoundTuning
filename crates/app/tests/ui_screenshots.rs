@@ -67,3 +67,57 @@ fn screenshot_traces() {
     harness.step();
     assert!(save_screenshot(&mut harness, "traces").exists());
 }
+
+#[test]
+fn screenshot_alignment() {
+    use soundtuning::ui::alignment_panel::AlignmentCommand;
+    use soundtuning::ui::side_panel::SideTab;
+    let mut harness = rendering_harness(file_options(Theme::Night, true));
+    wait_for_stable_measurement(&mut harness);
+    harness.key_press(Key::S);
+    harness.step();
+    let applied_ms = harness.state().measurement().snapshot().delay.applied_ms;
+    harness
+        .state()
+        .measurement()
+        .send(engine::EngineCommand::SetCompensationMs(applied_ms - 1.2));
+    harness
+        .state()
+        .measurement()
+        .send(engine::EngineCommand::ResetAverages);
+    common::step_until(&mut harness, std::time::Duration::from_secs(20), |app| {
+        let snapshot = app.measurement().snapshot();
+        (snapshot.delay.applied_ms - (applied_ms - 1.2)).abs() < 1.0e-6
+            && snapshot.averages > 30
+            && !snapshot.warming_up
+    });
+    harness.key_press(Key::S);
+    harness.step();
+    harness.state_mut().set_side_tab(SideTab::Alignment);
+    let ids: Vec<u64> = harness
+        .state()
+        .session()
+        .traces
+        .iter()
+        .map(|trace| trace.id)
+        .collect();
+    let mut state = harness.state().session().alignment.clone();
+    state.trace_a = Some(ids[0]);
+    state.trace_b = Some(ids[1]);
+    harness
+        .state_mut()
+        .apply_test_alignment(AlignmentCommand::Update(state));
+    harness.key_press(Key::F);
+    harness.step();
+    harness.key_press(Key::Num2);
+    harness.step();
+    harness.step();
+    let proposal = harness
+        .state()
+        .session()
+        .alignment
+        .proposal_delay_ms
+        .unwrap();
+    assert!((proposal.abs() - 1.2).abs() < 0.05, "{proposal}");
+    assert!(save_screenshot(&mut harness, "alignment").exists());
+}

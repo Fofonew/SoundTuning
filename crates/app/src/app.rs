@@ -6,6 +6,7 @@ use eframe::egui::{self, CornerRadius, Frame, Margin, Panel, Stroke};
 use engine::EngineCommand;
 
 use crate::actions::{Action, triggered_by_keyboard};
+use crate::alignment_state::normalized_band;
 use crate::config::{AppConfig, ConfigStore};
 use crate::design::tokens::{STORED_TRACE_COLOR_COUNT, size, spacing, stroke};
 use crate::design::widgets::Tone;
@@ -13,14 +14,16 @@ use crate::design::{Theme, fonts, theme};
 use crate::measurement::{MeasurementController, SourceSpec};
 use crate::plot::{PlotView, RangePreset, TraceStyle};
 use crate::session::{
-    AverageError, CaptureError, LoadIssue, Session, SessionStore, SessionWriter, UndoHistory,
+    AlignmentSumKey, AverageError, CaptureError, LoadIssue, Session, SessionStore, SessionWriter,
+    UndoHistory,
 };
 use crate::text;
+use crate::ui::alignment_panel::{self, AlignmentCommand};
 use crate::ui::banners::{BannerInputs, collect_banners, show_banners};
 use crate::ui::bottom_bar::{self, BottomBarModel};
 use crate::ui::notifications::Notifications;
 use crate::ui::palette::CommandPalette;
-use crate::ui::plot_panel::{OverlayTrace, PlotInputs, PlotPanel};
+use crate::ui::plot_panel::{BandSelection, OverlayTrace, PlotInputs, PlotPanel};
 use crate::ui::side_panel::{self, SideTab};
 use crate::ui::top_bar::{self, DelayReadout, TopBarModel};
 use crate::ui::traces_panel::{self, RenameState, TraceCommand};
@@ -32,6 +35,16 @@ const EXPORT_FILE_PREFIX: &str = "soundtuning";
 const IDLE_REPAINT_INTERVAL: Duration = Duration::from_millis(250);
 const LOW_COHERENCE_BAND_HZ: (f64, f64) = (100.0, 10_000.0);
 const MILLISECONDS_PER_SECOND: f64 = 1000.0;
+const DELAY_NUDGE_MS: f64 = 0.01;
+const DELAY_DRIFT_NOTIFY_MS: f64 = 0.5;
+
+type CachedSum = (Option<AlignmentSumKey>, Option<Vec<Option<f64>>>);
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum MergeKey {
+    Offset(u64),
+    Alignment,
+}
 
 pub fn top_bar_height() -> f32 {
     size::TOP_BAR_HEIGHT + 2.0 * spacing::SM
@@ -113,7 +126,9 @@ pub struct SoundTuningApp {
     history: UndoHistory,
     session_dirty_since: Option<Instant>,
     rename: RenameState,
-    last_offset_edit: Option<u64>,
+    last_merge: Option<MergeKey>,
+    drift_notified: bool,
+    alignment_sum: Option<CachedSum>,
     export_directory: std::path::PathBuf,
 }
 
@@ -151,7 +166,9 @@ impl SoundTuningApp {
             history: UndoHistory::default(),
             session_dirty_since: None,
             rename: RenameState::default(),
-            last_offset_edit: None,
+            last_merge: None,
+            drift_notified: false,
+            alignment_sum: None,
             export_directory: options.export_directory.clone(),
         };
         app.apply_theme(context);
@@ -217,16 +234,105 @@ impl SoundTuningApp {
 
     pub fn apply_test_offset(&mut self, trace_id: u64, offset_db: f64) {
         self.apply_trace_command(TraceCommand::SetOffset(trace_id, offset_db));
-        self.last_offset_edit = None;
+        self.last_merge = None;
+    }
+
+    pub fn apply_test_alignment(&mut self, command: AlignmentCommand) {
+        self.apply_alignment_command(command);
+        self.last_merge = None;
+    }
+
+    fn edit_session_merged(&mut self, key: MergeKey, edit: impl FnOnce(&mut Session)) {
+        if self.last_merge == Some(key) {
+            edit(&mut self.session);
+            self.session_dirty_since.get_or_insert_with(Instant::now);
+        } else if self.record_session_edit(edit) {
+            self.last_merge = Some(key);
+        }
+    }
+
+    fn end_merge_when_idle(&mut self, context: &egui::Context) {
+        let pointer_down = context.input(|input| input.pointer.any_down());
+        let focused = context.memory(|memory| memory.focused()).is_some();
+        if !pointer_down && !focused {
+            self.last_merge = None;
+        }
+    }
+
+    fn apply_band_selection(&mut self, selection: BandSelection) {
+        let (low_hz, high_hz) = normalized_band(selection.low_hz, selection.high_hz);
+        let frequencies = std::sync::Arc::clone(self.measurement.grid());
+        self.edit_session_merged(MergeKey::Alignment, |session| {
+            session.alignment.band_low_hz = low_hz;
+            session.alignment.band_high_hz = high_hz;
+            if selection.finished {
+                session.refresh_alignment_proposal(frequencies.frequencies_hz(), true);
+            }
+        });
+        if selection.finished {
+            self.last_merge = None;
+        }
+    }
+
+    fn refresh_alignment_sum(&mut self) {
+        let key = self.session.alignment_sum_key();
+        if self.alignment_sum.as_ref().map(|(cached, _)| *cached) == Some(key) {
+            return;
+        }
+        let values = key.and_then(|_| {
+            self.session
+                .predicted_alignment_sum_db(self.measurement.grid().frequencies_hz())
+        });
+        self.alignment_sum = Some((key, values));
+    }
+
+    fn apply_alignment_command(&mut self, command: AlignmentCommand) {
+        let frequencies = std::sync::Arc::clone(self.measurement.grid());
+        match command {
+            AlignmentCommand::Update(state) => {
+                let current = &self.session.alignment;
+                let needs_proposal = state.trace_a != current.trace_a
+                    || state.trace_b != current.trace_b
+                    || state.criterion != current.criterion
+                    || state.band_low_hz != current.band_low_hz
+                    || state.band_high_hz != current.band_high_hz;
+                let continuous = state.trace_a == current.trace_a
+                    && state.trace_b == current.trace_b
+                    && state.criterion == current.criterion
+                    && state.inverted == current.inverted;
+                let edit = |session: &mut Session| {
+                    session.alignment = state;
+                    if needs_proposal {
+                        session.refresh_alignment_proposal(frequencies.frequencies_hz(), true);
+                    }
+                };
+                if continuous {
+                    self.edit_session_merged(MergeKey::Alignment, edit);
+                } else {
+                    self.edit_session(edit);
+                    self.last_merge = None;
+                }
+            }
+            AlignmentCommand::UseProposal => {
+                self.edit_session(|session| session.alignment.use_proposal());
+                self.last_merge = None;
+            }
+        }
     }
 
     fn edit_session(&mut self, edit: impl FnOnce(&mut Session)) {
+        self.record_session_edit(edit);
+    }
+
+    fn record_session_edit(&mut self, edit: impl FnOnce(&mut Session)) -> bool {
         let before = self.session.clone();
         edit(&mut self.session);
-        if self.session != before {
+        let changed = self.session != before;
+        if changed {
             self.history.record(before);
             self.session_dirty_since.get_or_insert_with(Instant::now);
         }
+        changed
     }
 
     fn save_session_if_due(&mut self) {
@@ -312,19 +418,11 @@ impl SoundTuningApp {
                 }
             }),
             TraceCommand::SetOffset(id, offset_db) => {
-                if self.last_offset_edit == Some(id) {
-                    if let Some(trace) = self.session.trace_mut(id) {
+                self.edit_session_merged(MergeKey::Offset(id), |session| {
+                    if let Some(trace) = session.trace_mut(id) {
                         trace.offset_db = offset_db;
                     }
-                    self.session_dirty_since.get_or_insert_with(Instant::now);
-                } else {
-                    self.edit_session(|session| {
-                        if let Some(trace) = session.trace_mut(id) {
-                            trace.offset_db = offset_db;
-                        }
-                    });
-                    self.last_offset_edit = Some(id);
-                }
+                });
             }
             TraceCommand::ToggleSelected(id) => {
                 if let Some(trace) = self.session.trace_mut(id) {
@@ -367,7 +465,7 @@ impl SoundTuningApp {
             TraceCommand::ExportCsv => self.export_csv(),
         }
         if !is_offset_edit {
-            self.last_offset_edit = None;
+            self.last_merge = None;
         }
     }
 
@@ -511,7 +609,7 @@ impl SoundTuningApp {
                 } else {
                     text::NOTIFY_NOTHING_TO_UNDO
                 };
-                self.last_offset_edit = None;
+                self.last_merge = None;
                 self.notifications.push(text, Tone::Neutral, None);
             }
             Action::Redo => {
@@ -520,10 +618,36 @@ impl SoundTuningApp {
                     self.notifications
                         .push(text::NOTIFY_REDONE, Tone::Neutral, None);
                 }
-                self.last_offset_edit = None;
+                self.last_merge = None;
             }
             Action::ExportSession => self.export_csv(),
             Action::AddEqFilter => {}
+            Action::ToggleDelayTracking => {
+                self.config.delay_tracking = !self.config.delay_tracking;
+                self.measurement
+                    .send(EngineCommand::UpdateDelayPolicy(self.config.delay_policy()));
+                self.mark_config_dirty();
+                self.notifications.push(
+                    if self.config.delay_tracking {
+                        text::NOTIFY_TRACKING_ON
+                    } else {
+                        text::NOTIFY_TRACKING_OFF
+                    },
+                    Tone::Neutral,
+                    None,
+                );
+            }
+            Action::NudgeDelayDown | Action::NudgeDelayUp => {
+                if self.measurement.is_running() {
+                    let step = if action == Action::NudgeDelayUp {
+                        DELAY_NUDGE_MS
+                    } else {
+                        -DELAY_NUDGE_MS
+                    };
+                    self.measurement
+                        .send(EngineCommand::AdjustCompensationMs(step));
+                }
+            }
         }
     }
 
@@ -553,6 +677,33 @@ impl SoundTuningApp {
                 Tone::Accent,
                 Some(Action::ApplyDelay),
             );
+        }
+    }
+
+    fn notify_delay_drift(&mut self) {
+        let delay = self.measurement.snapshot().delay;
+        let running = self.measurement.is_running() && self.measurement.snapshot().sequence > 0;
+        let drift = delay
+            .drift_ms()
+            .filter(|drift| drift.abs() > DELAY_DRIFT_NOTIFY_MS);
+        match (drift, delay.latest_confident) {
+            (Some(drift_ms), Some(latest))
+                if running
+                    && !self.config.delay_tracking
+                    && !self.awaiting_delay_result
+                    && !delay.calibrating_latency =>
+            {
+                if !self.drift_notified {
+                    self.drift_notified = true;
+                    self.notifications.push(
+                        text::delay_drift(delay.acoustic_ms(latest.total_ms), drift_ms),
+                        Tone::Warning,
+                        Some(Action::ApplyDelay),
+                    );
+                }
+            }
+            (None, _) => self.drift_notified = false,
+            _ => {}
         }
     }
 
@@ -721,6 +872,7 @@ impl eframe::App for SoundTuningApp {
         self.measurement.refresh();
         self.update_low_coherence();
         self.process_engine_events();
+        self.notify_delay_drift();
 
         let mut actions = if self.wizard.is_none() && !self.command_palette.is_open() {
             triggered_by_keyboard(&context)
@@ -743,13 +895,19 @@ impl eframe::App for SoundTuningApp {
             self.show_main(ui, palette, &mut actions);
         }
 
+        let right_inset = if self.wizard.is_none() && self.config.side_panel_open {
+            size::SIDE_PANEL_WIDTH
+        } else {
+            0.0
+        };
         self.notifications
-            .show(&context, palette, self.is_mac, &mut actions);
+            .show(&context, palette, self.is_mac, right_inset, &mut actions);
         self.command_palette
             .show(&context, palette, self.is_mac, &mut actions);
         for action in actions {
             self.handle_action(action);
         }
+        self.end_merge_when_idle(&context);
         self.save_config_if_due();
         self.save_session_if_due();
         if self.measurement.is_running() {
@@ -793,6 +951,7 @@ impl SoundTuningApp {
             delay: self.delay_readout(),
             can_apply_delay: self.measurement.snapshot().delay.latest_confident.is_some(),
             running: self.measurement.is_running(),
+            tracking: self.config.delay_tracking,
         };
         Panel::top("top-bar")
             .exact_size(top_bar_height())
@@ -840,6 +999,7 @@ impl SoundTuningApp {
         }
 
         let mut trace_commands = Vec::new();
+        let mut alignment_commands = Vec::new();
         if self.config.side_panel_open {
             Panel::right("side-panel")
                 .exact_size(size::SIDE_PANEL_WIDTH)
@@ -862,12 +1022,9 @@ impl SoundTuningApp {
                             text::EMPTY_TRACES_TITLE,
                             text::EMPTY_TRACES_BODY,
                         ),
-                        SideTab::Alignment => side_panel::empty_state(
-                            ui,
-                            palette,
-                            text::EMPTY_ALIGNMENT_TITLE,
-                            text::EMPTY_ALIGNMENT_BODY,
-                        ),
+                        SideTab::Alignment => {
+                            alignment_commands = alignment_panel::show(ui, palette, &self.session);
+                        }
                         SideTab::Eq => side_panel::empty_state(
                             ui,
                             palette,
@@ -881,8 +1038,23 @@ impl SoundTuningApp {
         for command in trace_commands {
             self.apply_trace_command(command);
         }
+        for command in alignment_commands {
+            self.apply_alignment_command(command);
+        }
+        let alignment_mode = self.config.side_panel_open
+            && self.side_tab == SideTab::Alignment
+            && self.session.alignment.is_ready();
+        if alignment_mode {
+            self.refresh_alignment_sum();
+        }
+        let predicted_sum = self
+            .alignment_sum
+            .as_ref()
+            .and_then(|(_, values)| values.clone())
+            .filter(|_| alignment_mode);
 
         let banners = collect_banners(&self.banner_inputs());
+        let mut band_selection = None;
         egui::CentralPanel::default()
             .frame(
                 Frame::new()
@@ -908,18 +1080,32 @@ impl SoundTuningApp {
                             halo: None,
                         },
                     })
+                    .chain(predicted_sum.as_deref().map(|values_db| OverlayTrace {
+                        label: text::PREDICTED_SUM_LABEL,
+                        values_db,
+                        offset_db: 0.0,
+                        style: TraceStyle {
+                            color: palette.predicted,
+                            width: stroke::TRACE_LIVE,
+                            halo: None,
+                        },
+                    }))
                     .collect();
+                let alignment = &self.session.alignment;
                 let inputs = PlotInputs {
                     frequencies_hz: grid.frequencies_hz(),
                     snapshot: self.measurement.snapshot(),
                     show_live: self.measurement.snapshot().averages > 0,
                     running: self.measurement.is_running(),
                     overlays: &overlays,
+                    band_hz: alignment_mode
+                        .then_some((alignment.band_low_hz, alignment.band_high_hz)),
                 };
                 let events = self.plot.show(ui, palette, &inputs, self.is_mac, actions);
                 if events.double_click_hz_db.is_some() {
                     actions.push(Action::ResetView);
                 }
+                band_selection = events.band_selection;
                 if let (false, Some(plot_rect)) = (banners.is_empty(), events.plot_rect) {
                     egui::Area::new(egui::Id::unique("state-banners"))
                         .order(egui::Order::Middle)
@@ -930,6 +1116,9 @@ impl SoundTuningApp {
                         });
                 }
             });
+        if let Some(selection) = band_selection {
+            self.apply_band_selection(selection);
+        }
     }
 }
 

@@ -46,6 +46,7 @@ pub struct Palette {
     pub grid_minor: Color32,
     pub trace_live: Color32,
     pub coherence_band: Color32,
+    pub predicted: Color32,
     pub stored_traces: [Color32; STORED_TRACE_COLOR_COUNT],
 }
 
@@ -72,6 +73,7 @@ pub const NIGHT: Palette = Palette {
     grid_minor: hex(0x1A1F26),
     trace_live: hex(0xF2F4F7),
     coherence_band: hex(0x56B4E9),
+    predicted: hex(0xFF9BE0),
     stored_traces: [
         hex(0xE69F00),
         hex(0x56B4E9),
@@ -100,6 +102,7 @@ pub const DAYLIGHT: Palette = Palette {
     grid_minor: hex(0xE1E5EA),
     trace_live: hex(0x0A0C0F),
     coherence_band: hex(0x0060A0),
+    predicted: hex(0xA3007D),
     stored_traces: [
         hex(0xE69F00),
         hex(0x56B4E9),

@@ -215,3 +215,14 @@ Non corrigé, justifié :
 - Jeton d'annulation par notification : la notification « Annuler » expire en quelques secondes et toute édition ultérieure la remplace (dédoublonnage par action) ; Cmd+Z annule toujours la dernière édition, comme dans tout éditeur.
 - Visibilité et couleur restent annulables : ce sont des choix d'affichage que l'opérateur veut pouvoir défaire (spec : annuler/rétablir « pour traces »).
 - Glissé de décalage : les modifications successives d'une même trace forment une seule étape tant qu'aucune autre commande n'intervient (équivalent pratique de `drag_stopped`).
+
+### D-032 — Délais et alignement (phase 5, 2026-10-26)
+- Recherche automatique du délai au démarrage et application immédiate (moteur, `auto_apply_on_start`) ; suivi activable (T, bouton « Suivi » de la barre supérieure, mémorisé dans la configuration) : le moteur n'applique un nouveau délai que si sa confiance dépasse 18 dB.
+- Dérive : sans suivi, si le dernier délai fiable s'écarte de plus de **0,5 ms** (≈ 17 cm) du délai appliqué, notification non bloquante « Délai changé : 14,10 ms (+1,67 ms) — Appliquer (A) » ; une seule fois tant que l'écart persiste, réarmée quand il redescend sous le seuil.
+- Ajustement fin : ⇧← / ⇧→ et boutons − / + de la barre supérieure, pas de 0,01 ms (rotation de phase dans le moteur). Ce réglage de mesure n'entre pas dans l'historique d'annulation (comme « Appliquer »).
+- Alignement : choisir A et B, le critère ou la bande recalcule la proposition (`find_optimal_alignment`) **et l'adopte** (Δ, polarité), pour que la somme prédite s'affiche immédiatement ; Δ et la polarité restent ajustables à la main, « Utiliser la proposition » revient à la proposition. Pas de proposition sans phase dans la bande (cas des moyennes de traces), message dédié.
+- Bande à la souris : Maj + glisser sur le tracé quand l'onglet Alignement est ouvert ; aperçu pendant le glissé, proposition calculée une seule fois au relâchement ; bande bornée à 20 Hz–20 kHz et au moins 1/3 d'octave.
+- Somme prédite tracée en `predicted` (rose, trait épais), mise en cache tant que traces, décalages, Δ et polarité ne changent pas.
+- Annuler : les modifications continues (glissé de bande, Δ, décalage) forment une étape ; l'étape se ferme dès que le pointeur est relâché et qu'aucun champ n'a le focus.
+- Notifications ancrées à gauche du panneau latéral quand il est ouvert (ne masquent plus ses commandes).
+- Revue `ecc:rust-reviewer` : tous les points HIGH et MEDIUM corrigés sauf « libellé de bande alloué à chaque image » (une chaîne courte par image, négligeable).

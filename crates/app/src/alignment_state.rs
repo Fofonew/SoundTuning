@@ -2,6 +2,26 @@ use dsp_core::{AlignmentCriterion, AlignmentSearch, DEFAULT_ALIGNMENT_BAND_HZ, P
 use serde::{Deserialize, Serialize};
 
 const DEFAULT_SEARCH_RANGE_MS: f64 = 50.0;
+pub const BAND_LIMIT_LOW_HZ: f64 = 20.0;
+pub const BAND_LIMIT_HIGH_HZ: f64 = 20_000.0;
+const MIN_BAND_OCTAVES: f64 = 1.0 / 3.0;
+
+pub fn normalized_band(low_hz: f64, high_hz: f64) -> (f64, f64) {
+    let low = low_hz
+        .min(high_hz)
+        .clamp(BAND_LIMIT_LOW_HZ, BAND_LIMIT_HIGH_HZ);
+    let high = low_hz
+        .max(high_hz)
+        .clamp(BAND_LIMIT_LOW_HZ, BAND_LIMIT_HIGH_HZ);
+    let min_ratio = 2_f64.powf(MIN_BAND_OCTAVES);
+    if high / low >= min_ratio {
+        return (low, high);
+    }
+    let center = (low * high).sqrt();
+    let half = min_ratio.sqrt();
+    let low = (center / half).max(BAND_LIMIT_LOW_HZ);
+    (low, (low * min_ratio).min(BAND_LIMIT_HIGH_HZ))
+}
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum StoredCriterion {
@@ -80,6 +100,13 @@ impl AlignmentState {
         }
     }
 
+    pub fn use_proposal(&mut self) {
+        if let (Some(delay_ms), Some(inverted)) = (self.proposal_delay_ms, self.proposal_inverted) {
+            self.delay_ms = delay_ms;
+            self.inverted = inverted;
+        }
+    }
+
     pub fn is_ready(&self) -> bool {
         matches!((self.trace_a, self.trace_b), (Some(a), Some(b)) if a != b)
     }
@@ -102,6 +129,15 @@ mod tests {
         state.forget_trace(2);
         assert!(!state.is_ready());
         assert_eq!(state.proposal_delay_ms, None);
+    }
+
+    #[test]
+    fn bands_are_ordered_clamped_and_at_least_a_third_of_an_octave() {
+        assert_eq!(normalized_band(150.0, 60.0), (60.0, 150.0));
+        assert_eq!(normalized_band(5.0, 40_000.0), (20.0, 20_000.0));
+        let (low, high) = normalized_band(100.0, 101.0);
+        assert!((high / low - 2_f64.powf(1.0 / 3.0)).abs() < 1.0e-9);
+        assert!(low < 100.0 && high > 101.0);
     }
 
     #[test]

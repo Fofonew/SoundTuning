@@ -60,6 +60,7 @@ impl Notifications {
         context: &egui::Context,
         palette: &Palette,
         is_mac: bool,
+        right_inset: f32,
         actions: &mut Vec<Action>,
     ) {
         let now = Instant::now();
@@ -70,7 +71,10 @@ impl Notifications {
         let bottom_offset = size::BOTTOM_BAR_HEIGHT + spacing::LG;
         egui::Area::new(Id::unique("notifications"))
             .order(Order::Foreground)
-            .anchor(Align2::RIGHT_BOTTOM, [-spacing::LG, -bottom_offset])
+            .anchor(
+                Align2::RIGHT_BOTTOM,
+                [-(spacing::LG + right_inset), -bottom_offset],
+            )
             .show(context, |ui| {
                 ui.set_width(NOTIFICATION_WIDTH);
                 for item in self.items.iter().rev() {

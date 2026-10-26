@@ -89,9 +89,10 @@ Règles complètes (enchaînement des phases, fin de phase `ecc:rust-reviewer` �
 
 ## État
 
-- **Phase en cours : 5 (délais et alignement).**
-- Phases terminées : setup ; 0 ; 1 (`dsp-core`) ; 2 (`engine`) ; 3 (interface) ; 4 (traces et sessions : capture, liste, sélection, renommage F2/double-clic, moyenne, annuler/rétablir, autosauvegarde sur thread dédié + `.bak` + session illisible mise de côté, export CSV ; D-028, D-031).
-- Dernier `verify` complet (fin de phase 4) : au vert, 236 tests ; benchs `engine_update` 0,61 ms, `delay_search` 1,77 ms, `plot_frame_prep` 0,053 ms, `optimal_alignment` 2,94 ms. Aucun échec en cours.
-- Déjà amorcé (compilé, non câblé) : `ui/alignment_panel.rs`, `ui/eq_panel.rs`, `alignment_state.rs`, `eq_state.rs`, textes ; `docs/WINDOWS.md`, feature `asio`.
-- **Prochaine action** : phase 5 — câbler le panneau Alignement (proposition par `find_optimal_alignment`, somme prédite tracée, bande Maj+glisser), suivi du délai + notification de dérive, ajustement fin ±0,01 ms, capture `alignment`, revue visuelle 2 tours.
-- Suite : 6 (EQ : câblage panneau, édition sur le tracé, résultat prédit, trace inversée, exports ; capture `eq`), 7 (finition, profilage, critères UX/Rapidité, `MANUAL_TESTS.md`), 8 (CI complète, packaging `cargo-packager`, rapport final).
+- **Phase en cours : 6 (EQ virtuel).**
+- Phases terminées : setup ; 0 ; 1 (`dsp-core`) ; 2 (`engine`) ; 3 (interface) ; 4 (traces et sessions ; D-028, D-031) ; 5 (délais et alignement : suivi T, dérive notifiée, ±0,01 ms ⇧←/⇧→, panneau Alignement câblé, proposition adoptée, somme prédite, bande Maj+glisser ; D-032).
+- Dernier `verify` complet (fin de phase 5) : au vert, 244 tests ; benchs `engine_update` 0,61 ms, `delay_search` 1,76 ms, `plot_frame_prep` 0,053 ms, `optimal_alignment` 2,94 ms. Aucun échec en cours.
+- Attention : la sortie de `cargo test` filtrée par rtk n'affiche que la dernière suite ; pour un total fiable : `rtk proxy cargo test --workspace`.
+- Déjà amorcé (compilé, non câblé) : `ui/eq_panel.rs`, `eq_state.rs` (banques A/B, exports texte/JSON), textes ; `docs/WINDOWS.md`, feature `asio`.
+- **Prochaine action** : phase 6 — câbler le panneau EQ (onglet), courbes EQ seule / prédite / trace inversée sur le tracé, poignées (glisser = fréquence/gain, molette = Q, double-clic = ajouter), E ajoute un filtre, exports, annuler/rétablir, test EQ plat ±0,1 dB côté app, capture `eq`, revue visuelle 2 tours.
+- Suite : 7 (finition, profilage, critères UX/Rapidité, `MANUAL_TESTS.md`), 8 (CI complète, packaging `cargo-packager`, rapport final).

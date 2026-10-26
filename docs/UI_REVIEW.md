@@ -55,3 +55,14 @@ Critères : hiérarchie visuelle, lisibilité à 1 m, alignements, espacements, 
 - Critiques : deuxième ligne surchargée, « × » de suppression chevauchant le champ de décalage et rogné par le bord du panneau ; puis « × » collé au nom au lieu d'être aligné à droite ; « Visible » rogné par le champ de décalage.
 - Corrections : suppression déplacée sur la première ligne, alignée à droite ; décalage aligné à droite de la deuxième ligne ; retrait de la deuxième ligne réduit à 4 px.
 - Captures : avant `traces-tour2-final.png`, après `docs/ui-review/phase-4/traces-tour3-apres.png`.
+
+### Phase 5 — tour 1 (2026-10-26)
+- Écran : alignement de deux traces (B arrivée 1,2 ms plus tard), plage Sub, bande 60–150 Hz, somme prédite.
+- Critiques : contenu du panneau Alignement débordant à gauche (« race A » rogné) car la ligne « Δ + Inverser la polarité de B » dépassait la largeur en disposition horizontale ; consigne en 30 pt coupée sur deux lignes ; notification de dérive tronquée ; notifications masquant le bas du panneau.
+- Corrections : sélecteurs A/B en lignes à libellé de largeur fixe et liste tronquée ; Δ et polarité sur deux lignes ; consigne en chiffres tabulaires 18 pt ; texte de dérive raccourci (« Délai changé : 2,02 ms (+1,20 ms) ») ; notifications ancrées à gauche du panneau latéral quand il est ouvert.
+- Captures : avant `docs/ui-review/phase-5/alignment-tour1-avant.png`.
+
+### Phase 5 — tour 2 (2026-10-26)
+- Critiques : ligne Δ centrée verticalement dans tout l'espace restant (case de polarité et aide poussées hors de l'écran) ; aide « Δ > 0 … » coupée avec un « A » orphelin.
+- Corrections : ligne Δ en `horizontal` ; aide sur deux lignes explicites. Vérifié : somme prédite (rose, `predicted`, trait épais) nettement distincte des traces Okabe–Ito et de la trace live ; bande choisie ombrée avec ses bornes en chiffres ; proposition (accent) et réglage à recopier (texte principal) hiérarchisés.
+- Captures : après `docs/ui-review/phase-5/alignment-tour2-apres.png`.

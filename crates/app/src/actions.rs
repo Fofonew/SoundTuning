@@ -24,10 +24,13 @@ pub enum Action {
     AddEqFilter,
     ExportSession,
     RestartMeasurement,
+    ToggleDelayTracking,
+    NudgeDelayDown,
+    NudgeDelayUp,
 }
 
 impl Action {
-    pub const ALL: [Self; 20] = [
+    pub const ALL: [Self; 23] = [
         Self::ToggleMeasurement,
         Self::FindDelay,
         Self::ApplyDelay,
@@ -48,9 +51,12 @@ impl Action {
         Self::AddEqFilter,
         Self::ExportSession,
         Self::RestartMeasurement,
+        Self::ToggleDelayTracking,
+        Self::NudgeDelayDown,
+        Self::NudgeDelayUp,
     ];
 
-    const SHORTCUT_PRIORITY: [Self; 16] = [
+    const SHORTCUT_PRIORITY: [Self; 19] = [
         Self::Redo,
         Self::Undo,
         Self::OpenPalette,
@@ -67,6 +73,9 @@ impl Action {
         Self::ToggleGenerator,
         Self::AddEqFilter,
         Self::ToggleSidePanel,
+        Self::ToggleDelayTracking,
+        Self::NudgeDelayDown,
+        Self::NudgeDelayUp,
     ];
 
     pub fn label(self) -> &'static str {
@@ -91,6 +100,9 @@ impl Action {
             Self::AddEqFilter => text::ACTION_ADD_EQ_FILTER,
             Self::ExportSession => text::ACTION_EXPORT_SESSION,
             Self::RestartMeasurement => text::ACTION_RESTART_MEASUREMENT,
+            Self::ToggleDelayTracking => text::ACTION_TOGGLE_DELAY_TRACKING,
+            Self::NudgeDelayDown => text::ACTION_NUDGE_DELAY_DOWN,
+            Self::NudgeDelayUp => text::ACTION_NUDGE_DELAY_UP,
         }
     }
 
@@ -110,6 +122,9 @@ impl Action {
             Self::ToggleGenerator => plain(Key::G),
             Self::AddEqFilter => plain(Key::E),
             Self::ToggleSidePanel => plain(Key::P),
+            Self::ToggleDelayTracking => plain(Key::T),
+            Self::NudgeDelayDown => Some(KeyboardShortcut::new(Modifiers::SHIFT, Key::ArrowLeft)),
+            Self::NudgeDelayUp => Some(KeyboardShortcut::new(Modifiers::SHIFT, Key::ArrowRight)),
             Self::OpenPalette => Some(KeyboardShortcut::new(Modifiers::COMMAND, Key::K)),
             Self::Undo => Some(KeyboardShortcut::new(Modifiers::COMMAND, Key::Z)),
             Self::Redo => Some(KeyboardShortcut::new(
@@ -132,6 +147,8 @@ impl Action {
 pub fn format_shortcut(shortcut: &KeyboardShortcut, is_mac: bool) -> String {
     let key = match shortcut.logical_key {
         Key::Space => text::KEY_SPACE.to_owned(),
+        Key::ArrowLeft => text::KEY_ARROW_LEFT.to_owned(),
+        Key::ArrowRight => text::KEY_ARROW_RIGHT.to_owned(),
         other => other.symbol_or_name().to_uppercase(),
     };
     let modifiers = shortcut.modifiers;

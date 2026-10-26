@@ -155,13 +155,17 @@ impl AppConfig {
         }
     }
 
+    pub fn delay_policy(&self) -> DelayPolicy {
+        DelayPolicy {
+            tracking: self.delay_tracking,
+            ..DelayPolicy::default()
+        }
+    }
+
     pub fn engine_config(&self) -> EngineConfig {
         EngineConfig {
             settings: self.analysis.to_settings(),
-            policy: DelayPolicy {
-                tracking: self.delay_tracking,
-                ..DelayPolicy::default()
-            },
+            policy: self.delay_policy(),
             system_latency_ms: self.calibrated_latency_ms(),
         }
     }

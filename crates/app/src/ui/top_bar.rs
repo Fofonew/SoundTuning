@@ -11,6 +11,8 @@ use crate::text;
 
 const DELAY_BLOCK_WIDTH: f32 = 232.0;
 const BUTTON_GROUP_WIDTH: f32 = 236.0;
+const FINE_GROUP_WIDTH: f32 = 2.0 * size::MIN_CLICK_HEIGHT + TRACKING_WIDTH + 2.0 * spacing::XS;
+const TRACKING_WIDTH: f32 = 64.0;
 const METER_GROUP_WIDTH: f32 = 2.0 * size::METER_WIDTH + spacing::LG;
 const METER_BLOCK_HEIGHT: f32 = 30.0;
 
@@ -33,6 +35,7 @@ pub struct TopBarModel {
     pub delay: DelayReadout,
     pub can_apply_delay: bool,
     pub running: bool,
+    pub tracking: bool,
 }
 
 pub fn show(
@@ -43,8 +46,11 @@ pub fn show(
     actions: &mut Vec<Action>,
 ) {
     let total_width = ui.available_width();
-    let right_width =
-        BUTTON_GROUP_WIDTH + DELAY_BLOCK_WIDTH + METER_GROUP_WIDTH + 3.0 * spacing::XL;
+    let right_width = BUTTON_GROUP_WIDTH
+        + FINE_GROUP_WIDTH
+        + DELAY_BLOCK_WIDTH
+        + METER_GROUP_WIDTH
+        + 4.0 * spacing::XL;
     let left_width = (total_width - right_width).max(160.0);
     let height = ui.available_height();
     ui.horizontal(|ui| {
@@ -97,7 +103,9 @@ pub fn show(
             {
                 actions.push(Action::FindDelay);
             }
-            ui.add_space(spacing::LG);
+            ui.add_space(spacing::MD);
+            fine_controls(ui, palette, model, is_mac, actions);
+            ui.add_space(spacing::MD);
             ui.allocate_ui_with_layout(
                 vec2(DELAY_BLOCK_WIDTH, height),
                 Layout::top_down(Align::Max),
@@ -147,4 +155,63 @@ fn delay_block(ui: &mut egui::Ui, palette: &Palette, delay: &DelayReadout) {
                 .color(palette.text_muted),
         );
     });
+}
+
+fn fine_controls(
+    ui: &mut egui::Ui,
+    palette: &Palette,
+    model: &TopBarModel,
+    is_mac: bool,
+    actions: &mut Vec<Action>,
+) {
+    ui.spacing_mut().item_spacing.x = spacing::XS;
+    let tracking = ui
+        .add_sized(
+            vec2(TRACKING_WIDTH, size::MIN_CLICK_HEIGHT),
+            egui::Button::selectable(
+                model.tracking,
+                RichText::new(text::BUTTON_TRACKING).font(fonts::ui_medium(text_size::LABEL)),
+            ),
+        )
+        .on_hover_text(hint(Action::ToggleDelayTracking, is_mac));
+    tracking.widget_info(|| {
+        egui::WidgetInfo::selected(
+            egui::Role::CheckBox,
+            true,
+            model.tracking,
+            text::ACTION_TOGGLE_DELAY_TRACKING,
+        )
+    });
+    if tracking.clicked() {
+        actions.push(Action::ToggleDelayTracking);
+    }
+    for (action, glyph) in [
+        (Action::NudgeDelayUp, text::BUTTON_NUDGE_UP),
+        (Action::NudgeDelayDown, text::BUTTON_NUDGE_DOWN),
+    ] {
+        let button = ui
+            .add_enabled(
+                model.running,
+                egui::Button::new(
+                    RichText::new(glyph)
+                        .font(fonts::value_semibold(text_size::TITLE))
+                        .color(palette.text_primary),
+                )
+                .min_size(vec2(size::MIN_CLICK_HEIGHT, size::MIN_CLICK_HEIGHT)),
+            )
+            .on_hover_text(hint(action, is_mac));
+        button.widget_info(|| {
+            egui::WidgetInfo::labeled(egui::Role::Button, model.running, action.label())
+        });
+        if button.clicked() {
+            actions.push(action);
+        }
+    }
+}
+
+fn hint(action: Action, is_mac: bool) -> String {
+    match action.shortcut_text(is_mac) {
+        Some(shortcut) => format!("{} ({shortcut})", action.label()),
+        None => action.label().to_owned(),
+    }
 }

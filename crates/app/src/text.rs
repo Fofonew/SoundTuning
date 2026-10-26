@@ -158,6 +158,17 @@ pub const WIZARD_PREVIEW_ERROR: &str = "La carte ne peut pas être ouverte";
 
 pub const NOTIFY_DELAY_FOUND: &str = "Délai trouvé";
 pub const NOTIFY_DELAY_APPLIED: &str = "Délai appliqué";
+pub const NOTIFY_DELAY_DRIFT: &str = "Délai changé";
+pub const NOTIFY_TRACKING_ON: &str = "Suivi du délai activé";
+pub const NOTIFY_TRACKING_OFF: &str = "Suivi du délai désactivé";
+pub const ACTION_TOGGLE_DELAY_TRACKING: &str = "Suivi du délai";
+pub const ACTION_NUDGE_DELAY_DOWN: &str = "Délai −0,01 ms";
+pub const ACTION_NUDGE_DELAY_UP: &str = "Délai +0,01 ms";
+pub const BUTTON_TRACKING: &str = "Suivi";
+pub const BUTTON_NUDGE_DOWN: &str = "−";
+pub const BUTTON_NUDGE_UP: &str = "+";
+pub const KEY_ARROW_LEFT: &str = "←";
+pub const KEY_ARROW_RIGHT: &str = "→";
 pub const NOTIFY_THEME_NIGHT: &str = "Thème Nuit";
 pub const NOTIFY_THEME_DAY: &str = "Thème Plein jour";
 pub const NOTIFY_LATENCY_CALIBRATED: &str = "Latence de la carte calibrée";
@@ -207,10 +218,12 @@ pub const ALIGNMENT_PROPOSAL: &str = "Proposition";
 pub const ALIGNMENT_USE_PROPOSAL: &str = "Utiliser la proposition";
 pub const ALIGNMENT_APPLIED: &str = "Réglage à recopier dans le processeur";
 pub const ALIGNMENT_INVERT_B: &str = "Inverser la polarité de B";
-pub const ALIGNMENT_SIGN_HINT: &str = "Δ > 0 : retarder B · Δ < 0 : retarder A";
+pub const ALIGNMENT_SIGN_HINT: &str = "Δ > 0 : retarder B\nΔ < 0 : retarder A";
 pub const ALIGNMENT_NO_DELAY: &str = "Aucun délai";
-pub const ALIGNMENT_POLARITY_SUFFIX: &str = " · B inversée";
+pub const ALIGNMENT_DELTA: &str = "Δ";
+pub const ALIGNMENT_NO_PROPOSAL: &str = "Pas de proposition : il faut la phase des deux traces dans la bande (une moyenne de traces n'en a pas).";
 pub const PREDICTED_SUM_LABEL: &str = "Somme prédite";
+pub const ALIGNMENT_POLARITY_SUFFIX: &str = " · B inversée";
 
 pub fn format_signed_milliseconds(value: f64) -> String {
     let sign = if value > 0.0 { "+" } else { "" };
@@ -271,6 +284,22 @@ pub fn trace_name(number: u64, clock: &str) -> String {
 
 pub fn average_trace_name(number: u64, clock: &str, member_count: usize) -> String {
     format!("Moyenne {number} ({member_count} traces) — {clock}")
+}
+
+pub fn band_label(low_hz: f64, high_hz: f64) -> String {
+    format!(
+        "{} {RANGE_SEPARATOR} {}",
+        format_frequency(low_hz),
+        format_frequency(high_hz)
+    )
+}
+
+pub fn delay_drift(acoustic_ms: f64, drift_ms: f64) -> String {
+    format!(
+        "{NOTIFY_DELAY_DRIFT} : {} ({})",
+        format_milliseconds(acoustic_ms),
+        format_signed_milliseconds(drift_ms)
+    )
 }
 
 pub fn format_csv_number(value: f64, decimals: usize) -> String {

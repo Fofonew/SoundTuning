@@ -443,3 +443,137 @@ fn unreadable_session_is_reported_at_launch() {
     assert!(!path.exists());
     std::fs::remove_dir_all(directory).unwrap();
 }
+
+#[test]
+fn alignment_panel_proposes_a_delay_and_shift_drag_picks_the_band() {
+    use soundtuning::ui::alignment_panel::AlignmentCommand;
+    use soundtuning::ui::side_panel::SideTab;
+    let mut harness = harness(file_options(Theme::Night, true));
+    capture_two_traces(&mut harness);
+    harness.state_mut().set_side_tab(SideTab::Alignment);
+    let ids: Vec<u64> = harness
+        .state()
+        .session()
+        .traces
+        .iter()
+        .map(|trace| trace.id)
+        .collect();
+    let mut state = harness.state().session().alignment.clone();
+    state.trace_a = Some(ids[0]);
+    state.trace_b = Some(ids[1]);
+    harness
+        .state_mut()
+        .apply_test_alignment(AlignmentCommand::Update(state));
+    harness.run_steps(2);
+    let alignment = harness.state().session().alignment.clone();
+    let proposal = alignment.proposal_delay_ms.expect("a proposal");
+    assert!(proposal.abs() < 0.05, "same signal twice: {proposal}");
+    assert_eq!(alignment.delay_ms, proposal);
+    harness.get_by_label(soundtuning::text::ALIGNMENT_USE_PROPOSAL);
+
+    shift_drag(&mut harness, 200.0, 420.0);
+    let band = harness.state().session().alignment.clone();
+    assert!(
+        band.band_low_hz > 30.0 && band.band_low_hz < 80.0,
+        "{band:?}"
+    );
+    assert!(
+        band.band_high_hz > 120.0 && band.band_high_hz < 300.0,
+        "{band:?}"
+    );
+    assert_eq!(
+        harness.state().plot_view(),
+        soundtuning::plot::PlotView::default()
+    );
+    let first_band = (band.band_low_hz, band.band_high_hz);
+
+    shift_drag(&mut harness, 600.0, 900.0);
+    let second = harness.state().session().alignment.clone();
+    assert!(second.band_low_hz > 150.0, "{second:?}");
+
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+    harness.run_steps(2);
+    let undone = harness.state().session().alignment.clone();
+    assert_eq!((undone.band_low_hz, undone.band_high_hz), first_band);
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+    harness.run_steps(2);
+    assert_eq!(harness.state().session().alignment.band_low_hz, 60.0);
+}
+
+fn shift_drag(
+    harness: &mut egui_kittest::Harness<'static, soundtuning::app::SoundTuningApp>,
+    from_x: f32,
+    to_x: f32,
+) {
+    let y = 400.0;
+    harness.event(Event::ModifiersChanged(Modifiers::SHIFT));
+    harness.hover_at(eframe::egui::pos2(from_x, y));
+    harness.step();
+    harness.event(Event::PointerButton {
+        pos: eframe::egui::pos2(from_x, y),
+        button: eframe::egui::PointerButton::Primary,
+        pressed: true,
+        modifiers: Modifiers::SHIFT,
+    });
+    harness.step();
+    for step in 1..=3 {
+        let x = from_x + (to_x - from_x) * step as f32 / 3.0;
+        harness.hover_at(eframe::egui::pos2(x, y));
+        harness.step();
+    }
+    harness.event(Event::PointerButton {
+        pos: eframe::egui::pos2(to_x, y),
+        button: eframe::egui::PointerButton::Primary,
+        pressed: false,
+        modifiers: Modifiers::SHIFT,
+    });
+    harness.event(Event::ModifiersChanged(Modifiers::NONE));
+    harness.run_steps(3);
+}
+
+#[test]
+fn t_toggles_tracking_and_shift_arrows_nudge_the_delay() {
+    let mut harness = harness(file_options(Theme::Night, true));
+    wait_for_stable_measurement(&mut harness);
+    assert!(!harness.state().config().delay_tracking);
+    harness.key_press(Key::T);
+    harness.step();
+    assert!(harness.state().config().delay_tracking);
+    harness.key_press(Key::T);
+    harness.step();
+    assert!(!harness.state().config().delay_tracking);
+
+    let before = harness.state().measurement().snapshot().delay.applied_ms;
+    harness.key_press_modifiers(Modifiers::SHIFT, Key::ArrowRight);
+    harness.step();
+    step_until(&mut harness, SHORT_TIMEOUT, |app| {
+        (app.measurement().snapshot().delay.applied_ms - before - 0.01).abs() < 1.0e-6
+    });
+    harness
+        .get_by_label(soundtuning::text::ACTION_NUDGE_DELAY_DOWN)
+        .click();
+    harness.step();
+    step_until(&mut harness, SHORT_TIMEOUT, |app| {
+        (app.measurement().snapshot().delay.applied_ms - before).abs() < 1.0e-6
+    });
+}
+
+#[test]
+fn a_changed_delay_raises_a_notification_that_applies_it() {
+    let mut harness = harness(file_options(Theme::Night, true));
+    wait_for_stable_measurement(&mut harness);
+    harness
+        .state()
+        .measurement()
+        .send(EngineCommand::SetCompensationMs(0.0));
+    step_until(&mut harness, SHORT_TIMEOUT, |app| {
+        app.notification_texts()
+            .iter()
+            .any(|text| text.starts_with(soundtuning::text::NOTIFY_DELAY_DRIFT))
+    });
+    harness.key_press(Key::A);
+    harness.step();
+    step_until(&mut harness, SHORT_TIMEOUT, |app| {
+        (app.measurement().snapshot().delay.applied_ms - 2.0).abs() < 0.05
+    });
+}

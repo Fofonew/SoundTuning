@@ -5,7 +5,7 @@ use std::sync::mpsc::{self, Receiver, SyncSender, TrySendError};
 use std::thread::JoinHandle;
 
 use anyhow::Context;
-use dsp_core::{Complex64, power_average_db};
+use dsp_core::{Complex64, find_optimal_alignment, power_average_db, summed_response_db};
 use engine::MeasurementSnapshot;
 use serde::{Deserialize, Serialize};
 
@@ -66,6 +66,16 @@ impl Trace {
             .map(|value| value.map(|[real, imaginary]| Complex64::new(real, imaginary) * gain))
             .collect()
     }
+}
+
+type ComplexResponse = Vec<Option<Complex64>>;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct AlignmentSumKey {
+    traces: [*const Trace; 2],
+    offsets_db_bits: [u64; 2],
+    delay_ms_bits: u64,
+    inverted: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -223,6 +233,59 @@ impl Session {
             metadata,
         }));
         Ok(id)
+    }
+
+    fn alignment_responses(&self) -> Option<(ComplexResponse, ComplexResponse)> {
+        if !self.alignment.is_ready() {
+            return None;
+        }
+        let a = self.trace(self.alignment.trace_a?)?;
+        let b = self.trace(self.alignment.trace_b?)?;
+        Some((a.complex_response(), b.complex_response()))
+    }
+
+    pub fn alignment_sum_key(&self) -> Option<AlignmentSumKey> {
+        if !self.alignment.is_ready() {
+            return None;
+        }
+        let find = |id| self.traces.iter().find(|trace| Some(trace.id) == id);
+        let a = find(self.alignment.trace_a)?;
+        let b = find(self.alignment.trace_b)?;
+        Some(AlignmentSumKey {
+            traces: [Arc::as_ptr(a), Arc::as_ptr(b)],
+            offsets_db_bits: [a.offset_db.to_bits(), b.offset_db.to_bits()],
+            delay_ms_bits: self.alignment.delay_ms.to_bits(),
+            inverted: self.alignment.inverted,
+        })
+    }
+
+    pub fn refresh_alignment_proposal(&mut self, frequencies_hz: &[f64], adopt: bool) {
+        let proposal = self.alignment_responses().and_then(|(a, b)| {
+            find_optimal_alignment(&a, &b, frequencies_hz, &self.alignment.search())
+                .ok()
+                .flatten()
+        });
+        self.alignment.proposal_delay_ms = proposal.map(|result| result.delay_ms);
+        self.alignment.proposal_inverted =
+            proposal.map(|result| result.polarity == dsp_core::Polarity::Inverted);
+        if adopt {
+            self.alignment.use_proposal();
+        }
+    }
+
+    pub fn predicted_alignment_sum_db(&self, frequencies_hz: &[f64]) -> Option<Vec<Option<f64>>> {
+        let (a, b) = self.alignment_responses()?;
+        let mut output = vec![None; a.len()];
+        summed_response_db(
+            &a,
+            &b,
+            frequencies_hz,
+            self.alignment.delay_ms,
+            self.alignment.polarity(),
+            &mut output,
+        )
+        .ok()?;
+        output.iter().any(Option::is_some).then_some(output)
     }
 
     pub fn to_csv(&self, frequencies_hz: &[f64]) -> String {
@@ -787,5 +850,70 @@ mod tests {
         writer.finish(&session).unwrap();
         assert_eq!(SessionStore::File(path).load().session.traces.len(), 2);
         std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    fn aligned_pair(delay_b_ms: f64) -> (Session, Vec<f64>) {
+        let frequencies: Vec<f64> = dsp_core::DisplayGrid::new(20.0, 20_000.0, 96.0)
+            .frequencies_hz()
+            .to_vec();
+        let mut session = Session::default();
+        let mut a = snapshot(0.0);
+        a.magnitude_db = vec![Some(0.0); frequencies.len()];
+        a.coherence = vec![Some(1.0); frequencies.len()];
+        a.response = vec![Some(Complex64::new(1.0, 0.0)); frequencies.len()];
+        let mut b = a.clone();
+        b.response = frequencies
+            .iter()
+            .map(|frequency_hz| {
+                Some(Complex64::from_polar(
+                    1.0,
+                    -std::f64::consts::TAU * frequency_hz * delay_b_ms / 1000.0,
+                ))
+            })
+            .collect();
+        let id_a = session.capture(&a, 48, 0, "21:42").unwrap();
+        let id_b = session.capture(&b, 48, 0, "21:43").unwrap();
+        session.alignment.trace_a = Some(id_a);
+        session.alignment.trace_b = Some(id_b);
+        (session, frequencies)
+    }
+
+    #[test]
+    fn alignment_proposal_delays_a_when_b_arrives_late_and_is_adopted() {
+        let (mut session, frequencies) = aligned_pair(1.5);
+        session.refresh_alignment_proposal(&frequencies, true);
+        let proposal = session.alignment.proposal_delay_ms.unwrap();
+        assert!((proposal + 1.5).abs() <= 0.02, "{proposal}");
+        assert_eq!(session.alignment.proposal_inverted, Some(false));
+        assert_eq!(session.alignment.delay_ms, proposal);
+        let sum = session.predicted_alignment_sum_db(&frequencies).unwrap();
+        let index_100hz = frequencies
+            .iter()
+            .position(|frequency_hz| *frequency_hz >= 100.0)
+            .unwrap();
+        assert!((sum[index_100hz].unwrap() - 6.02).abs() < 0.05);
+    }
+
+    #[test]
+    fn identical_traces_sum_to_six_db_without_delay() {
+        let (mut session, frequencies) = aligned_pair(0.0);
+        session.alignment.delay_ms = 0.0;
+        let sum = session.predicted_alignment_sum_db(&frequencies).unwrap();
+        assert!(
+            sum.iter()
+                .flatten()
+                .all(|level| (level - 20.0 * 2_f64.log10()).abs() < 0.01)
+        );
+    }
+
+    #[test]
+    fn averaged_traces_give_no_proposal() {
+        let (mut session, frequencies) = aligned_pair(1.0);
+        for trace in &mut session.traces {
+            Arc::make_mut(trace).response.fill(None);
+        }
+        session.refresh_alignment_proposal(&frequencies, true);
+        assert_eq!(session.alignment.proposal_delay_ms, None);
+        assert_eq!(session.predicted_alignment_sum_db(&frequencies), None);
     }
 }
