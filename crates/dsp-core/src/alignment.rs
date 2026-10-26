@@ -123,22 +123,49 @@ struct BandPoint {
     b: Complex64,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct AlignmentAnalysis {
+    pub positive: AlignmentResult,
+    pub negative: AlignmentResult,
+    pub flattest: AlignmentResult,
+}
+
 #[derive(Clone, Copy)]
 struct Candidate {
     step: i64,
     polarity: Polarity,
-    score: f64,
     mean_level_db: f64,
     level_spread_db: f64,
 }
 
-fn evaluate(
-    points: &[BandPoint],
-    step: i64,
-    criterion: AlignmentCriterion,
-    louder_trace_mean_db: f64,
-    levels: &mut Vec<[f64; 2]>,
-) -> [Candidate; 2] {
+impl Candidate {
+    fn score(self, criterion: AlignmentCriterion, louder_trace_mean_db: f64) -> f64 {
+        match criterion {
+            AlignmentCriterion::MaximumLevel => self.mean_level_db,
+            AlignmentCriterion::Flattest if self.mean_level_db >= louder_trace_mean_db => {
+                -self.level_spread_db
+            }
+            AlignmentCriterion::Flattest => DESTRUCTIVE_SUM_SCORE_OFFSET + self.mean_level_db,
+        }
+    }
+
+    fn result(self) -> AlignmentResult {
+        AlignmentResult {
+            delay_ms: self.step as f64 * FINE_STEP_MS,
+            polarity: self.polarity,
+            mean_level_db: self.mean_level_db,
+            level_spread_db: self.level_spread_db,
+        }
+    }
+}
+
+const POLARITIES: [Polarity; 2] = [Polarity::Normal, Polarity::Inverted];
+const CRITERIA: [AlignmentCriterion; 2] = [
+    AlignmentCriterion::MaximumLevel,
+    AlignmentCriterion::Flattest,
+];
+
+fn evaluate(points: &[BandPoint], step: i64, levels: &mut Vec<[f64; 2]>) -> [Candidate; 2] {
     let delay_s = step as f64 * FINE_STEP_MS / MILLISECONDS_PER_SECOND;
     levels.clear();
     levels.extend(points.iter().map(|point| {
@@ -149,7 +176,7 @@ fn evaluate(
         ]
     }));
     let count = levels.len() as f64;
-    [Polarity::Normal, Polarity::Inverted].map(|polarity| {
+    POLARITIES.map(|polarity| {
         let column = usize::from(polarity == Polarity::Inverted);
         let mean = levels.iter().map(|level| level[column]).sum::<f64>() / count;
         let variance = levels
@@ -157,37 +184,55 @@ fn evaluate(
             .map(|level| (level[column] - mean).powi(2))
             .sum::<f64>()
             / count;
-        let spread = variance.max(0.0).sqrt();
         Candidate {
             step,
             polarity,
-            score: match criterion {
-                AlignmentCriterion::MaximumLevel => mean,
-                AlignmentCriterion::Flattest if mean >= louder_trace_mean_db => -spread,
-                AlignmentCriterion::Flattest => DESTRUCTIVE_SUM_SCORE_OFFSET + mean,
-            },
             mean_level_db: mean,
-            level_spread_db: spread,
+            level_spread_db: variance.max(0.0).sqrt(),
         }
     })
 }
 
-fn better(left: Candidate, right: Candidate) -> Candidate {
-    let left_is_better = left.score > right.score
-        || (left.score == right.score && left.step.abs() < right.step.abs());
+fn better(
+    left: Candidate,
+    right: Candidate,
+    criterion: AlignmentCriterion,
+    louder_trace_mean_db: f64,
+) -> Candidate {
+    let left_score = left.score(criterion, louder_trace_mean_db);
+    let right_score = right.score(criterion, louder_trace_mean_db);
+    let left_is_better = left_score > right_score
+        || (left_score == right_score && left.step.abs() < right.step.abs());
     if left_is_better { left } else { right }
 }
 
-pub fn find_optimal_alignment(
+struct SweepResult {
+    best: [[Candidate; 2]; 2],
+    louder_trace_mean_db: f64,
+}
+
+impl SweepResult {
+    fn overall(&self, criterion: AlignmentCriterion) -> Candidate {
+        let [normal, inverted] = self.best[criterion_index(criterion)];
+        better(inverted, normal, criterion, self.louder_trace_mean_db)
+    }
+}
+
+fn criterion_index(criterion: AlignmentCriterion) -> usize {
+    usize::from(criterion == AlignmentCriterion::Flattest)
+}
+
+fn sweep(
     response_a: &[Option<Complex64>],
     response_b: &[Option<Complex64>],
     frequencies_hz: &[f64],
-    search: &AlignmentSearch,
-) -> Result<Option<AlignmentResult>, DspError> {
+    band_hz: (f64, f64),
+    range_ms: f64,
+) -> Result<Option<SweepResult>, DspError> {
     check_length("trace B", response_a.len(), response_b.len())?;
     check_length("frequencies", response_a.len(), frequencies_hz.len())?;
-    let band_low_hz = search.band_low_hz.min(search.band_high_hz);
-    let band_high_hz = search.band_low_hz.max(search.band_high_hz);
+    let band_low_hz = band_hz.0.min(band_hz.1);
+    let band_high_hz = band_hz.0.max(band_hz.1);
     let points: Vec<BandPoint> = response_a
         .iter()
         .zip(response_b)
@@ -202,11 +247,11 @@ pub fn find_optimal_alignment(
             _ => None,
         })
         .collect();
-    if points.len() < MIN_BAND_POINTS || !search.range_ms.is_finite() {
+    if points.len() < MIN_BAND_POINTS || !range_ms.is_finite() {
         return Ok(None);
     }
 
-    let max_step = (search.range_ms.abs().min(MAX_SEARCH_RANGE_MS) / FINE_STEP_MS).round() as i64;
+    let max_step = (range_ms.abs().min(MAX_SEARCH_RANGE_MS) / FINE_STEP_MS).round() as i64;
     let mean_db_of = |pick: fn(&BandPoint) -> Complex64| {
         points
             .iter()
@@ -216,17 +261,19 @@ pub fn find_optimal_alignment(
     };
     let louder_trace_mean_db = mean_db_of(|point| point.a).max(mean_db_of(|point| point.b));
     let mut levels = Vec::with_capacity(points.len());
-    let mut best_per_polarity: [Option<Candidate>; 2] = [None, None];
+    let mut coarse: [[Option<Candidate>; 2]; 2] = [[None; 2]; 2];
     let mut step = -max_step;
     loop {
-        for (slot, candidate) in best_per_polarity.iter_mut().zip(evaluate(
-            &points,
-            step,
-            search.criterion,
-            louder_trace_mean_db,
-            &mut levels,
-        )) {
-            *slot = Some(slot.map_or(candidate, |current| better(candidate, current)));
+        let candidates = evaluate(&points, step, &mut levels);
+        for criterion in CRITERIA {
+            for (slot, candidate) in coarse[criterion_index(criterion)]
+                .iter_mut()
+                .zip(candidates)
+            {
+                *slot = Some(slot.map_or(candidate, |current| {
+                    better(candidate, current, criterion, louder_trace_mean_db)
+                }));
+            }
         }
         if step >= max_step {
             break;
@@ -234,33 +281,69 @@ pub fn find_optimal_alignment(
         step = (step + FINE_STEPS_PER_COARSE_STEP).min(max_step);
     }
 
-    let mut best: Option<Candidate> = None;
-    for coarse in best_per_polarity.into_iter().flatten() {
-        let polarity_column = usize::from(coarse.polarity == Polarity::Inverted);
-        let mut refined = coarse;
-        let low = (coarse.step - FINE_STEPS_PER_COARSE_STEP).max(-max_step);
-        let high = (coarse.step + FINE_STEPS_PER_COARSE_STEP).min(max_step);
-        for fine_step in low..=high {
-            let candidates = evaluate(
-                &points,
-                fine_step,
-                search.criterion,
-                louder_trace_mean_db,
-                &mut levels,
-            );
-            if let Some(candidate) = candidates.get(polarity_column) {
-                refined = better(*candidate, refined);
+    let mut best = [[None; 2]; 2];
+    for criterion in CRITERIA {
+        for (slot, start) in best[criterion_index(criterion)]
+            .iter_mut()
+            .zip(coarse[criterion_index(criterion)])
+        {
+            let Some(start) = start else {
+                continue;
+            };
+            let column = usize::from(start.polarity == Polarity::Inverted);
+            let low = (start.step - FINE_STEPS_PER_COARSE_STEP).max(-max_step);
+            let high = (start.step + FINE_STEPS_PER_COARSE_STEP).min(max_step);
+            let mut refined = start;
+            for fine_step in low..=high {
+                if let Some(candidate) = evaluate(&points, fine_step, &mut levels).get(column) {
+                    refined = better(*candidate, refined, criterion, louder_trace_mean_db);
+                }
             }
+            *slot = Some(refined);
         }
-        best = Some(best.map_or(refined, |current| better(refined, current)));
     }
-
-    Ok(best.map(|candidate| AlignmentResult {
-        delay_ms: candidate.step as f64 * FINE_STEP_MS,
-        polarity: candidate.polarity,
-        mean_level_db: candidate.mean_level_db,
-        level_spread_db: candidate.level_spread_db,
+    let unwrap_slots = |[normal, inverted]: [Option<Candidate>; 2]| Some([normal?, inverted?]);
+    let (Some(level), Some(flat)) = (unwrap_slots(best[0]), unwrap_slots(best[1])) else {
+        return Ok(None);
+    };
+    Ok(Some(SweepResult {
+        best: [level, flat],
+        louder_trace_mean_db,
     }))
+}
+
+pub fn analyze_alignment(
+    response_a: &[Option<Complex64>],
+    response_b: &[Option<Complex64>],
+    frequencies_hz: &[f64],
+    band_hz: (f64, f64),
+    range_ms: f64,
+) -> Result<Option<AlignmentAnalysis>, DspError> {
+    let sweep = sweep(response_a, response_b, frequencies_hz, band_hz, range_ms)?;
+    Ok(sweep.map(|sweep| {
+        let [positive, negative] = sweep.best[criterion_index(AlignmentCriterion::MaximumLevel)];
+        AlignmentAnalysis {
+            positive: positive.result(),
+            negative: negative.result(),
+            flattest: sweep.overall(AlignmentCriterion::Flattest).result(),
+        }
+    }))
+}
+
+pub fn find_optimal_alignment(
+    response_a: &[Option<Complex64>],
+    response_b: &[Option<Complex64>],
+    frequencies_hz: &[f64],
+    search: &AlignmentSearch,
+) -> Result<Option<AlignmentResult>, DspError> {
+    let sweep = sweep(
+        response_a,
+        response_b,
+        frequencies_hz,
+        (search.band_low_hz, search.band_high_hz),
+        search.range_ms,
+    )?;
+    Ok(sweep.map(|sweep| sweep.overall(search.criterion).result()))
 }
 
 #[cfg(test)]
@@ -343,6 +426,37 @@ mod tests {
             );
             assert_eq!(result.polarity, Polarity::Normal);
         }
+    }
+
+    #[test]
+    fn analysis_offers_both_polarities_and_the_flattest_sum() {
+        let grid = DisplayGrid::default();
+        let frequencies = grid.frequencies_hz();
+        let a: Vec<Option<Complex64>> = vec![Some(Complex64::new(1.0, 0.0)); grid.len()];
+        let b = delayed(&a, frequencies, 1.5);
+        let analysis = analyze_alignment(&a, &b, frequencies, DEFAULT_ALIGNMENT_BAND_HZ, 50.0)
+            .unwrap()
+            .unwrap();
+        assert_eq!(analysis.positive.polarity, Polarity::Normal);
+        assert!((analysis.positive.delay_ms + 1.5).abs() < 0.015);
+        assert!((analysis.positive.mean_level_db - 6.0206).abs() < 0.01);
+        assert_eq!(analysis.negative.polarity, Polarity::Inverted);
+        assert!(analysis.negative.mean_level_db < analysis.positive.mean_level_db);
+        assert!(analysis.negative.mean_level_db > 0.0);
+        assert_eq!(analysis.flattest.polarity, Polarity::Normal);
+        assert!((analysis.flattest.delay_ms + 1.5).abs() < 0.015);
+        let single = find_optimal_alignment(
+            &a,
+            &b,
+            frequencies,
+            &AlignmentSearch {
+                criterion: AlignmentCriterion::MaximumLevel,
+                ..AlignmentSearch::default()
+            },
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(single, analysis.positive);
     }
 
     #[test]

@@ -6,12 +6,13 @@ use std::sync::Arc;
 use audio_io::StereoFrame;
 use criterion::{Criterion, criterion_group, criterion_main};
 use dsp_core::{
-    AlignmentSearch, Complex64, DEFAULT_DELAY_FFT_LENGTH, DelayFinder, DisplayGrid,
-    find_optimal_alignment,
+    Complex64, DEFAULT_ALIGNMENT_BAND_HZ, DEFAULT_DELAY_FFT_LENGTH, DelayFinder, DisplayGrid,
+    analyze_alignment,
 };
 use engine::{AnalysisSettings, DelayEstimator, DelayPolicy, MeasurementCore, MeasurementSnapshot};
 
 const SAMPLE_RATE_HZ: u32 = 48_000;
+const ALIGNMENT_SEARCH_RANGE_MS: f64 = 50.0;
 
 fn noise(length: usize, seed: u64) -> Vec<f64> {
     let mut state = seed.max(1);
@@ -100,14 +101,14 @@ fn optimal_alignment(criterion: &mut Criterion) {
             ))
         })
         .collect();
-    let search = AlignmentSearch::default();
     criterion.bench_function("optimal_alignment", |bencher| {
         bencher.iter(|| {
-            find_optimal_alignment(
+            analyze_alignment(
                 black_box(&trace_a),
                 black_box(&trace_b),
                 frequencies,
-                &search,
+                DEFAULT_ALIGNMENT_BAND_HZ,
+                ALIGNMENT_SEARCH_RANGE_MS,
             )
             .unwrap()
         });

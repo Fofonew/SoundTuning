@@ -3,6 +3,7 @@ use eframe::egui::{self, Align, Layout, RichText};
 
 use crate::design::Palette;
 use crate::design::fonts;
+use crate::design::icons::{self, icon_button};
 use crate::design::tokens::{spacing, text_size};
 use crate::design::widgets::{
     Emphasis, action_button, action_button_width, combo_label, muted, section_title,
@@ -142,10 +143,14 @@ pub fn show(
     ui.horizontal(|ui| {
         section_title(ui, palette, text::AUDIO_SETTINGS_TITLE);
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            let close = ui
-                .add(egui::Button::new(text::TRACE_DELETE_GLYPH).frame(false))
-                .on_hover_text(text::AUDIO_SETTINGS_CLOSE);
-            let close = close.accessible_name(text::AUDIO_SETTINGS_CLOSE);
+            let close = icon_button(
+                ui,
+                palette,
+                icons::CLOSE,
+                text::AUDIO_SETTINGS_CLOSE,
+                text::AUDIO_SETTINGS_CLOSE,
+                false,
+            );
             if close.clicked() {
                 commands.push(AudioCommand::Close);
             }

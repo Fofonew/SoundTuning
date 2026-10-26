@@ -111,8 +111,8 @@ fn alignment_screenshot(theme: Theme, name: &str) {
         .map(|trace| trace.id)
         .collect();
     let mut state = harness.state().session().alignment.clone();
-    state.trace_a = Some(ids[0]);
-    state.trace_b = Some(ids[1]);
+    state.reference_trace = Some(ids[0]);
+    state.delayed_trace = Some(ids[1]);
     harness
         .state_mut()
         .apply_test_alignment(AlignmentCommand::Update(state));
@@ -121,13 +121,9 @@ fn alignment_screenshot(theme: Theme, name: &str) {
     harness.key_press(Key::Num2);
     harness.step();
     harness.step();
-    let proposal = harness
-        .state()
-        .session()
-        .alignment
-        .proposal_delay_ms
-        .unwrap();
-    assert!((proposal.abs() - 1.2).abs() < 0.05, "{proposal}");
+    let solutions = harness.state().session().alignment.solutions.unwrap();
+    let proposal = solutions.positive.delay_ms;
+    assert!((proposal.abs() - 1.2).abs() < 0.05, "{solutions:?}");
     assert!(save_screenshot(&mut harness, name).exists());
 }
 

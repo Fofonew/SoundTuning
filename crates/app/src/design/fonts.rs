@@ -10,6 +10,7 @@ const INTER_SEMIBOLD: &[u8] = include_bytes!("../../assets/fonts/Inter-SemiBold.
 const MONO_REGULAR: &[u8] = include_bytes!("../../assets/fonts/JetBrainsMono-Regular.ttf");
 const MONO_MEDIUM: &[u8] = include_bytes!("../../assets/fonts/JetBrainsMono-Medium.ttf");
 const MONO_SEMIBOLD: &[u8] = include_bytes!("../../assets/fonts/JetBrainsMono-SemiBold.ttf");
+const ICONS: &[u8] = include_bytes!("../../assets/fonts/Phosphor-Regular.ttf");
 
 const INTER_REGULAR_NAME: &str = "Inter-Regular";
 const INTER_MEDIUM_NAME: &str = "Inter-Medium";
@@ -17,11 +18,13 @@ const INTER_SEMIBOLD_NAME: &str = "Inter-SemiBold";
 const MONO_REGULAR_NAME: &str = "JetBrainsMono-Regular";
 const MONO_MEDIUM_NAME: &str = "JetBrainsMono-Medium";
 const MONO_SEMIBOLD_NAME: &str = "JetBrainsMono-SemiBold";
+const ICONS_NAME: &str = "Phosphor-Regular";
 
 pub const UI_MEDIUM_FAMILY: &str = "ui-medium";
 pub const UI_SEMIBOLD_FAMILY: &str = "ui-semibold";
 pub const VALUE_MEDIUM_FAMILY: &str = "value-medium";
 pub const VALUE_SEMIBOLD_FAMILY: &str = "value-semibold";
+pub const ICON_FAMILY: &str = "icons";
 
 pub fn font_definitions() -> FontDefinitions {
     let mut definitions = FontDefinitions::default();
@@ -43,6 +46,7 @@ pub fn font_definitions() -> FontDefinitions {
         (MONO_REGULAR_NAME, MONO_REGULAR),
         (MONO_MEDIUM_NAME, MONO_MEDIUM),
         (MONO_SEMIBOLD_NAME, MONO_SEMIBOLD),
+        (ICONS_NAME, ICONS),
     ] {
         definitions
             .font_data
@@ -81,6 +85,10 @@ pub fn font_definitions() -> FontDefinitions {
             with_fallback(primary, fallback),
         );
     }
+    definitions.families.insert(
+        FontFamily::Name(ICON_FAMILY.into()),
+        vec![ICONS_NAME.to_owned()],
+    );
     definitions
 }
 
@@ -114,6 +122,10 @@ pub fn value_semibold(size: f32) -> FontId {
 
 pub fn caption() -> FontId {
     ui(text_size::CAPTION)
+}
+
+pub fn icon(size: f32) -> FontId {
+    FontId::new(size, FontFamily::Name(ICON_FAMILY.into()))
 }
 
 pub fn label() -> FontId {

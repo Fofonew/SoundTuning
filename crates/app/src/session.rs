@@ -6,12 +6,13 @@ use std::thread::JoinHandle;
 
 use anyhow::Context;
 use dsp_core::{
-    CapturedSpectrum, Complex64, Smoothing, find_optimal_alignment, power_average_db, power_to_db,
-    summed_response_db,
+    CapturedSpectrum, Complex64, Polarity, Smoothing, analyze_alignment, power_average_db,
+    power_to_db, summed_response_db,
 };
 use engine::MeasurementSnapshot;
 use serde::{Deserialize, Serialize};
 
+use crate::alignment_state::{AlignmentChoice, AlignmentSolutions, SEARCH_RANGE_MS};
 use crate::design::tokens::STORED_TRACE_COLOR_COUNT;
 use crate::text;
 
@@ -159,8 +160,7 @@ pub struct AlignmentSumKey {
     traces: [*const Trace; 2],
     offsets_db_bits: [u64; 2],
     smoothing_fractions: [u32; 2],
-    delay_ms_bits: u64,
-    inverted: bool,
+    settings: [Option<(u64, bool)>; 4],
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -331,9 +331,9 @@ impl Session {
         if !self.alignment.is_ready() {
             return None;
         }
-        let a = self.trace(self.alignment.trace_a?)?;
-        let b = self.trace(self.alignment.trace_b?)?;
-        Some((a.complex_response(), b.complex_response()))
+        let reference = self.trace(self.alignment.reference_trace?)?;
+        let delayed = self.trace(self.alignment.delayed_trace?)?;
+        Some((reference.complex_response(), delayed.complex_response()))
     }
 
     pub fn alignment_sum_key(&self) -> Option<AlignmentSumKey> {
@@ -341,44 +341,73 @@ impl Session {
             return None;
         }
         let find = |id| self.traces.iter().find(|trace| Some(trace.id) == id);
-        let a = find(self.alignment.trace_a)?;
-        let b = find(self.alignment.trace_b)?;
+        let reference = find(self.alignment.reference_trace)?;
+        let delayed = find(self.alignment.delayed_trace)?;
         Some(AlignmentSumKey {
-            traces: [Arc::as_ptr(a), Arc::as_ptr(b)],
-            offsets_db_bits: [a.offset_db.to_bits(), b.offset_db.to_bits()],
-            smoothing_fractions: [a.metadata.smoothing_fraction, b.metadata.smoothing_fraction],
-            delay_ms_bits: self.alignment.delay_ms.to_bits(),
-            inverted: self.alignment.inverted,
+            traces: [Arc::as_ptr(reference), Arc::as_ptr(delayed)],
+            offsets_db_bits: [reference.offset_db.to_bits(), delayed.offset_db.to_bits()],
+            smoothing_fractions: [
+                reference.metadata.smoothing_fraction,
+                delayed.metadata.smoothing_fraction,
+            ],
+            settings: AlignmentChoice::ALL.map(|choice| {
+                self.alignment
+                    .setting(choice)
+                    .map(|(delay_ms, inverted)| (delay_ms.to_bits(), inverted))
+            }),
         })
     }
 
-    pub fn refresh_alignment_proposal(&mut self, frequencies_hz: &[f64], adopt: bool) {
-        let proposal = self.alignment_responses().and_then(|(a, b)| {
-            find_optimal_alignment(&a, &b, frequencies_hz, &self.alignment.search())
+    pub fn refresh_alignment_solutions(&mut self, frequencies_hz: &[f64]) {
+        let solutions = self
+            .alignment_responses()
+            .and_then(|(reference, delayed)| {
+                analyze_alignment(
+                    &reference,
+                    &delayed,
+                    frequencies_hz,
+                    self.alignment.band_hz(),
+                    SEARCH_RANGE_MS,
+                )
                 .ok()
                 .flatten()
-        });
-        self.alignment.proposal_delay_ms = proposal.map(|result| result.delay_ms);
-        self.alignment.proposal_inverted =
-            proposal.map(|result| result.polarity == dsp_core::Polarity::Inverted);
-        if adopt {
-            self.alignment.use_proposal();
-        }
+            })
+            .map(AlignmentSolutions::from);
+        self.alignment.adopt_solutions(solutions);
     }
 
-    pub fn predicted_alignment_sum_db(&self, frequencies_hz: &[f64]) -> Option<Vec<Option<f64>>> {
-        let (a, b) = self.alignment_responses()?;
-        let mut output = vec![None; a.len()];
-        summed_response_db(
-            &a,
-            &b,
-            frequencies_hz,
-            self.alignment.delay_ms,
-            self.alignment.polarity(),
-            &mut output,
-        )
-        .ok()?;
-        output.iter().any(Option::is_some).then_some(output)
+    pub fn predicted_alignment_sums_db(
+        &self,
+        frequencies_hz: &[f64],
+    ) -> Vec<(AlignmentChoice, Vec<Option<f64>>)> {
+        let Some((reference, delayed)) = self.alignment_responses() else {
+            return Vec::new();
+        };
+        AlignmentChoice::ALL
+            .into_iter()
+            .filter_map(|choice| {
+                let (delay_ms, inverted) = self.alignment.setting(choice)?;
+                let polarity = if inverted {
+                    Polarity::Inverted
+                } else {
+                    Polarity::Normal
+                };
+                let mut output = vec![None; reference.len()];
+                summed_response_db(
+                    &reference,
+                    &delayed,
+                    frequencies_hz,
+                    delay_ms,
+                    polarity,
+                    &mut output,
+                )
+                .ok()?;
+                output
+                    .iter()
+                    .any(Option::is_some)
+                    .then_some((choice, output))
+            })
+            .collect()
     }
 
     pub fn to_csv(&self, frequencies_hz: &[f64]) -> String {
@@ -845,10 +874,10 @@ mod tests {
     fn removing_a_trace_forgets_it_everywhere() {
         let mut session = Session::default();
         let id = session.capture(&snapshot(0.0), 48, 0, "21:42").unwrap();
-        session.alignment.trace_a = Some(id);
+        session.alignment.reference_trace = Some(id);
         session.remove(id);
         assert!(session.trace(id).is_none());
-        assert_eq!(session.alignment.trace_a, None);
+        assert_eq!(session.alignment.reference_trace, None);
     }
 
     #[test]
@@ -996,32 +1025,41 @@ mod tests {
             .collect();
         let id_a = session.capture(&a, 48, 0, "21:42").unwrap();
         let id_b = session.capture(&b, 48, 0, "21:43").unwrap();
-        session.alignment.trace_a = Some(id_a);
-        session.alignment.trace_b = Some(id_b);
+        session.alignment.reference_trace = Some(id_a);
+        session.alignment.delayed_trace = Some(id_b);
         (session, frequencies)
     }
 
     #[test]
-    fn alignment_proposal_delays_a_when_b_arrives_late_and_is_adopted() {
+    fn late_delay_trace_asks_to_delay_the_reference_with_positive_polarity() {
         let (mut session, frequencies) = aligned_pair(1.5);
-        session.refresh_alignment_proposal(&frequencies, true);
-        let proposal = session.alignment.proposal_delay_ms.unwrap();
-        assert!((proposal + 1.5).abs() <= 0.02, "{proposal}");
-        assert_eq!(session.alignment.proposal_inverted, Some(false));
-        assert_eq!(session.alignment.delay_ms, proposal);
-        let sum = session.predicted_alignment_sum_db(&frequencies).unwrap();
+        session.refresh_alignment_solutions(&frequencies);
+        let solutions = session.alignment.solutions.unwrap();
+        assert!(
+            (solutions.positive.delay_ms + 1.5).abs() <= 0.02,
+            "{solutions:?}"
+        );
+        assert!(!solutions.positive.inverted);
+        assert!(solutions.negative.inverted);
+        assert_eq!(session.alignment.choice, AlignmentChoice::Positive);
+        let sums = session.predicted_alignment_sums_db(&frequencies);
+        assert_eq!(sums.len(), 4);
         let index_100hz = frequencies
             .iter()
             .position(|frequency_hz| *frequency_hz >= 100.0)
             .unwrap();
-        assert!((sum[index_100hz].unwrap() - 6.02).abs() < 0.05);
+        let (_, positive) = &sums[0];
+        assert!((positive[index_100hz].unwrap() - 6.02).abs() < 0.05);
     }
 
     #[test]
     fn identical_traces_sum_to_six_db_without_delay() {
         let (mut session, frequencies) = aligned_pair(0.0);
-        session.alignment.delay_ms = 0.0;
-        let sum = session.predicted_alignment_sum_db(&frequencies).unwrap();
+        session.alignment.choice = AlignmentChoice::Custom;
+        session.alignment.custom_delay_ms = 0.0;
+        let sums = session.predicted_alignment_sums_db(&frequencies);
+        let (choice, sum) = &sums[0];
+        assert_eq!(*choice, AlignmentChoice::Custom);
         assert!(
             sum.iter()
                 .flatten()
@@ -1035,8 +1073,8 @@ mod tests {
         for trace in &mut session.traces {
             Arc::make_mut(trace).response.fill(None);
         }
-        session.refresh_alignment_proposal(&frequencies, true);
-        assert_eq!(session.alignment.proposal_delay_ms, None);
-        assert_eq!(session.predicted_alignment_sum_db(&frequencies), None);
+        session.refresh_alignment_solutions(&frequencies);
+        assert_eq!(session.alignment.solutions, None);
+        assert!(session.predicted_alignment_sums_db(&frequencies).is_empty());
     }
 }

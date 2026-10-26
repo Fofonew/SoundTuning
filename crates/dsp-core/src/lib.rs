@@ -18,8 +18,9 @@ pub use acoustics::{
     DEFAULT_AIR_TEMPERATURE_CELSIUS, distance_m_for_delay_ms, speed_of_sound_m_per_s,
 };
 pub use alignment::{
-    AlignmentCriterion, AlignmentResult, AlignmentSearch, DEFAULT_ALIGNMENT_BAND_HZ, Polarity,
-    find_optimal_alignment, summed_response_db,
+    AlignmentAnalysis, AlignmentCriterion, AlignmentResult, AlignmentSearch,
+    DEFAULT_ALIGNMENT_BAND_HZ, Polarity, analyze_alignment, find_optimal_alignment,
+    summed_response_db,
 };
 pub use auto_eq::{AutoEqResult, AutoEqSettings, auto_eq};
 pub use averaging::{Averaging, CrossSpectrumAccumulator, exponential_smoothing_coefficient};

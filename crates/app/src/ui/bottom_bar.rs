@@ -4,6 +4,7 @@ use engine::{FFT_LENGTH_CHOICES, TIME_CONSTANT_CHOICES_S};
 use crate::actions::Action;
 use crate::config::StoredAnalysis;
 use crate::design::Palette;
+use crate::design::icons::{self, icon_button};
 use crate::design::tokens::spacing;
 use crate::design::widgets::{Emphasis, action_button, action_button_width, chip, chip_width};
 use crate::text;
@@ -131,6 +132,7 @@ struct BarButton {
     emphasis: Emphasis,
     enabled: bool,
     secondary: bool,
+    icon: Option<&'static str>,
 }
 
 fn bar_buttons(model: &BottomBarModel) -> [BarButton; 6] {
@@ -140,6 +142,15 @@ fn bar_buttons(model: &BottomBarModel) -> [BarButton; 6] {
         emphasis,
         enabled,
         secondary,
+        icon: None,
+    };
+    let icon = |label, action, glyph| BarButton {
+        label,
+        action,
+        emphasis: Emphasis::Quiet,
+        enabled: true,
+        secondary: false,
+        icon: Some(glyph),
     };
     let (start_label, start_emphasis) = if model.running {
         (text::BUTTON_STOP, Emphasis::Secondary)
@@ -173,27 +184,17 @@ fn bar_buttons(model: &BottomBarModel) -> [BarButton; 6] {
             model.running,
             false,
         ),
-        button(
+        icon(
             text::BUTTON_TOGGLE_PANEL,
             Action::ToggleSidePanel,
-            Emphasis::Quiet,
-            true,
-            false,
+            icons::SIDEBAR,
         ),
-        button(
+        icon(
             text::BUTTON_AUDIO_SETTINGS,
             Action::OpenAudioSettings,
-            Emphasis::Quiet,
-            true,
-            false,
+            icons::SLIDERS,
         ),
-        button(
-            text::BUTTON_PALETTE,
-            Action::OpenPalette,
-            Emphasis::Quiet,
-            true,
-            true,
-        ),
+        icon(text::BUTTON_PALETTE, Action::OpenPalette, icons::COMMAND),
     ]
 }
 
@@ -252,6 +253,9 @@ fn required_width(
         .iter()
         .filter(|button| density.shows_secondary_items() || !button.secondary)
         .map(|button| {
+            if button.icon.is_some() {
+                return icons::icon_button_width();
+            }
             let shortcut = density
                 .shows_shortcut(button.emphasis)
                 .then(|| button.action.shortcut_text(is_mac))
@@ -365,6 +369,16 @@ pub fn show(
             ui.spacing_mut().item_spacing.x = spacing::SM;
             for button in bar_buttons(model) {
                 if !density.shows_secondary_items() && button.secondary {
+                    continue;
+                }
+                if let Some(glyph) = button.icon {
+                    let tooltip = text::with_shortcut(
+                        button.action.label(),
+                        button.action.shortcut_text(is_mac).as_deref(),
+                    );
+                    if icon_button(ui, palette, glyph, button.label, &tooltip, false).clicked() {
+                        actions.push(button.action);
+                    }
                     continue;
                 }
                 let shortcut = density

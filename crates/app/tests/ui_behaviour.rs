@@ -446,7 +446,8 @@ fn unreadable_session_is_reported_at_launch() {
 }
 
 #[test]
-fn alignment_panel_proposes_a_delay_and_shift_drag_picks_the_band() {
+fn delay_analysis_offers_pos_neg_flat_custom_and_shift_drag_picks_a_custom_range() {
+    use soundtuning::alignment_state::{AlignmentChoice, AlignmentRange};
     use soundtuning::ui::alignment_panel::AlignmentCommand;
     use soundtuning::ui::side_panel::SideTab;
     let mut harness = harness(file_options(Theme::Night, true));
@@ -460,45 +461,71 @@ fn alignment_panel_proposes_a_delay_and_shift_drag_picks_the_band() {
         .map(|trace| trace.id)
         .collect();
     let mut state = harness.state().session().alignment.clone();
-    state.trace_a = Some(ids[0]);
-    state.trace_b = Some(ids[1]);
+    state.reference_trace = Some(ids[0]);
+    state.delayed_trace = Some(ids[1]);
     harness
         .state_mut()
         .apply_test_alignment(AlignmentCommand::Update(state));
     harness.run_steps(2);
     let alignment = harness.state().session().alignment.clone();
-    let proposal = alignment.proposal_delay_ms.expect("a proposal");
-    assert!(proposal.abs() < 0.05, "same signal twice: {proposal}");
-    assert_eq!(alignment.delay_ms, proposal);
-    harness.get_by_label(soundtuning::text::ALIGNMENT_USE_PROPOSAL);
+    let solutions = alignment.solutions.expect("solutions");
+    assert!(
+        solutions.positive.delay_ms.abs() < 0.05,
+        "same signal twice: {solutions:?}"
+    );
+    assert!(!solutions.positive.inverted && solutions.negative.inverted);
+    assert_eq!(alignment.choice, AlignmentChoice::Positive);
+    assert_eq!(alignment.range, AlignmentRange::Low);
+    for label in [
+        "Pos",
+        "Neg",
+        "Flat",
+        "Custom",
+        "Range Low",
+        "Range Mid",
+        "Range Full",
+        "Range Custom",
+    ] {
+        harness.get_by_label(label);
+    }
+
+    let mut custom = alignment.clone();
+    custom.custom_delay_ms = 3.0;
+    custom.choice = AlignmentChoice::Custom;
+    harness
+        .state_mut()
+        .apply_test_alignment(AlignmentCommand::Update(custom));
+    harness.run_steps(2);
+    assert_eq!(
+        harness.state().session().alignment.selected_setting(),
+        Some((3.0, false))
+    );
 
     shift_drag(&mut harness, 200.0, 420.0);
     let band = harness.state().session().alignment.clone();
-    assert!(
-        band.band_low_hz > 30.0 && band.band_low_hz < 80.0,
-        "{band:?}"
-    );
-    assert!(
-        band.band_high_hz > 120.0 && band.band_high_hz < 300.0,
-        "{band:?}"
-    );
+    let (low_hz, high_hz) = band.band_hz();
+    assert_eq!(band.range, AlignmentRange::Custom);
+    assert!(low_hz > 30.0 && low_hz < 80.0, "{band:?}");
+    assert!(high_hz > 120.0 && high_hz < 300.0, "{band:?}");
     assert_eq!(
         harness.state().plot_view(),
         soundtuning::plot::PlotView::default()
     );
-    let first_band = (band.band_low_hz, band.band_high_hz);
+    let first_band = band.band_hz();
 
     shift_drag(&mut harness, 600.0, 900.0);
     let second = harness.state().session().alignment.clone();
-    assert!(second.band_low_hz > 150.0, "{second:?}");
+    assert!(second.band_hz().0 > 150.0, "{second:?}");
 
     harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
     harness.run_steps(2);
-    let undone = harness.state().session().alignment.clone();
-    assert_eq!((undone.band_low_hz, undone.band_high_hz), first_band);
+    assert_eq!(harness.state().session().alignment.band_hz(), first_band);
     harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
     harness.run_steps(2);
-    assert_eq!(harness.state().session().alignment.band_low_hz, 60.0);
+    assert_eq!(
+        harness.state().session().alignment.range,
+        AlignmentRange::Low
+    );
 }
 
 fn shift_drag(

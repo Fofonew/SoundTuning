@@ -107,3 +107,12 @@ Critères : hiérarchie visuelle, lisibilité à 1 m, alignements, espacements, 
 - Critiques : dans le pied des réglages audio, « Actualiser » passait à la ligne vers le bas et recouvrait l'aide (rangée à retour automatique dans une mise en page de bas en haut).
 - Corrections : les deux boutons sont sur une ligne s'ils tiennent, sinon empilés explicitement. Vérifié à 1024 × 600 : traces, alignement, EQ, assistant, sans chevauchement ; à 1280 × 680 : raccourcis des boutons discrets masqués seulement.
 - Captures après : `docs/ui-review/fenetre-reduite/apres_1280_125.png`, `apres_1024.png`, `apres_min_traces.png`, `apres_min_eq.png`.
+
+### Delay Analysis, termes anglais et icônes — tour 1 (2026-10-26, demande de l'utilisateur)
+- Écrans : alignement (Nuit, Plein jour), mesure Nuit, réglages audio.
+- Critiques : colonne « Custom » trop étroite (« Cust / om » sur deux lignes, « Pol + » renvoyé à la ligne) ; libellés « Custom » en double (plage et solution) pour l'accessibilité.
+- Corrections : espacement entre colonnes 4 px et marge intérieure des boutons réduite à 2 px ; boutons de plage nommés « Range Low »… pour AccessKit.
+
+### Delay Analysis — tour 2 (2026-10-26)
+- Critiques : aucune régression ; quatre colonnes lisibles (Pos magenta, Neg vert, Flat violet, Custom corail, contrastés dans les deux thèmes), barres de puissance Pos / Neg, sommes non sélectionnées limitées à la plage (50–200 Hz surlignée), réglage à recopier dans la couleur de la solution. Icônes nettes à 18 px, alignées sur les boutons texte ; barres sans chevauchement à 1024 × 600 (test `bars_and_audio_settings_do_not_overlap_in_small_windows`).
+- Captures après : `docs/ui-review/systune/alignment-tour2-apres.png`, `alignment_daylight-tour2-apres.png`, `measurement_night-tour2-apres.png`, `audio_settings-tour2-apres.png`.

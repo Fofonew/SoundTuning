@@ -61,6 +61,14 @@ Cocher, dater et noter les observations. Matériel de référence : UAX 2-2, mic
 - [ ] Capturer une trace en 1/48, la passer en 1/6 (ligne « Définition ») : identique à une mesure live en 1/6 sur le même signal (comparer avec le lissage de la barre inférieure en 1/6) ; Cmd+Z revient à 1/48.
 - [ ] Session de 20 traces : la sauvegarde automatique reste invisible (pas d'à-coup du tracé).
 
+## Delay Analysis (alignement façon SysTune)
+
+- [ ] Sub et tête captés séparément (S), onglet Alignment : Reference = tête, Delay = sub ; Pos, Neg et Flat s'affichent avec leurs courbes de sommation ; la plus forte de Pos / Neg est sélectionnée.
+- [ ] Recopier la solution dans le processeur (délai et polarité indiqués sous « Réglage à recopier »), mesurer les deux sources ensemble : la mesure suit la courbe prédite dans la plage (± 1 dB).
+- [ ] Custom : saisir un délai et inverser la polarité ; la courbe Custom suit immédiatement.
+- [ ] Range : Low, Mid, Full, Custom (Crossover en Hz + largeur) ; Maj + glisser sur le tracé passe en Custom.
+- [ ] Les boutons en icône (Superposer, Plein écran, Commandes, Audio, Panneau) affichent leur libellé au survol.
+
 ## Mises à jour et petites fenêtres (Windows)
 
 - [ ] Hors connexion (Wi-Fi coupé) : SoundTuning démarre normalement, aucun message ; palette › « Rechercher les mises à jour » affiche « Mises à jour injoignables (hors connexion ?) ».

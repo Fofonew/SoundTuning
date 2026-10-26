@@ -3,6 +3,7 @@ use eframe::egui::{self, Align, Layout, RichText};
 use crate::actions::Action;
 use crate::design::Palette;
 use crate::design::fonts;
+use crate::design::icons::{self, icon_button};
 use crate::design::tokens::{spacing, text_size};
 use crate::plot::{PlotLayout, ViewKind};
 use crate::text;
@@ -92,16 +93,18 @@ pub fn show(
             &mut commands,
         );
         ui.add_space(spacing::MD);
-        let stacked = ui
-            .add(egui::Button::selectable(
-                layout.upper.is_some(),
-                text::VIEW_STACKED,
-            ))
-            .on_hover_text(hint(
+        let stacked = icon_button(
+            ui,
+            palette,
+            icons::STACK,
+            text::VIEW_STACKED,
+            &hint(
                 text::ACTION_TOGGLE_STACKED_VIEWS,
                 Action::ToggleStackedViews,
                 is_mac,
-            ));
+            ),
+            layout.upper.is_some(),
+        );
         if stacked.clicked() {
             commands.push(ViewCommand::ToggleStacked);
         }
@@ -128,14 +131,19 @@ pub fn show(
             }
         }
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            let label = if fullscreen {
-                text::VIEW_EXIT_FULLSCREEN
+            let (label, glyph) = if fullscreen {
+                (text::VIEW_EXIT_FULLSCREEN, icons::EXIT_FULLSCREEN)
             } else {
-                text::VIEW_FULLSCREEN
+                (text::VIEW_FULLSCREEN, icons::FULLSCREEN)
             };
-            let response = ui
-                .add(egui::Button::selectable(fullscreen, label))
-                .on_hover_text(hint(label, Action::ToggleFullscreen, is_mac));
+            let response = icon_button(
+                ui,
+                palette,
+                glyph,
+                label,
+                &hint(label, Action::ToggleFullscreen, is_mac),
+                fullscreen,
+            );
             if response.clicked() {
                 commands.push(ViewCommand::ToggleFullscreen);
             }

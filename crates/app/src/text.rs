@@ -26,11 +26,11 @@ pub const KEY_SPACE: &str = "Espace";
 pub const KEY_CTRL: &str = "Ctrl";
 pub const KEY_SHIFT: &str = "Maj";
 
-pub const ACTION_TOGGLE_MEASUREMENT: &str = "Démarrer / arrêter la mesure";
-pub const ACTION_FIND_DELAY: &str = "Trouver le délai";
-pub const ACTION_APPLY_DELAY: &str = "Appliquer le délai";
-pub const ACTION_CAPTURE_TRACE: &str = "Capturer une trace";
-pub const ACTION_TOGGLE_FREEZE: &str = "Figer / libérer l'affichage";
+pub const ACTION_TOGGLE_MEASUREMENT: &str = "Start / Stop (mesure continue)";
+pub const ACTION_FIND_DELAY: &str = "Peak : trouver le délai";
+pub const ACTION_APPLY_DELAY: &str = "Apply : appliquer le délai trouvé";
+pub const ACTION_CAPTURE_TRACE: &str = "Capture : mémoriser une trace";
+pub const ACTION_TOGGLE_FREEZE: &str = "Freeze / Unfreeze (figer l'affichage)";
 pub const ACTION_RANGE_FULL: &str = "Plage : plein spectre";
 pub const ACTION_RANGE_SUB: &str = "Plage : sub (20–200 Hz)";
 pub const ACTION_RANGE_MID: &str = "Plage : médium (150 Hz–4 kHz)";
@@ -41,32 +41,32 @@ pub const ACTION_OPEN_PALETTE: &str = "Palette de commandes";
 pub const ACTION_UNDO: &str = "Annuler";
 pub const ACTION_REDO: &str = "Rétablir";
 pub const ACTION_TOGGLE_SIDE_PANEL: &str = "Afficher / masquer le panneau latéral";
-pub const ACTION_TOGGLE_GENERATOR: &str = "Générateur marche / arrêt";
+pub const ACTION_TOGGLE_GENERATOR: &str = "Pink noise on / off";
 pub const ACTION_CALIBRATE_LATENCY: &str = "Calibrer la latence de la carte";
 pub const ACTION_ADD_EQ_FILTER: &str = "Ajouter un filtre d'EQ";
 pub const ACTION_EXPORT_SESSION: &str = "Exporter (CSV, filtres)";
 pub const ACTION_RESTART_MEASUREMENT: &str = "Relancer la mesure";
 
-pub const BUTTON_START: &str = "Démarrer";
-pub const BUTTON_STOP: &str = "Arrêter";
-pub const BUTTON_CAPTURE: &str = "Capturer";
-pub const BUTTON_FREEZE: &str = "Figer";
-pub const BUTTON_UNFREEZE: &str = "Libérer";
-pub const BUTTON_FIND_DELAY: &str = "Trouver";
-pub const BUTTON_APPLY_DELAY: &str = "Appliquer";
+pub const BUTTON_START: &str = "Start";
+pub const BUTTON_STOP: &str = "Stop";
+pub const BUTTON_CAPTURE: &str = "Capture";
+pub const BUTTON_FREEZE: &str = "Freeze";
+pub const BUTTON_UNFREEZE: &str = "Unfreeze";
+pub const BUTTON_FIND_DELAY: &str = "Peak";
+pub const BUTTON_APPLY_DELAY: &str = "Apply";
 pub const BUTTON_PALETTE: &str = "Commandes";
 pub const BUTTON_AUDIO_SETTINGS: &str = "Audio";
 pub const ACTION_OPEN_AUDIO_SETTINGS: &str = "Réglages audio (entrée, sortie, canaux)";
 pub const AUDIO_SETTINGS_TITLE: &str = "Réglages audio";
 pub const AUDIO_SETTINGS_CLOSE: &str = "Fermer les réglages audio";
 pub const AUDIO_INPUT_DEVICE: &str = "Entrée (micro et référence)";
-pub const AUDIO_OUTPUT_DEVICE: &str = "Sortie (bruit rose)";
-pub const AUDIO_SAMPLE_RATE: &str = "Fréquence d'échantillonnage";
-pub const AUDIO_BUFFER: &str = "Taille de tampon";
+pub const AUDIO_OUTPUT_DEVICE: &str = "Sortie (pink noise)";
+pub const AUDIO_SAMPLE_RATE: &str = "Sample rate";
+pub const AUDIO_BUFFER: &str = "Buffer";
 pub const AUDIO_BUFFER_AUTO: &str = "Automatique";
-pub const AUDIO_REFERENCE_MODE: &str = "Référence";
-pub const AUDIO_REFERENCE_INTERNAL: &str = "Interne";
-pub const AUDIO_REFERENCE_LOOPBACK: &str = "Rebouclée";
+pub const AUDIO_REFERENCE_MODE: &str = "Reference";
+pub const AUDIO_REFERENCE_INTERNAL: &str = "Internal";
+pub const AUDIO_REFERENCE_LOOPBACK: &str = "Loopback";
 pub const AUDIO_SYSTEM_INPUT: &str = "Entrée par défaut du système";
 pub const AUDIO_AUTO_OUTPUT: &str = "Automatique";
 pub const AUDIO_NO_COMMON_RATE: &str = "Aucune fréquence commune à cette entrée et à cette sortie : choisissez une autre sortie ou la référence rebouclée.";
@@ -83,38 +83,38 @@ pub const BUTTON_CALIBRATE: &str = "Calibrer";
 pub const BUTTON_DISMISS: &str = "Fermer";
 pub const BUTTON_NEXT: &str = "Suivant";
 pub const BUTTON_BACK: &str = "Retour";
-pub const BUTTON_FINISH_WIZARD: &str = "Démarrer la mesure";
+pub const BUTTON_FINISH_WIZARD: &str = "Start";
 pub const BUTTON_SKIP_WIZARD: &str = "Passer";
 pub const BUTTON_TOGGLE_PANEL: &str = "Panneau";
 
-pub const STATUS_STOPPED: &str = "Arrêté";
-pub const STATUS_WARMING_UP: &str = "Préchauffage";
-pub const STATUS_RUNNING: &str = "Mesure";
-pub const STATUS_FROZEN: &str = "Figé";
+pub const STATUS_STOPPED: &str = "Stopped";
+pub const STATUS_WARMING_UP: &str = "Warm-up";
+pub const STATUS_RUNNING: &str = "Live";
+pub const STATUS_FROZEN: &str = "Frozen";
 pub const STATUS_ERROR: &str = "Erreur";
 pub const STATUS_FILE_FINISHED: &str = "Fichier terminé";
 
-pub const METER_REFERENCE: &str = "Réf.";
+pub const METER_REFERENCE: &str = "Ref";
 pub const METER_MEASUREMENT: &str = "Mic";
-pub const METER_CLIP: &str = "ÉCRÊTAGE";
+pub const METER_CLIP: &str = "CLIP";
 
-pub const DELAY_TITLE: &str = "Délai";
+pub const DELAY_TITLE: &str = "Delay";
 pub const DELAY_NONE: &str = "— ms";
 pub const DELAY_CONFIDENCE: &str = "Confiance du délai";
 
 pub const CHIP_FFT: &str = "FFT";
-pub const CHIP_AVERAGING: &str = "Moyenne";
-pub const CHIP_SMOOTHING: &str = "Lissage";
-pub const CHIP_COHERENCE: &str = "Seuil γ²";
-pub const CHIP_REFERENCE: &str = "Réf.";
-pub const CHIP_GENERATOR: &str = "Bruit rose";
+pub const CHIP_AVERAGING: &str = "Avg";
+pub const CHIP_SMOOTHING: &str = "Smoothing";
+pub const CHIP_COHERENCE: &str = "Coh γ²";
+pub const CHIP_REFERENCE: &str = "Ref";
+pub const CHIP_GENERATOR: &str = "Pink noise";
 pub const AVERAGING_INFINITE: &str = "∞";
-pub const SMOOTHING_NONE: &str = "aucun";
-pub const REFERENCE_INTERNAL: &str = "interne";
-pub const GENERATOR_OFF: &str = "arrêt";
+pub const SMOOTHING_NONE: &str = "off";
+pub const REFERENCE_INTERNAL: &str = "internal";
+pub const GENERATOR_OFF: &str = "off";
 
 pub const TAB_TRACES: &str = "Traces";
-pub const TAB_ALIGNMENT: &str = "Alignement";
+pub const TAB_ALIGNMENT: &str = "Alignment";
 pub const TAB_EQ: &str = "EQ";
 pub const EMPTY_TRACES_TITLE: &str = "Aucune trace";
 pub const EMPTY_TRACES_BODY: &str = "Appuyez sur S pour figer la mesure en cours dans une trace.";
@@ -127,11 +127,11 @@ pub const EMPTY_EQ_BODY: &str = "Double-cliquez sur le tracé ou appuyez sur E p
 pub const PLOT_EMPTY_TITLE: &str = "Prêt à mesurer";
 pub const PLOT_EMPTY_BODY: &str = "Appuyez sur Espace pour démarrer la mesure continue.";
 pub const PLOT_WARMING_UP: &str = "Remplissage de la fenêtre d'analyse…";
-pub const COHERENCE_LABEL: &str = "Cohérence";
+pub const COHERENCE_LABEL: &str = "Coherence";
 pub const AXIS_DB: &str = "dB";
 pub const COHERENCE_AXIS_MAX: &str = "1";
 pub const COHERENCE_AXIS_MIN: &str = "0";
-pub const LIVE_TRACE_LABEL: &str = "Mesure";
+pub const LIVE_TRACE_LABEL: &str = "Live";
 pub const PLOT_ACCESSIBLE_LABEL: &str = "Réponse en fréquence (magnitude) et cohérence";
 pub const PHASE_PLOT_ACCESSIBLE_LABEL: &str = "Tracé de phase";
 pub const IMPULSE_PLOT_ACCESSIBLE_LABEL: &str = "Tracé de la réponse impulsionnelle";
@@ -143,8 +143,8 @@ pub const VIEW_MAGNITUDE: &str = "Magnitude";
 pub const VIEW_PHASE: &str = "Phase";
 pub const VIEW_IMPULSE: &str = "IR";
 pub const VIEW_IMPULSE_HINT: &str = "Réponse impulsionnelle";
-pub const VIEW_MAIN_LABEL: &str = "Vue";
-pub const VIEW_UPPER_LABEL: &str = "Au-dessus";
+pub const VIEW_MAIN_LABEL: &str = "View";
+pub const VIEW_UPPER_LABEL: &str = "Top";
 pub const VIEW_STACKED: &str = "Superposer";
 pub const VIEW_FULLSCREEN: &str = "Plein écran";
 pub const VIEW_EXIT_FULLSCREEN: &str = "Quitter le plein écran";
@@ -211,12 +211,12 @@ pub const WIZARD_PREVIEW_ERROR: &str = "La carte ne peut pas être ouverte";
 pub const NOTIFY_DELAY_FOUND: &str = "Délai trouvé";
 pub const NOTIFY_DELAY_APPLIED: &str = "Délai appliqué";
 pub const NOTIFY_DELAY_DRIFT: &str = "Délai changé";
-pub const NOTIFY_TRACKING_ON: &str = "Suivi du délai activé";
-pub const NOTIFY_TRACKING_OFF: &str = "Suivi du délai désactivé";
-pub const ACTION_TOGGLE_DELAY_TRACKING: &str = "Suivi du délai";
+pub const NOTIFY_TRACKING_ON: &str = "Track activé (suivi du délai)";
+pub const NOTIFY_TRACKING_OFF: &str = "Track désactivé (suivi du délai)";
+pub const ACTION_TOGGLE_DELAY_TRACKING: &str = "Track : suivi du délai";
 pub const ACTION_NUDGE_DELAY_DOWN: &str = "Délai −0,01 ms";
 pub const ACTION_NUDGE_DELAY_UP: &str = "Délai +0,01 ms";
-pub const BUTTON_TRACKING: &str = "Suivi";
+pub const BUTTON_TRACKING: &str = "Track";
 pub const TRACKING_ON_GLYPH: &str = "●";
 pub const TRACKING_OFF_GLYPH: &str = "○";
 pub const BUTTON_NUDGE_DOWN: &str = "−";
@@ -265,23 +265,36 @@ pub const NOTIFY_SESSION_CORRUPT_EMPTY: &str =
 pub const TRACE_RENAME: &str = "Renommer";
 
 pub const RANGE_SEPARATOR: &str = "–";
-pub const ALIGNMENT_TRACE_A: &str = "Trace A";
-pub const ALIGNMENT_TRACE_B: &str = "Trace B";
+pub const ALIGNMENT_TITLE: &str = "Delay Analysis";
+pub const ALIGNMENT_REFERENCE: &str = "Reference";
+pub const ALIGNMENT_DELAYED: &str = "Delay";
 pub const ALIGNMENT_CHOOSE_TRACE: &str = "Choisir…";
-pub const ALIGNMENT_CRITERION_LEVEL: &str = "Niveau max";
-pub const ALIGNMENT_CRITERION_FLAT: &str = "Plus plat";
-pub const ALIGNMENT_BAND: &str = "Bande";
-pub const ALIGNMENT_BAND_HINT: &str = "Maj + glisser sur le tracé pour choisir la bande.";
-pub const ALIGNMENT_PROPOSAL: &str = "Proposition";
-pub const ALIGNMENT_USE_PROPOSAL: &str = "Utiliser la proposition";
+pub const ALIGNMENT_RANGE: &str = "Range";
+pub const ALIGNMENT_RANGE_LOW: &str = "Low";
+pub const ALIGNMENT_RANGE_MID: &str = "Mid";
+pub const ALIGNMENT_RANGE_FULL: &str = "Full";
+pub const ALIGNMENT_RANGE_CUSTOM: &str = "Custom";
+pub const ALIGNMENT_CROSSOVER: &str = "Crossover";
+pub const ALIGNMENT_BANDWIDTH: &str = "Largeur";
+pub const ALIGNMENT_CROSSOVER_LABEL: &str = "Fréquence de raccord (crossover)";
+pub const ALIGNMENT_BANDWIDTH_LABEL: &str = "Largeur de la plage en octaves";
+pub const ALIGNMENT_BAND_HINT: &str = "Maj + glisser sur le tracé : plage Custom.";
+pub const ALIGNMENT_CHOICE_POSITIVE: &str = "Pos";
+pub const ALIGNMENT_CHOICE_NEGATIVE: &str = "Neg";
+pub const ALIGNMENT_CHOICE_FLAT: &str = "Flat";
+pub const ALIGNMENT_CHOICE_CUSTOM: &str = "Custom";
+pub const ALIGNMENT_UNITS: &str =
+    "Delay en ms (> 0 : retarder la trace Delay) · Pol de la trace Delay";
+pub const ALIGNMENT_POLARITY_ROW: &str = "Pol";
+pub const ALIGNMENT_POLARITY_NORMAL: &str = "+";
+pub const ALIGNMENT_POLARITY_INVERTED: &str = "−";
+pub const ALIGNMENT_CUSTOM_DELAY_LABEL: &str = "Delay Custom (ms, > 0 : retarder la trace Delay)";
+pub const ALIGNMENT_CUSTOM_POLARITY_LABEL: &str = "Polarité inversée (Custom)";
 pub const ALIGNMENT_APPLIED: &str = "Réglage à recopier dans le processeur";
-pub const ALIGNMENT_INVERT_B: &str = "Inverser la polarité de B";
-pub const ALIGNMENT_SIGN_HINT: &str = "Δ > 0 : retarder B\nΔ < 0 : retarder A";
 pub const ALIGNMENT_NO_DELAY: &str = "Aucun délai";
-pub const ALIGNMENT_DELTA: &str = "Δ";
-pub const ALIGNMENT_DELTA_LABEL: &str = "Délai Δ entre A et B";
-pub const ALIGNMENT_BAND_LOW: &str = "Bande : fréquence basse";
-pub const ALIGNMENT_BAND_HIGH: &str = "Bande : fréquence haute";
+pub const ALIGNMENT_NO_SOLUTION: &str = "Pas de Pos / Neg / Flat : il faut la phase des deux traces dans la plage (une moyenne de traces n'en a pas). Custom reste disponible.";
+pub const ALIGNMENT_POWER_HINT: &str =
+    "Barres : niveau de la somme Pos et Neg, relatif au meilleur des deux.";
 pub const EQ_FREQUENCY: &str = "Fréquence";
 pub const EQ_GAIN: &str = "Gain";
 pub const EQ_Q: &str = "Q";
@@ -301,25 +314,81 @@ pub const AUTO_EQ_HINT: &str =
 pub const NOTIFY_AUTO_EQ_NO_TARGET: &str =
     "Auto EQ : aucune mesure à égaliser (démarrez la mesure ou choisissez une trace).";
 pub const NOTIFY_AUTO_EQ_NOT_ENOUGH: &str = "Auto EQ : pas assez de points valides dans la plage.";
-pub const ALIGNMENT_NO_PROPOSAL: &str = "Pas de proposition : il faut la phase des deux traces dans la bande (une moyenne de traces n'en a pas).";
-pub const PREDICTED_SUM_LABEL: &str = "Somme prédite";
-pub const ALIGNMENT_POLARITY_SUFFIX: &str = " · B inversée";
+pub const ALIGNMENT_POLARITY_SUFFIX: &str = " · Pol −";
 
 pub fn format_signed_milliseconds(value: f64) -> String {
     let sign = if value > 0.0 { "+" } else { "" };
     format!("{sign}{}", format_milliseconds(value))
 }
 
-pub fn alignment_instruction(delay_ms: f64, inverted: bool) -> String {
+pub fn alignment_choice(choice: crate::alignment_state::AlignmentChoice) -> &'static str {
+    use crate::alignment_state::AlignmentChoice;
+    match choice {
+        AlignmentChoice::Positive => ALIGNMENT_CHOICE_POSITIVE,
+        AlignmentChoice::Negative => ALIGNMENT_CHOICE_NEGATIVE,
+        AlignmentChoice::Flat => ALIGNMENT_CHOICE_FLAT,
+        AlignmentChoice::Custom => ALIGNMENT_CHOICE_CUSTOM,
+    }
+}
+
+pub fn alignment_range(range: crate::alignment_state::AlignmentRange) -> &'static str {
+    use crate::alignment_state::AlignmentRange;
+    match range {
+        AlignmentRange::Low => ALIGNMENT_RANGE_LOW,
+        AlignmentRange::Mid => ALIGNMENT_RANGE_MID,
+        AlignmentRange::Full => ALIGNMENT_RANGE_FULL,
+        AlignmentRange::Custom => ALIGNMENT_RANGE_CUSTOM,
+    }
+}
+
+pub fn alignment_range_label(range: crate::alignment_state::AlignmentRange) -> String {
+    format!("{ALIGNMENT_RANGE} {}", alignment_range(range))
+}
+
+pub fn alignment_sum_label(choice: crate::alignment_state::AlignmentChoice) -> String {
+    format!("{} sum", alignment_choice(choice))
+}
+
+pub fn alignment_choice_summary(
+    choice: crate::alignment_state::AlignmentChoice,
+    setting: Option<(f64, bool)>,
+) -> String {
+    match setting {
+        Some((delay_ms, inverted)) => format!(
+            "{} : {} · Pol {}",
+            alignment_choice(choice),
+            format_signed_milliseconds(delay_ms),
+            if inverted {
+                ALIGNMENT_POLARITY_INVERTED
+            } else {
+                ALIGNMENT_POLARITY_NORMAL
+            }
+        ),
+        None => alignment_choice(choice).to_owned(),
+    }
+}
+
+pub fn alignment_instruction(
+    delay_ms: f64,
+    inverted: bool,
+    reference_name: &str,
+    delayed_name: &str,
+) -> String {
     let delay = if delay_ms.abs() < 0.005 {
         ALIGNMENT_NO_DELAY.to_owned()
     } else if delay_ms > 0.0 {
-        format!("Retarder B de {}", format_milliseconds(delay_ms))
+        format!(
+            "Delay « {delayed_name} » : {}",
+            format_milliseconds(delay_ms)
+        )
     } else {
-        format!("Retarder A de {}", format_milliseconds(-delay_ms))
+        format!(
+            "Delay « {reference_name} » : {}",
+            format_milliseconds(-delay_ms)
+        )
     };
     if inverted {
-        format!("{delay}{ALIGNMENT_POLARITY_SUFFIX}")
+        format!("{delay}{ALIGNMENT_POLARITY_SUFFIX} sur « {delayed_name} »")
     } else {
         delay
     }
@@ -891,12 +960,25 @@ mod tests {
 
     #[test]
     fn alignment_instruction_names_the_source_to_delay() {
-        assert_eq!(alignment_instruction(-1.5, false), "Retarder A de 1,50 ms");
         assert_eq!(
-            alignment_instruction(2.0, true),
-            "Retarder B de 2,00 ms · B inversée"
+            alignment_instruction(-1.5, false, "Top", "Sub"),
+            "Delay « Top » : 1,50 ms"
         );
-        assert_eq!(alignment_instruction(0.0, false), ALIGNMENT_NO_DELAY);
+        assert_eq!(
+            alignment_instruction(2.0, true, "Top", "Sub"),
+            "Delay « Sub » : 2,00 ms · Pol − sur « Sub »"
+        );
+        assert_eq!(
+            alignment_instruction(0.0, false, "Top", "Sub"),
+            ALIGNMENT_NO_DELAY
+        );
+        assert_eq!(
+            alignment_choice_summary(
+                crate::alignment_state::AlignmentChoice::Negative,
+                Some((-3.25, true))
+            ),
+            "Neg : −3,25 ms · Pol −"
+        );
     }
 
     #[test]

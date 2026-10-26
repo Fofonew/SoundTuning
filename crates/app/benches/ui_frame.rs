@@ -100,8 +100,8 @@ fn ui_frame(criterion: &mut Criterion) {
         .map(|trace| trace.id)
         .collect();
     let mut alignment = harness.state().session().alignment.clone();
-    alignment.trace_a = ids.first().copied();
-    alignment.trace_b = ids.get(1).copied();
+    alignment.reference_trace = ids.first().copied();
+    alignment.delayed_trace = ids.get(1).copied();
     harness
         .state_mut()
         .apply_test_alignment(AlignmentCommand::Update(alignment));

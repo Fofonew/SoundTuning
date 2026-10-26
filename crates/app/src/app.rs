@@ -6,7 +6,7 @@ use eframe::egui::{self, CornerRadius, Frame, Margin, Panel, Stroke};
 use engine::EngineCommand;
 
 use crate::actions::{Action, triggered_by_keyboard};
-use crate::alignment_state::normalized_band;
+use crate::alignment_state::AlignmentChoice;
 use crate::config::{AppConfig, ConfigStore};
 use crate::design::tokens::{STORED_TRACE_COLOR_COUNT, size, spacing, stroke};
 use crate::design::widgets::Tone;
@@ -47,7 +47,10 @@ const MILLISECONDS_PER_SECOND: f64 = 1000.0;
 const DELAY_NUDGE_MS: f64 = 0.01;
 const DELAY_DRIFT_NOTIFY_MS: f64 = 0.5;
 
-type CachedSum = (Option<AlignmentSumKey>, Option<Vec<Option<f64>>>);
+type CachedSums = (
+    Option<(AlignmentSumKey, AlignmentChoice, u64, u64)>,
+    Vec<(AlignmentChoice, Vec<Option<f64>>)>,
+);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum MergeKey {
@@ -159,7 +162,7 @@ pub struct SoundTuningApp {
     rename: RenameState,
     last_merge: Option<MergeKey>,
     drift_notified: bool,
-    alignment_sum: Option<CachedSum>,
+    alignment_sums: Option<CachedSums>,
     eq_curve: Option<CachedEqCurve>,
     last_plot_rect: Option<egui::Rect>,
     audio_settings: Option<AudioSettingsPanel>,
@@ -213,7 +216,7 @@ impl SoundTuningApp {
             rename: RenameState::default(),
             last_merge: None,
             drift_notified: false,
-            alignment_sum: None,
+            alignment_sums: None,
             eq_curve: None,
             last_plot_rect: None,
             audio_settings: None,
@@ -360,13 +363,13 @@ impl SoundTuningApp {
     }
 
     fn apply_band_selection(&mut self, selection: BandSelection) {
-        let (low_hz, high_hz) = normalized_band(selection.low_hz, selection.high_hz);
         let frequencies = std::sync::Arc::clone(self.measurement.grid());
         self.edit_session_merged(MergeKey::Alignment, |session| {
-            session.alignment.band_low_hz = low_hz;
-            session.alignment.band_high_hz = high_hz;
+            session
+                .alignment
+                .set_custom_band(selection.low_hz, selection.high_hz);
             if selection.finished {
-                session.refresh_alignment_proposal(frequencies.frequencies_hz(), true);
+                session.refresh_alignment_solutions(frequencies.frequencies_hz());
             }
         });
         if selection.finished {
@@ -552,16 +555,38 @@ impl SoundTuningApp {
         }
     }
 
-    fn refresh_alignment_sum(&mut self) {
-        let key = self.session.alignment_sum_key();
-        if self.alignment_sum.as_ref().map(|(cached, _)| *cached) == Some(key) {
+    fn refresh_alignment_sums(&mut self) {
+        let alignment = &self.session.alignment;
+        let (band_low_hz, band_high_hz) = alignment.band_hz();
+        let key = self.session.alignment_sum_key().map(|key| {
+            (
+                key,
+                alignment.choice,
+                band_low_hz.to_bits(),
+                band_high_hz.to_bits(),
+            )
+        });
+        if self.alignment_sums.as_ref().map(|(cached, _)| *cached) == Some(key) {
             return;
         }
-        let values = key.and_then(|_| {
-            self.session
-                .predicted_alignment_sum_db(self.measurement.grid().frequencies_hz())
-        });
-        self.alignment_sum = Some((key, values));
+        let frequencies = self.measurement.grid().frequencies_hz();
+        let selected = alignment.choice;
+        let sums = self
+            .session
+            .predicted_alignment_sums_db(frequencies)
+            .into_iter()
+            .map(|(choice, mut values)| {
+                if choice != selected {
+                    for (value, frequency_hz) in values.iter_mut().zip(frequencies) {
+                        if !(band_low_hz..=band_high_hz).contains(frequency_hz) {
+                            *value = None;
+                        }
+                    }
+                }
+                (choice, values)
+            })
+            .collect();
+        self.alignment_sums = Some((key, sums));
     }
 
     fn apply_alignment_command(&mut self, command: AlignmentCommand) {
@@ -569,19 +594,18 @@ impl SoundTuningApp {
         match command {
             AlignmentCommand::Update(state) => {
                 let current = &self.session.alignment;
-                let needs_proposal = state.trace_a != current.trace_a
-                    || state.trace_b != current.trace_b
-                    || state.criterion != current.criterion
-                    || state.band_low_hz != current.band_low_hz
-                    || state.band_high_hz != current.band_high_hz;
-                let continuous = state.trace_a == current.trace_a
-                    && state.trace_b == current.trace_b
-                    && state.criterion == current.criterion
-                    && state.inverted == current.inverted;
+                let needs_solutions = state.reference_trace != current.reference_trace
+                    || state.delayed_trace != current.delayed_trace
+                    || state.band_hz() != current.band_hz();
+                let continuous = state.reference_trace == current.reference_trace
+                    && state.delayed_trace == current.delayed_trace
+                    && state.range == current.range
+                    && state.choice == current.choice
+                    && state.custom_inverted == current.custom_inverted;
                 let edit = |session: &mut Session| {
                     session.alignment = state;
-                    if needs_proposal {
-                        session.refresh_alignment_proposal(frequencies.frequencies_hz(), true);
+                    if needs_solutions {
+                        session.refresh_alignment_solutions(frequencies.frequencies_hz());
                     }
                 };
                 if continuous {
@@ -590,10 +614,6 @@ impl SoundTuningApp {
                     self.edit_session(edit);
                     self.last_merge = None;
                 }
-            }
-            AlignmentCommand::UseProposal => {
-                self.edit_session(|session| session.alignment.use_proposal());
-                self.last_merge = None;
             }
         }
     }
@@ -1559,13 +1579,42 @@ impl SoundTuningApp {
             && self.side_tab == SideTab::Alignment
             && self.session.alignment.is_ready();
         if alignment_mode {
-            self.refresh_alignment_sum();
+            self.refresh_alignment_sums();
         }
-        let predicted_sum = self
-            .alignment_sum
-            .as_ref()
-            .and_then(|(_, values)| values.clone())
-            .filter(|_| alignment_mode);
+        let selected_choice = self.session.alignment.choice;
+        let alignment_sums: Vec<(String, Vec<Option<f64>>, TraceStyle)> = if alignment_mode {
+            self.alignment_sums
+                .as_ref()
+                .map(|(_, sums)| {
+                    let mut sums: Vec<_> = sums
+                        .iter()
+                        .map(|(choice, values)| {
+                            let selected = *choice == selected_choice;
+                            (
+                                text::alignment_sum_label(*choice),
+                                values.clone(),
+                                TraceStyle {
+                                    color: alignment_panel::choice_color(palette, *choice),
+                                    width: if selected {
+                                        stroke::TRACE_LIVE
+                                    } else {
+                                        stroke::TRACE_STORED
+                                    },
+                                    halo: None,
+                                },
+                                selected,
+                            )
+                        })
+                        .collect();
+                    sums.sort_by_key(|(_, _, _, selected)| *selected);
+                    sums.into_iter()
+                        .map(|(label, values, style, _)| (label, values, style))
+                        .collect()
+                })
+                .unwrap_or_default()
+        } else {
+            Vec::new()
+        };
 
         let banners = collect_banners(&self.banner_inputs());
         let layout = self.config.plot_layout;
@@ -1592,38 +1641,36 @@ impl SoundTuningApp {
                     width: stroke::TRACE_STORED,
                     halo: None,
                 };
-                let overlays: Vec<OverlayTrace<'_>> = self
-                    .session
-                    .traces
-                    .iter()
-                    .filter(|trace| trace.visible)
-                    .map(|trace| OverlayTrace {
-                        label: &trace.name,
-                        values_db: &trace.magnitude_db,
-                        offset_db: trace.offset_db,
-                        style: trace_style(trace),
-                    })
-                    .chain(predicted_sum.as_deref().map(|values_db| OverlayTrace {
-                        label: text::PREDICTED_SUM_LABEL,
-                        values_db,
-                        offset_db: 0.0,
-                        style: TraceStyle {
-                            color: palette.predicted,
-                            width: stroke::TRACE_LIVE,
-                            halo: None,
-                        },
-                    }))
-                    .chain(
-                        eq_curves
-                            .iter()
-                            .map(|(label, values_db, style)| OverlayTrace {
+                let overlays: Vec<OverlayTrace<'_>> =
+                    self.session
+                        .traces
+                        .iter()
+                        .filter(|trace| trace.visible)
+                        .map(|trace| OverlayTrace {
+                            label: &trace.name,
+                            values_db: &trace.magnitude_db,
+                            offset_db: trace.offset_db,
+                            style: trace_style(trace),
+                        })
+                        .chain(alignment_sums.iter().map(|(label, values_db, style)| {
+                            OverlayTrace {
                                 label,
                                 values_db,
                                 offset_db: 0.0,
                                 style: *style,
-                            }),
-                    )
-                    .collect();
+                            }
+                        }))
+                        .chain(
+                            eq_curves
+                                .iter()
+                                .map(|(label, values_db, style)| OverlayTrace {
+                                    label,
+                                    values_db,
+                                    offset_db: 0.0,
+                                    style: *style,
+                                }),
+                        )
+                        .collect();
                 let phase_overlays: Vec<OverlayTrace<'_>> = self
                     .session
                     .traces
@@ -1691,8 +1738,7 @@ impl SoundTuningApp {
                                 show_live,
                                 running: self.measurement.is_running(),
                                 overlays: &overlays,
-                                band_hz: alignment_mode
-                                    .then_some((alignment.band_low_hz, alignment.band_high_hz)),
+                                band_hz: alignment_mode.then(|| alignment.band_hz()),
                                 eq_handles: &eq_handles,
                                 show_empty_state: is_main,
                             };
