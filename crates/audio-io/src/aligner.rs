@@ -31,27 +31,27 @@ impl FrameSource for LoopbackFrameSource {
         let Ok(chunk) = self.input.read_chunk(available) else {
             return ReadReport::default();
         };
-        let mut discontinuity = false;
+        let mut report = ReadReport::default();
         let (first, second) = chunk.as_slices();
         for frame in first.iter().chain(second.iter()) {
-            if self
+            let follows_gap = self
                 .expected_next_index
-                .is_some_and(|expected| expected != frame.frame_index)
-            {
-                discontinuity = true;
+                .is_some_and(|expected| expected != frame.frame_index);
+            if follows_gap {
+                if report.frames_read > 0 {
+                    break;
+                }
+                report.discontinuity = true;
             }
             self.expected_next_index = Some(frame.frame_index + 1);
             destination.push(StereoFrame {
                 reference: frame.loopback_reference,
                 measurement: frame.measurement,
             });
+            report.frames_read += 1;
         }
-        chunk.commit_all();
-        ReadReport {
-            frames_read: available,
-            discontinuity,
-            finished: false,
-        }
+        chunk.commit(report.frames_read);
+        report
     }
 }
 
@@ -139,23 +139,25 @@ impl FrameSource for InternalReferenceAligner {
             };
             let wanted_generator_index = input_frame.frame_index as i64 + offset;
             let generator_index = generator_sample.frame_index as i64;
+            let pairs_are_misaligned = generator_index != wanted_generator_index;
+            let follows_gap = self
+                .last_paired_input_index
+                .is_some_and(|last| last + 1 != input_frame.frame_index);
+            if (pairs_are_misaligned || follows_gap) && self.last_paired_input_index.is_some() {
+                if frames_read > 0 {
+                    break;
+                }
+                discontinuity = true;
+            }
             if generator_index < wanted_generator_index {
                 generated.next();
                 consumed_generator += 1;
-                discontinuity |= self.last_paired_input_index.is_some();
                 continue;
             }
             if generator_index > wanted_generator_index {
                 inputs.next();
                 consumed_input += 1;
-                discontinuity |= self.last_paired_input_index.is_some();
                 continue;
-            }
-            if self
-                .last_paired_input_index
-                .is_some_and(|last| last + 1 != input_frame.frame_index)
-            {
-                discontinuity = true;
             }
             self.last_paired_input_index = Some(input_frame.frame_index);
             destination.push(StereoFrame {
@@ -251,13 +253,19 @@ mod tests {
     }
 
     #[test]
-    fn loopback_reports_lost_frames() {
+    fn loopback_stops_before_a_gap_and_flags_the_next_read() {
         let (mut producer, consumer) = RingBuffer::new(16);
         for index in [0, 1, 5, 6] {
             let _ = producer.push(input_frame(index));
         }
         let mut source = LoopbackFrameSource::new(consumer, SAMPLE_RATE_HZ);
-        assert!(read_all(&mut source).1);
+        let mut frames = Vec::new();
+        let before = source.read_frames(&mut frames, usize::MAX);
+        assert_eq!(before.frames_read, 2);
+        assert!(!before.discontinuity);
+        let after = source.read_frames(&mut frames, usize::MAX);
+        assert_eq!(after.frames_read, 2);
+        assert!(after.discontinuity);
     }
 
     #[test]
@@ -336,8 +344,28 @@ mod tests {
             output_clock,
             SAMPLE_RATE_HZ,
         );
-        let (frames, discontinuity) = read_all(&mut aligner);
-        assert!(discontinuity);
+        let mut frames = Vec::new();
+        let mut reports = Vec::new();
+        for _ in 0..8 {
+            let report = aligner.read_frames(&mut frames, usize::MAX);
+            if report.frames_read > 0 {
+                reports.push(report);
+            }
+        }
+        assert_eq!(
+            reports
+                .iter()
+                .map(|report| report.frames_read)
+                .collect::<Vec<_>>(),
+            vec![100, 70, 140]
+        );
+        assert_eq!(
+            reports
+                .iter()
+                .map(|report| report.discontinuity)
+                .collect::<Vec<_>>(),
+            vec![false, true, true]
+        );
         assert_eq!(frames.len(), 400 - 30 - 60);
         assert!(
             frames

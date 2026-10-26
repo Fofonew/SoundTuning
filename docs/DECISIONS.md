@@ -125,3 +125,32 @@ Non corrigé, justifié :
 - Cohérence triviale (= 1) après une seule moyenne : le moteur expose le nombre de moyennes et l'état « préchauffage » ; l'UI masque la cohérence tant que la fenêtre n'est pas pleine.
 - Critère « niveau maximal » en moyenne de dB (et non de puissance) : favorise une sommation régulière sur toute la bande plutôt qu'un pic.
 - Pas de documentation `///` : règle du projet « pas de commentaires d'explication », noms explicites.
+
+### D-023 — Architecture du moteur (phase 2)
+- `MeasurementCore` (synchrone, testable sans thread) : historique circulaire x/y de 65536 + 131072 + H trames en `f64`, une analyse par pas H (fenêtre N lue avec un décalage entier = compensation, côté référence si positive, côté mesure si négative), mise à jour des accumulateurs ; la projection sur la grille n'est faite qu'au moment de publier.
+- Reste fractionnaire de la compensation : rotation e^{+j2πk·r/N} de Gxy (par récurrence) avant la projection complexe ; |H| et γ² ne sont pas concernés.
+- Toute modification de la compensation remet les accumulateurs à zéro (les anciennes moyennes correspondent à un autre alignement).
+- Thread moteur : lit la `FrameSource` par blocs de 4096, traite les commandes (`mpsc`), publie un `MeasurementSnapshot` par `triple_buffer` (écriture en place, aucune allocation en régime établi), dort 2 ms quand il n'y a rien à lire.
+- Délai : thread dédié (`DelayEstimator::threaded`), un seul tampon de travail recyclé (aucune allocation, aucun retard des pas H) ; version `inline` pour les tests déterministes.
+- Politique de délai : recherche automatique au démarrage, appliquée si confiance ≥ 12 dB ; suivi optionnel ; calibrage de latence = la prochaine mesure fiable devient la latence système et la compensation ; délai acoustique = délai appliqué − latence.
+- Discontinuité (perte de trames, rebouclage du fichier) : la fenêtre glissante repart de zéro, les moyennes sont conservées.
+
+### D-024 — Benchmarks (phase 2)
+- Benchs criterion dans `crates/engine/benches/realtime_budgets.rs` ; journal dans `docs/BENCHMARKS.md`. Tous très en dessous des budgets ; `ecc:benchmark-optimization-loop` : pas de variante à essayer. Le bench `plot_frame_prep` arrivera avec le tracé (phase 3).
+
+### D-025 — Suites de la revue `ecc:rust-reviewer` de la phase 2
+Corrigé :
+- **Contrat de discontinuité** : `ReadReport::discontinuity = true` signifie « rupture juste avant la première trame renvoyée ». Toutes les sources (`RecordingCursor`, `FilePlayback`, `LoopbackFrameSource`, `InternalReferenceAligner`) s'arrêtent avant une couture ou une perte et la signalent à l'appel suivant : aucune fenêtre ne mélange les deux côtés (testé avec un fichier rebouclé).
+- **Suivi du délai** : zone morte d'un échantillon ; les moyennes ne sont plus remises à zéro à chaque estimation.
+- **« Appliquer »** utilise la dernière estimation *fiable* (`latest_confident`), jamais une estimation sous le seuil.
+- **Seuil de confiance relevé à 18 dB** : sur deux bruits sans aucune corrélation, le pic de corrélation sur 131072 retards atteint déjà ≈ √(2·ln 131072) ≈ 4,85 σ, soit ≈ 13,7 dB ; 12 dB laissait passer des délais aléatoires.
+- **Calibrage** : marque une discontinuité (seules les données postérieures à la commande comptent), ignore tout résultat de délai lancé avant la commande (numéro de génération), abandonne après 10 s sans mesure fiable (`calibration_failed`).
+- Une compensation manuelle avant la première estimation n'est plus écrasée par l'application automatique.
+- Fin de source (`source_finished`) et discontinuités publiées immédiatement ; dérive exposée (`DelayStatus::drift_ms`, dernière estimation fiable − délai appliqué) pour la notification de recalage.
+- Pas H borné à [N/32 ; N] ; lecture par blocs de H trames pour publier à chaque pas (≥ 20 instantanés/s mesurés sur le thread réel, testé).
+- `apply_settings` atomique (nouvelles structures construites avant affectation) ; une erreur de pas ne fait plus perdre le reste du bloc et n'est journalisée qu'une fois par série.
+- Canal de commandes borné (256) ; panique du thread moteur journalisée à l'arrêt ; grille passée par l'appelant.
+Non corrigé, justifié :
+- Pas de commande « pause / figer » côté moteur : figer est une fonction d'affichage (l'UI garde une copie de l'instantané) ; la mesure continue, conformément au workflow.
+- Fichier en boucle plus court que 2,7 s : aucune estimation de délai (fenêtre de 131072 échantillons contigus). Limite documentée ; les fichiers de test font ≥ 3 s.
+- Changement de source ou de fréquence : on recrée un `EngineHandle` (même grille partagée).

@@ -38,7 +38,7 @@ step failed, show its output, and do not run the following steps.
    ```
    If the list is non-empty:
    ```bash
-   cargo bench --workspace --benches -- --noplot
+   cargo bench --workspace --bench '*' -- --noplot
    ```
    Then compare each reported median with the budgets of `.claude/rules/realtime.md`
    (`engine_update` < 2 ms, `delay_search` < 15 ms, `plot_frame_prep` < 1 ms,

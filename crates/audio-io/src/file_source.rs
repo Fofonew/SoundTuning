@@ -13,6 +13,7 @@ use crate::meter::MeterBank;
 const PLAYBACK_BLOCK_FRAMES: usize = 512;
 const PLAYBACK_BUFFER_SECONDS: usize = 2;
 const BACKPRESSURE_WAIT: Duration = Duration::from_millis(2);
+const NO_SEAM: u64 = u64::MAX;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct StereoRecording {
@@ -99,23 +100,26 @@ impl FrameSource for RecordingCursor {
     fn read_frames(&mut self, destination: &mut Vec<StereoFrame>, max_frames: usize) -> ReadReport {
         let total = self.recording.frames.len();
         let mut report = ReadReport::default();
-        while report.frames_read < max_frames {
-            if self.position >= total {
-                if self.looping && total > 0 {
-                    self.position = 0;
-                    report.discontinuity = true;
-                } else {
-                    report.finished = true;
-                    break;
-                }
+        if self.position >= total {
+            if self.looping && total > 0 {
+                self.position = 0;
+                report.discontinuity = true;
+            } else {
+                report.finished = true;
+                return report;
             }
-            let count = (total - self.position).min(max_frames - report.frames_read);
-            destination
-                .extend_from_slice(&self.recording.frames[self.position..self.position + count]);
-            self.position += count;
-            report.frames_read += count;
         }
-        report.finished |= self.is_finished();
+        let count = (total - self.position).min(max_frames);
+        if let Some(frames) = self
+            .recording
+            .frames
+            .get(self.position..self.position + count)
+        {
+            destination.extend_from_slice(frames);
+        }
+        self.position += count;
+        report.frames_read = count;
+        report.finished = self.is_finished();
         report
     }
 }
@@ -125,8 +129,9 @@ pub struct FilePlayback {
     sample_rate_hz: u32,
     source_path: PathBuf,
     stop_requested: Arc<AtomicBool>,
-    loop_count: Arc<AtomicU64>,
-    loop_count_seen: u64,
+    latest_seam_frame: Arc<AtomicU64>,
+    consumed_frames: u64,
+    reported_seam_frame: u64,
     worker: Option<JoinHandle<()>>,
 }
 
@@ -138,8 +143,8 @@ impl FilePlayback {
         let (mut producer, consumer) = RingBuffer::new(capacity);
         let stop_requested = Arc::new(AtomicBool::new(false));
         let worker_stop = Arc::clone(&stop_requested);
-        let loop_count = Arc::new(AtomicU64::new(0));
-        let worker_loop_count = Arc::clone(&loop_count);
+        let latest_seam_frame = Arc::new(AtomicU64::new(NO_SEAM));
+        let worker_seam_frame = Arc::clone(&latest_seam_frame);
 
         let worker = std::thread::Builder::new()
             .name("file-playback".into())
@@ -151,13 +156,14 @@ impl FilePlayback {
                 );
                 let started = Instant::now();
                 let mut blocks_sent: u32 = 0;
+                let mut pushed_frames: u64 = 0;
                 while !worker_stop.load(Ordering::Relaxed) && !producer.is_abandoned() {
                     block.clear();
                     if cursor
                         .read_frames(&mut block, PLAYBACK_BLOCK_FRAMES)
                         .discontinuity
                     {
-                        worker_loop_count.fetch_add(1, Ordering::Relaxed);
+                        worker_seam_frame.store(pushed_frames, Ordering::Release);
                     }
                     meters
                         .reference
@@ -170,7 +176,8 @@ impl FilePlayback {
                         && !worker_stop.load(Ordering::Relaxed)
                         && !producer.is_abandoned()
                     {
-                        let (_, remaining) = producer.push_partial_slice(unsent);
+                        let (sent, remaining) = producer.push_partial_slice(unsent);
+                        pushed_frames += sent.len() as u64;
                         unsent = remaining;
                         if !unsent.is_empty() {
                             std::thread::sleep(BACKPRESSURE_WAIT);
@@ -190,8 +197,9 @@ impl FilePlayback {
             sample_rate_hz,
             source_path: path.to_path_buf(),
             stop_requested,
-            loop_count,
-            loop_count_seen: 0,
+            latest_seam_frame,
+            consumed_frames: 0,
+            reported_seam_frame: NO_SEAM,
             worker: Some(worker),
         })
     }
@@ -207,7 +215,18 @@ impl FrameSource for FilePlayback {
     }
 
     fn read_frames(&mut self, destination: &mut Vec<StereoFrame>, max_frames: usize) -> ReadReport {
-        let available = self.consumer.slots().min(max_frames);
+        let seam = self.latest_seam_frame.load(Ordering::Acquire);
+        let discontinuity =
+            seam != NO_SEAM && seam != self.reported_seam_frame && seam <= self.consumed_frames;
+        if discontinuity {
+            self.reported_seam_frame = seam;
+        }
+        let mut available = self.consumer.slots().min(max_frames);
+        if seam != NO_SEAM && seam != self.reported_seam_frame && seam > self.consumed_frames {
+            let frames_before_seam =
+                usize::try_from(seam - self.consumed_frames).unwrap_or(usize::MAX);
+            available = available.min(frames_before_seam);
+        }
         let Ok(chunk) = self.consumer.read_chunk(available) else {
             return ReadReport::default();
         };
@@ -215,9 +234,7 @@ impl FrameSource for FilePlayback {
         destination.extend_from_slice(first);
         destination.extend_from_slice(second);
         chunk.commit_all();
-        let loop_count = self.loop_count.load(Ordering::Relaxed);
-        let discontinuity = loop_count != self.loop_count_seen;
-        self.loop_count_seen = loop_count;
+        self.consumed_frames += available as u64;
         ReadReport {
             frames_read: available,
             discontinuity,
@@ -324,11 +341,13 @@ mod tests {
         });
         let mut cursor = RecordingCursor::new(Arc::clone(&recording), true);
         let mut frames = Vec::new();
-        let report = cursor.read_frames(&mut frames, 25);
-        assert_eq!(report.frames_read, 25);
-        assert!(report.discontinuity);
+        let first = cursor.read_frames(&mut frames, 25);
+        assert_eq!(first.frames_read, 10);
+        assert!(!first.discontinuity);
+        let second = cursor.read_frames(&mut frames, 25);
+        assert_eq!(second.frames_read, 10);
+        assert!(second.discontinuity);
         assert_eq!(frames[10], recording.frames[0]);
-        assert_eq!(frames[24], recording.frames[4]);
     }
 
     #[test]
@@ -343,6 +362,30 @@ mod tests {
         assert_eq!(report.frames_read, 10);
         assert!(report.finished);
         assert!(cursor.is_finished());
+    }
+
+    #[test]
+    fn file_playback_flags_the_loop_seam_before_the_first_frame_after_it() {
+        let path = temporary_wav_path("seam");
+        let loop_frames = 700;
+        write_stereo_wav(&path, 48_000, &ramp_frames(loop_frames)).unwrap();
+        let meters = Arc::new(MeterBank::default());
+        let mut playback = FilePlayback::start(&path, meters).unwrap();
+        let mut frames = Vec::new();
+        let mut seams_seen = 0;
+        let started = std::time::Instant::now();
+        while seams_seen < 2 && started.elapsed() < Duration::from_secs(5) {
+            let consumed_before = frames.len();
+            let report = playback.read_frames(&mut frames, 300);
+            if report.discontinuity {
+                assert_eq!(consumed_before % loop_frames, 0, "seam inside a read");
+                seams_seen += 1;
+            }
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        drop(playback);
+        std::fs::remove_file(&path).unwrap();
+        assert_eq!(seams_seen, 2);
     }
 
     #[test]

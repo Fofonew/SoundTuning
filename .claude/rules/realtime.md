@@ -47,6 +47,7 @@ callback sortie cpal ──rtrb──┤ (référence interne : échantillons é
 - Tampons `rtrb` dimensionnés pour ≥ 1 s d'audio. Si le moteur prend du retard : jeter les plus anciens, lever un indicateur visible dans l'UI, ne jamais bloquer les callbacks.
 - Instantanés publiés par `arc-swap` (ou `triple_buffer`) : structure immuable, l'UI ne copie que ce qu'elle dessine. Les anciens instantanés sont libérés sur le thread moteur ou UI, jamais dans un callback.
 - Recherche de délai à basse cadence (≤ 2/s) sur un thread ou une tâche séparée pour ne jamais retarder les mises à jour à pas H.
+- Discontinuités : une source s'arrête juste avant une rupture (perte, rebouclage) et lève `discontinuity` à l'appel suivant ; le moteur repart alors d'une fenêtre vide sans perdre les moyennes.
 - Mode fichier : même moteur, alimenté par un lecteur WAV à cadence réelle ou accélérée (tests), aucun flux `cpal` ouvert.
 
 ## Budgets (release, Apple Silicon)

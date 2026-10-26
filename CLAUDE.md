@@ -43,7 +43,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 cargo test -p dsp-core                                      # une crate
 cargo check --workspace --target x86_64-pc-windows-msvc     # sans la feature asio
-cargo bench --workspace --benches -- --noplot               # benchs criterion
+cargo bench --workspace --bench '*' -- --noplot               # benchs criterion
 cargo run --release -p app -- --input-file <fichier.wav>    # mode fichier
 cargo run -p app -- record --seconds 10 --output <out.wav>  # enregistrement CLI
 ```
@@ -81,6 +81,6 @@ Questions à l'utilisateur uniquement si : critère impossible, décision irrév
 
 ## État
 
-- Phase en cours : 2 (`engine`).
-- Phases terminées : setup ; 0 (workspace, CI, `audio-io`, CLI, fenêtre minimale) ; 1 (`dsp-core` : Hann, FFT, accumulateurs, H1, γ², grille 1/96 oct., lissage compensé, délai FFT 131072, biquads RBJ, sommation, délai optimal, moyenne de traces ; tous les critères « Mesure » testés sauf « référence interne », testé en phase 2).
-- Prochaine étape : phase 2 (threads, fenêtre glissante, alignement, compensation, délai à basse cadence, instantanés `triple_buffer`, mode fichier, benchs).
+- Phase en cours : 3 (fondations de l'interface).
+- Phases terminées : setup ; 0 (workspace, CI, `audio-io`, CLI, fenêtre minimale) ; 1 (`dsp-core` et critères « Mesure ») ; 2 (`engine` : cœur synchrone, thread de mesure, délai sur thread dédié, compensation, calibrage de latence, instantanés `triple_buffer`, benchs dans les budgets — voir `docs/BENCHMARKS.md`).
+- Prochaine étape : phase 3 (direction visuelle `docs/DESIGN.md`, système de design, tracé, cohérence, vu-mètres, états, assistant, palette, `egui_kittest`, revue visuelle).
