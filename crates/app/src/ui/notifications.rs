@@ -10,7 +10,8 @@ use crate::design::widgets::{Emphasis, Tone, action_button};
 
 const NOTIFICATION_LIFETIME: Duration = Duration::from_secs(6);
 const MAX_VISIBLE_NOTIFICATIONS: usize = 3;
-const NOTIFICATION_WIDTH: f32 = 360.0;
+const NOTIFICATION_WIDTH: f32 = 420.0;
+const ACTION_BUTTON_RESERVE: f32 = 132.0;
 const ACCENT_BAR_WIDTH: f32 = 3.0;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -31,7 +32,8 @@ pub struct Notifications {
 impl Notifications {
     pub fn push(&mut self, text: impl Into<String>, tone: Tone, action: Option<Action>) {
         let text = text.into();
-        self.items.retain(|item| item.text != text);
+        self.items
+            .retain(|item| item.text != text && (action.is_none() || item.action != action));
         self.next_id += 1;
         self.items.push(Notification {
             id: self.next_id,
@@ -95,11 +97,22 @@ impl Notifications {
                                 CornerRadius::same(1),
                                 item.tone.color(palette),
                             );
-                            ui.label(
-                                egui::RichText::new(&item.text)
-                                    .font(fonts::ui_medium(text_size::BODY))
-                                    .color(palette.text_primary),
-                            );
+                            let reserved = if item.action.is_some() {
+                                ACTION_BUTTON_RESERVE
+                            } else {
+                                0.0
+                            };
+                            let label_width = (ui.available_width() - reserved).max(0.0);
+                            ui.allocate_ui(egui::vec2(label_width, size::BUTTON_HEIGHT), |ui| {
+                                ui.add(
+                                    egui::Label::new(
+                                        egui::RichText::new(&item.text)
+                                            .font(fonts::ui_medium(text_size::BODY))
+                                            .color(palette.text_primary),
+                                    )
+                                    .truncate(),
+                                );
+                            });
                             ui.with_layout(
                                 egui::Layout::right_to_left(egui::Align::Center),
                                 |ui| {
@@ -168,5 +181,8 @@ mod tests {
         notifications.push("message 4", Tone::Success, Some(Action::ApplyDelay));
         let texts: Vec<_> = notifications.texts().collect();
         assert_eq!(texts, vec!["message 2", "message 3", "message 4"]);
+        notifications.push("message 5", Tone::Success, Some(Action::ApplyDelay));
+        let texts: Vec<_> = notifications.texts().collect();
+        assert_eq!(texts, vec!["message 2", "message 3", "message 5"]);
     }
 }

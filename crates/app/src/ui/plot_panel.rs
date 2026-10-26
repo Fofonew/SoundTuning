@@ -31,6 +31,7 @@ const MIN_PLOT_SIZE: f32 = 80.0;
 pub struct OverlayTrace<'a> {
     pub label: &'a str,
     pub values_db: &'a [Option<f64>],
+    pub offset_db: f64,
     pub style: TraceStyle,
 }
 
@@ -83,7 +84,14 @@ impl PlotPanel {
                 &self.view,
                 plot_rect,
                 inputs.frequencies_hz,
-                |index| overlay.values_db.get(index).copied().flatten(),
+                |index| {
+                    overlay
+                        .values_db
+                        .get(index)
+                        .copied()
+                        .flatten()
+                        .map(|value| value + overlay.offset_db)
+                },
                 polyline,
             );
         }
@@ -491,7 +499,13 @@ fn nearest_trace_value(
                 .get(index)
                 .copied()
                 .flatten()
-                .map(|value| (overlay.label.to_owned(), value, overlay.style.color))
+                .map(|value| {
+                    (
+                        overlay.label.to_owned(),
+                        value + overlay.offset_db,
+                        overlay.style.color,
+                    )
+                })
         }))
         .min_by(|left, right| {
             (left.1 - cursor_db)

@@ -42,3 +42,28 @@ fn screenshot_measurement_night() {
 fn screenshot_measurement_daylight() {
     measurement_screenshot(Theme::Daylight, "measurement_daylight");
 }
+
+#[test]
+fn screenshot_traces() {
+    let mut harness = rendering_harness(file_options(Theme::Night, true));
+    wait_for_stable_measurement(&mut harness);
+    for _ in 0..3 {
+        harness.key_press(Key::S);
+        harness.step();
+    }
+    let ids: Vec<u64> = harness
+        .state()
+        .session()
+        .traces
+        .iter()
+        .map(|trace| trace.id)
+        .collect();
+    harness.state_mut().apply_test_offset(ids[1], -4.0);
+    harness.state_mut().apply_test_offset(ids[2], 3.0);
+    harness.key_press(Key::F);
+    harness.step();
+    harness.hover_at(pos2(700.0, 330.0));
+    harness.step();
+    harness.step();
+    assert!(save_screenshot(&mut harness, "traces").exists());
+}

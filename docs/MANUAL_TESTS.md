@@ -21,6 +21,12 @@ Cocher, dater et noter les observations. Matériel de référence : UAX 2-2, mic
 - [ ] `soundtuning --input-file test.wav` : la fenêtre s'ouvre et les vu-mètres bougent en boucle.
 - [ ] Fenêtre minimale (phase 0) : Démarrer / Arrêter ouvre et ferme les flux sans erreur, vu-mètres référence (générateur) et mesure (micro) cohérents.
 
+## Traces et sessions
+
+- [ ] S capture une trace nommée « Trace N — HH:MM » à l'heure locale ; double-clic sur le nom pour renommer ; Cmd+Z / Maj+Cmd+Z.
+- [ ] Quitter l'application (ou la forcer à quitter) puis relancer : les traces sont restaurées.
+- [ ] Export CSV ouvert dans un tableur (séparateur « ; ») : fréquences, niveaux et cohérence par trace.
+
 ## Performance
 
 - [ ] Démarrage jusqu'à la première image utilisable < 1 s (release, Apple Silicon).

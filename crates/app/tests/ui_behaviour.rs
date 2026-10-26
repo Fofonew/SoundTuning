@@ -240,3 +240,66 @@ fn stopping_clears_the_displayed_measurement() {
     assert!(!harness.state().measurement().is_running());
     assert_eq!(harness.state().measurement().snapshot().sequence, 0);
 }
+
+#[test]
+fn s_captures_a_trace_and_command_z_undoes_it() {
+    let mut harness = harness(file_options(Theme::Night, true));
+    wait_for_stable_measurement(&mut harness);
+    harness.key_press(Key::S);
+    harness.step();
+    assert_eq!(harness.state().session().traces.len(), 1);
+    assert!(
+        harness.state().session().traces[0]
+            .name
+            .starts_with("Trace 1 — ")
+    );
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+    harness.step();
+    assert!(harness.state().session().traces.is_empty());
+    harness.key_press_modifiers(Modifiers::COMMAND | Modifiers::SHIFT, Key::Z);
+    harness.step();
+    assert_eq!(harness.state().session().traces.len(), 1);
+}
+
+#[test]
+fn session_is_saved_automatically_and_restored_on_next_launch() {
+    let directory =
+        std::env::temp_dir().join(format!("soundtuning-session-{}", std::process::id()));
+    let path = directory.join("session.json");
+    let mut options = file_options(Theme::Night, true);
+    options.session_store = soundtuning::session::SessionStore::File(path.clone());
+    let mut harness = harness(options.clone());
+    wait_for_stable_measurement(&mut harness);
+    harness.key_press(Key::S);
+    harness.step();
+    step_until(&mut harness, Duration::from_secs(10), |_| path.exists());
+    drop(harness);
+    options.start_measurement = false;
+    let restored = common::harness(options);
+    assert_eq!(restored.state().session().traces.len(), 1);
+    std::fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn csv_export_writes_every_trace() {
+    let mut options = file_options(Theme::Night, true);
+    let export_directory =
+        std::env::temp_dir().join(format!("soundtuning-csv-{}", std::process::id()));
+    options.export_directory = export_directory.clone();
+    let mut harness = harness(options);
+    wait_for_stable_measurement(&mut harness);
+    harness.key_press(Key::S);
+    harness.step();
+    harness
+        .state_mut()
+        .handle_action(soundtuning::actions::Action::ExportSession);
+    let files: Vec<_> = std::fs::read_dir(&export_directory)
+        .unwrap()
+        .filter_map(Result::ok)
+        .collect();
+    assert_eq!(files.len(), 1);
+    let csv = std::fs::read_to_string(files[0].path()).unwrap();
+    assert!(csv.lines().next().unwrap().contains("Trace 1"));
+    assert_eq!(csv.lines().count(), 958);
+    std::fs::remove_dir_all(export_directory).unwrap();
+}

@@ -12,6 +12,7 @@ use soundtuning::app::{AppOptions, DeviceCatalog, SoundTuningApp};
 use soundtuning::config::{AppConfig, ConfigStore};
 use soundtuning::design::Theme;
 use soundtuning::measurement::{FilePacing, SourceSpec};
+use soundtuning::session::SessionStore;
 
 pub const SAMPLE_RATE_HZ: u32 = 48_000;
 pub const WINDOW_SIZE: [f32; 2] = [1440.0, 900.0];
@@ -103,6 +104,9 @@ pub fn file_options(theme: Theme, start: bool) -> AppOptions {
             pacing: FilePacing::AsFastAsPossible,
         },
         store: ConfigStore::Memory,
+        session_store: SessionStore::Memory,
+        export_directory: std::env::temp_dir()
+            .join(format!("soundtuning-exports-{}", std::process::id())),
         devices: DeviceCatalog::Fixed(fake_devices()),
         initial_config: Some(AppConfig {
             theme,
@@ -117,6 +121,9 @@ pub fn first_launch_options() -> AppOptions {
     AppOptions {
         source: SourceSpec::Live,
         store: ConfigStore::Memory,
+        session_store: SessionStore::Memory,
+        export_directory: std::env::temp_dir()
+            .join(format!("soundtuning-exports-{}", std::process::id())),
         devices: DeviceCatalog::Fixed(fake_devices()),
         initial_config: Some(AppConfig::default()),
         start_measurement: false,

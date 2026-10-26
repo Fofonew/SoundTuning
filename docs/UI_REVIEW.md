@@ -38,3 +38,14 @@ Critères : hiérarchie visuelle, lisibilité à 1 m, alignements, espacements, 
   - Plein jour : bon contraste du tracé (noir sur blanc), halo discret ; vu-mètre de référence en orange (crête > −6 dBFS) cohérent.
 - Corrections : barre supérieure 68 px, panneau latéral 272 px → zone centrale 70,7 % à 1440×900 et 72 % à 1920×1080 (testé par `central_zone_covers_at_least_seventy_percent_with_the_panel_open`) ; délai en 30 pt (≥ 28 pt exigés).
 - Captures après : `docs/ui-review/phase-3/*-tour2-apres.png` puis `*-tour2-final.png`.
+
+### Phase 4 — tour 1 (2026-10-26)
+- Écran : mesure figée avec 3 traces mémorisées (décalages +3 / −4 / 0 dB), réticule sur la trace la plus proche, panneau Traces.
+- Critiques : noms de trace tronqués en « Trace… » (ligne unique trop chargée : couleur, case, nom, décalage, suppression) ; trois notifications « Trace capturée » empilées sur le tracé, texte passant sous le bouton « Annuler ».
+- Corrections : ligne de trace sur deux niveaux (couleur + nom en entier ; puis « Visible », décalage, suppression) ; notifications regroupées par action (une seule « capture » visible à la fois), largeur 420 px, texte tronqué avant le bouton.
+- Captures : `docs/ui-review/phase-4/traces-tour1-avant.png` → `traces-tour1-apres.png`.
+
+### Phase 4 — tour 2 (2026-10-26)
+- Critique : noms de trace centrés dans leur zone (lecture en colonne difficile).
+- Correction : noms alignés à gauche ; vérifié : la trace live (blanche, halo) reste distincte des traces Okabe–Ito ; le réticule annonce la trace la plus proche avec son décalage.
+- Captures : `traces-tour2-apres.png` (= `traces-tour2-final.png`).

@@ -182,3 +182,21 @@ Non corrigé, justifié :
 - Énumération des périphériques (`list_devices`) synchrone à l'ouverture de l'assistant et sur « Actualiser » : quelques millisecondes, action explicite.
 - Captures sans comparaison pixel (contenu temps réel) : elles servent à la revue visuelle.
 - Allocations résiduelles par image (segments de courbe pour `Shape::line`, textes des bandeaux) : mesurées négligeables (`plot_frame_prep` 0,05 ms) ; la médiane de cohérence n'est plus recalculée qu'à chaque nouvel instantané.
+
+### D-028 — Traces et sessions (phase 4)
+- Une trace conserve, **sur la grille d'affichage 1/96 d'octave (957 points)** : magnitude (dB, lissage du moment), γ², réponse complexe (même lissage, délai compensé), plus les métadonnées : fs, N, lissage, nombre de moyennes, délai mesuré, compensation appliquée, latence système → temps d'arrivée absolu = compensation − latence.
+- **Écart avec la spec** (« H brut ») : H n'est pas stocké par case FFT (16 385 complexes par trace) mais sur la grille d'affichage, qui est la résolution de tout ce que l'outil affiche et calcule (lissage, cohérence, EQ, alignement). Session ≈ 50 Ko par trace au lieu de ≈ 600 Ko ; autosauvegarde rapide.
+- Annuler / rétablir : pile d'états de session (100 pas) ; un glissé de décalage = une seule étape ; la capture se défait par Cmd+Z (notification avec action « Annuler »).
+- Autosauvegarde : `session.json` (dossier de configuration) 2 s après la dernière modification, écriture atomique ; rechargée au lancement (reprise après plantage) ; sauvegarde aussi à la fermeture.
+- Moyenne : moyenne en puissance des traces sélectionnées (décalages inclus), γ² = minimum des traces, nouvelle trace « Moyenne N (k traces) — HH:MM ».
+- Export CSV : `~/Documents/SoundTuning/soundtuning-AAAAMMJJ-HHMMSS.csv`, séparateur `;`, une colonne dB et une colonne γ² par trace (cellule vide = point invalide).
+- Nouvelle dépendance hors stack : **`chrono`** (horloge locale pour « Trace 3 — 21:42 » et les noms de fichiers ; la bibliothèque standard ne donne pas l'heure locale).
+
+### D-029 — Revue `ecc:rust-reviewer` de la phase 4 : à traiter (non encore corrigé)
+- Verdict BLOQUANT. Points HIGH à corriger avant le commit « phase 4 » : écriture de la session hors du thread UI (thread dédié, `sync_all`), préservation d'un `session.json` illisible (renommé + notification + `.bak`), nouvel essai après un échec d'autosauvegarde, export CSV linéaire. Points MEDIUM : sélection séparée du renommage, Échap/F2, jeton d'annulation, historique en `Arc<Trace>` et hors sélection/visibilité/couleur, erreurs typées (64 traces, moyenne), CSV à virgule décimale et nom unique, tests complémentaires. Détail et ordre de traitement : section « État » de `CLAUDE.md`.
+
+### D-030 — Interface des phases 5 et 6 amorcée (2026-10-26)
+- Panneau Alignement (`ui/alignment_panel.rs`) : choix des traces A et B, critère « Niveau max » / « Plus plat », bande [f1 ; f2] en Hz (et Maj + glisser sur le tracé, à câbler), proposition calculée par `find_optimal_alignment`, bouton « Utiliser la proposition », réglage Δ au pas de 0,01 ms et polarité de B ; consigne affichée en clair à recopier dans le processeur (« Retarder A de 1,50 ms · B inversée »). L'état vit dans `Session.alignment` (annulable).
+- Panneau EQ (`ui/eq_panel.rs`) : banques A/B, bypass global et par filtre, vues « Prédit » / « EQ seul » / « Trace inversée », cible (mesure en direct ou trace mémorisée), éditeur par filtre (type, fréquence, gain, Q, pente des coupe-bas/haut, largeur en octaves), ajout (E, 16 maximum), exports texte et JSON. L'état vit dans `Session.eq` (annulable).
+- Notifications : dédoublonnées par action associée (une seule « Trace capturée — Annuler » visible), largeur 420 px, texte tronqué avant le bouton.
+- Outil de packaging retenu pour la phase 8 : `cargo-packager` (crabnebula-dev) — `.app` macOS et installeur NSIS Windows depuis `[package.metadata.packager]` ; procédure Windows dans `docs/WINDOWS.md`.

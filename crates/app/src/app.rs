@@ -7,22 +7,26 @@ use engine::EngineCommand;
 
 use crate::actions::{Action, triggered_by_keyboard};
 use crate::config::{AppConfig, ConfigStore};
-use crate::design::tokens::{size, spacing, stroke};
+use crate::design::tokens::{STORED_TRACE_COLOR_COUNT, size, spacing, stroke};
 use crate::design::widgets::Tone;
 use crate::design::{Theme, fonts, theme};
 use crate::measurement::{MeasurementController, SourceSpec};
-use crate::plot::{PlotView, RangePreset};
+use crate::plot::{PlotView, RangePreset, TraceStyle};
+use crate::session::{Session, SessionStore, UndoHistory};
 use crate::text;
 use crate::ui::banners::{BannerInputs, collect_banners, show_banners};
 use crate::ui::bottom_bar::{self, BottomBarModel};
 use crate::ui::notifications::Notifications;
 use crate::ui::palette::CommandPalette;
-use crate::ui::plot_panel::{PlotInputs, PlotPanel};
+use crate::ui::plot_panel::{OverlayTrace, PlotInputs, PlotPanel};
 use crate::ui::side_panel::{self, SideTab};
 use crate::ui::top_bar::{self, DelayReadout, TopBarModel};
+use crate::ui::traces_panel::{self, RenameState, TraceCommand};
 use crate::ui::wizard::{Wizard, WizardAction};
 
 const CONFIG_SAVE_DELAY: Duration = Duration::from_millis(800);
+const SESSION_SAVE_DELAY: Duration = Duration::from_secs(2);
+const EXPORT_FILE_PREFIX: &str = "soundtuning";
 const IDLE_REPAINT_INTERVAL: Duration = Duration::from_millis(250);
 const LOW_COHERENCE_BAND_HZ: (f64, f64) = (100.0, 10_000.0);
 const MILLISECONDS_PER_SECOND: f64 = 1000.0;
@@ -64,6 +68,8 @@ impl DeviceCatalog {
 pub struct AppOptions {
     pub source: SourceSpec,
     pub store: ConfigStore,
+    pub session_store: SessionStore,
+    pub export_directory: std::path::PathBuf,
     pub devices: DeviceCatalog,
     pub initial_config: Option<AppConfig>,
     pub start_measurement: bool,
@@ -74,6 +80,8 @@ impl AppOptions {
         Self {
             source: SourceSpec::Live,
             store: ConfigStore::default_location(),
+            session_store: SessionStore::default_location(),
+            export_directory: default_export_directory(),
             devices: DeviceCatalog::System,
             initial_config: None,
             start_measurement: false,
@@ -97,6 +105,13 @@ pub struct SoundTuningApp {
     last_notified_delay_sequence: u64,
     device_catalog: DeviceCatalog,
     low_coherence_cache: (u64, bool),
+    session: Session,
+    session_store: SessionStore,
+    history: UndoHistory,
+    session_dirty_since: Option<Instant>,
+    rename: RenameState,
+    last_offset_edit: Option<u64>,
+    export_directory: std::path::PathBuf,
 }
 
 impl SoundTuningApp {
@@ -126,6 +141,13 @@ impl SoundTuningApp {
             last_notified_delay_sequence: 0,
             device_catalog: options.devices.clone(),
             low_coherence_cache: (0, false),
+            session: options.session_store.load(),
+            session_store: options.session_store.clone(),
+            history: UndoHistory::default(),
+            session_dirty_since: None,
+            rename: RenameState::default(),
+            last_offset_edit: None,
+            export_directory: options.export_directory.clone(),
         };
         app.apply_theme(context);
         if options.start_measurement && app.wizard.is_none() {
@@ -168,6 +190,147 @@ impl SoundTuningApp {
 
     pub fn set_side_tab(&mut self, tab: SideTab) {
         self.side_tab = tab;
+    }
+
+    pub fn session(&self) -> &Session {
+        &self.session
+    }
+
+    pub fn apply_test_offset(&mut self, trace_id: u64, offset_db: f64) {
+        self.apply_trace_command(TraceCommand::SetOffset(trace_id, offset_db));
+        self.last_offset_edit = None;
+    }
+
+    fn edit_session(&mut self, edit: impl FnOnce(&mut Session)) {
+        let before = self.session.clone();
+        edit(&mut self.session);
+        if self.session != before {
+            self.history.record(before);
+            self.session_dirty_since.get_or_insert_with(Instant::now);
+        }
+    }
+
+    fn save_session_if_due(&mut self) {
+        if self
+            .session_dirty_since
+            .is_some_and(|since| since.elapsed() >= SESSION_SAVE_DELAY)
+        {
+            self.session_dirty_since = None;
+            if let Err(error) = self.session_store.save(&self.session) {
+                tracing::warn!(%error, "could not save the session");
+            }
+        }
+    }
+
+    fn capture_trace(&mut self) {
+        let snapshot = self.measurement.snapshot().clone();
+        if !self.measurement.is_running() || snapshot.averages == 0 {
+            self.notifications
+                .push(text::NOTIFY_NOTHING_TO_CAPTURE, Tone::Warning, None);
+            return;
+        }
+        let now = chrono::Local::now();
+        let clock = now.format("%H:%M").to_string();
+        let smoothing = self.config.analysis.smoothing_fraction;
+        let mut captured = None;
+        self.edit_session(|session| {
+            captured = session.capture(&snapshot, smoothing, now.timestamp(), &clock);
+        });
+        if let Some(name) = captured
+            .and_then(|id| self.session.trace(id))
+            .map(|trace| trace.name.clone())
+        {
+            self.notifications.push(
+                text::trace_captured(&name),
+                Tone::Success,
+                Some(Action::Undo),
+            );
+        }
+    }
+
+    fn apply_trace_command(&mut self, command: TraceCommand) {
+        let is_offset_edit = matches!(command, TraceCommand::SetOffset(..));
+        match command {
+            TraceCommand::ToggleVisible(id) => self.edit_session(|session| {
+                if let Some(trace) = session.trace_mut(id) {
+                    trace.visible = !trace.visible;
+                }
+            }),
+            TraceCommand::CycleColor(id) => self.edit_session(|session| {
+                if let Some(trace) = session.trace_mut(id) {
+                    trace.color_index = (trace.color_index + 1) % STORED_TRACE_COLOR_COUNT;
+                }
+            }),
+            TraceCommand::SetOffset(id, offset_db) => {
+                if self.last_offset_edit == Some(id) {
+                    if let Some(trace) = self.session.trace_mut(id) {
+                        trace.offset_db = offset_db;
+                    }
+                    self.session_dirty_since.get_or_insert_with(Instant::now);
+                } else {
+                    self.edit_session(|session| {
+                        if let Some(trace) = session.trace_mut(id) {
+                            trace.offset_db = offset_db;
+                        }
+                    });
+                    self.last_offset_edit = Some(id);
+                }
+            }
+            TraceCommand::ToggleSelected(id) => self.edit_session(|session| {
+                if let Some(trace) = session.trace_mut(id) {
+                    trace.selected = !trace.selected;
+                }
+            }),
+            TraceCommand::Rename(id, name) => self.edit_session(|session| {
+                if let Some(trace) = session.trace_mut(id) {
+                    trace.name = name;
+                }
+            }),
+            TraceCommand::Delete(id) => {
+                self.edit_session(|session| session.remove(id));
+                self.notifications.push(
+                    text::NOTIFY_TRACE_DELETED,
+                    Tone::Neutral,
+                    Some(Action::Undo),
+                );
+            }
+            TraceCommand::AverageSelected => {
+                let now = chrono::Local::now();
+                let clock = now.format("%H:%M").to_string();
+                let mut created = None;
+                self.edit_session(|session| {
+                    created = session.average_selected(now.timestamp(), &clock);
+                });
+                if created.is_none() {
+                    self.notifications
+                        .push(text::NOTIFY_AVERAGE_NEEDS_TWO, Tone::Warning, None);
+                }
+            }
+            TraceCommand::ExportCsv => self.export_csv(),
+        }
+        if !is_offset_edit {
+            self.last_offset_edit = None;
+        }
+    }
+
+    fn export_csv(&mut self) {
+        let csv = self
+            .session
+            .to_csv(self.measurement.grid().frequencies_hz());
+        let file_name = format!(
+            "{EXPORT_FILE_PREFIX}-{}.csv",
+            chrono::Local::now().format("%Y%m%d-%H%M%S")
+        );
+        match write_export(&self.export_directory, &file_name, &csv) {
+            Ok(path) => self
+                .notifications
+                .push(text::exported_to(&path), Tone::Success, None),
+            Err(error) => {
+                tracing::warn!(%error, "export failed");
+                self.notifications
+                    .push(text::NOTIFY_EXPORT_FAILED, Tone::Danger, None);
+            }
+        }
     }
 
     fn mark_config_dirty(&mut self) {
@@ -282,11 +445,27 @@ impl SoundTuningApp {
                 self.measurement
                     .send(EngineCommand::StartLatencyCalibration);
             }
-            Action::CaptureTrace
-            | Action::Undo
-            | Action::Redo
-            | Action::AddEqFilter
-            | Action::ExportSession => {}
+            Action::CaptureTrace => self.capture_trace(),
+            Action::Undo => {
+                let text = if self.history.undo(&mut self.session) {
+                    self.session_dirty_since.get_or_insert_with(Instant::now);
+                    text::NOTIFY_UNDONE
+                } else {
+                    text::NOTIFY_NOTHING_TO_UNDO
+                };
+                self.last_offset_edit = None;
+                self.notifications.push(text, Tone::Neutral, None);
+            }
+            Action::Redo => {
+                if self.history.redo(&mut self.session) {
+                    self.session_dirty_since.get_or_insert_with(Instant::now);
+                    self.notifications
+                        .push(text::NOTIFY_REDONE, Tone::Neutral, None);
+                }
+                self.last_offset_edit = None;
+            }
+            Action::ExportSession => self.export_csv(),
+            Action::AddEqFilter => {}
         }
     }
 
@@ -514,6 +693,7 @@ impl eframe::App for SoundTuningApp {
             self.handle_action(action);
         }
         self.save_config_if_due();
+        self.save_session_if_due();
         if self.measurement.is_running() {
             context.request_repaint();
         } else {
@@ -524,6 +704,9 @@ impl eframe::App for SoundTuningApp {
     fn on_exit(&mut self) {
         if let Err(error) = self.store.save(&self.config) {
             tracing::warn!(%error, "could not save the configuration on exit");
+        }
+        if let Err(error) = self.session_store.save(&self.session) {
+            tracing::warn!(%error, "could not save the session on exit");
         }
     }
 }
@@ -598,6 +781,7 @@ impl SoundTuningApp {
             self.mark_config_dirty();
         }
 
+        let mut trace_commands = Vec::new();
         if self.config.side_panel_open {
             Panel::right("side-panel")
                 .exact_size(size::SIDE_PANEL_WIDTH)
@@ -610,6 +794,10 @@ impl SoundTuningApp {
                 .show(ui, |ui| {
                     side_panel::tab_bar(ui, palette, &mut self.side_tab);
                     match self.side_tab {
+                        SideTab::Traces if !self.session.traces.is_empty() => {
+                            trace_commands =
+                                traces_panel::show(ui, palette, &self.session, &mut self.rename);
+                        }
                         SideTab::Traces => side_panel::empty_state(
                             ui,
                             palette,
@@ -632,6 +820,10 @@ impl SoundTuningApp {
                 });
         }
 
+        for command in trace_commands {
+            self.apply_trace_command(command);
+        }
+
         let banners = collect_banners(&self.banner_inputs());
         egui::CentralPanel::default()
             .frame(
@@ -642,12 +834,29 @@ impl SoundTuningApp {
             )
             .show(ui, |ui| {
                 let grid = std::sync::Arc::clone(self.measurement.grid());
+                let overlays: Vec<OverlayTrace<'_>> = self
+                    .session
+                    .traces
+                    .iter()
+                    .filter(|trace| trace.visible)
+                    .map(|trace| OverlayTrace {
+                        label: &trace.name,
+                        values_db: &trace.magnitude_db,
+                        offset_db: trace.offset_db,
+                        style: TraceStyle {
+                            color: palette.stored_traces
+                                [trace.color_index % STORED_TRACE_COLOR_COUNT],
+                            width: stroke::TRACE_STORED,
+                            halo: None,
+                        },
+                    })
+                    .collect();
                 let inputs = PlotInputs {
                     frequencies_hz: grid.frequencies_hz(),
                     snapshot: self.measurement.snapshot(),
                     show_live: self.measurement.snapshot().averages > 0,
                     running: self.measurement.is_running(),
-                    overlays: &[],
+                    overlays: &overlays,
                 };
                 let events = self.plot.show(ui, palette, &inputs, self.is_mac, actions);
                 if events.double_click_hz_db.is_some() {
@@ -664,6 +873,25 @@ impl SoundTuningApp {
                 }
             });
     }
+}
+
+pub fn default_export_directory() -> std::path::PathBuf {
+    let home = std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(std::env::temp_dir);
+    home.join("Documents").join(text::EXPORT_DIRECTORY_NAME)
+}
+
+pub fn write_export(
+    directory: &std::path::Path,
+    file_name: &str,
+    contents: &str,
+) -> anyhow::Result<String> {
+    std::fs::create_dir_all(directory)?;
+    let path = directory.join(file_name);
+    std::fs::write(&path, contents)?;
+    Ok(path.display().to_string())
 }
 
 #[cfg(test)]

@@ -168,7 +168,10 @@ pub const CSV_FREQUENCY_HEADER: &str = "Fréquence (Hz)";
 pub const TRACES_AVERAGE: &str = "Moyenne des sélectionnées";
 pub const TRACES_EXPORT_CSV: &str = "Exporter CSV";
 pub const TRACE_DELETE: &str = "Supprimer la trace";
+pub const TRACE_DELETE_GLYPH: &str = "×";
+pub const NOTIFY_TRACE_DELETED: &str = "Trace supprimée";
 pub const TRACE_TOGGLE_VISIBLE: &str = "Afficher / masquer";
+pub const TRACE_VISIBLE_SHORT: &str = "Visible";
 pub const TRACE_SELECT: &str = "Sélectionner";
 pub const TRACE_COLOR: &str = "Changer la couleur";
 pub const TRACE_OFFSET: &str = "Décalage";
@@ -180,6 +183,65 @@ pub const NOTIFY_NOTHING_TO_UNDO: &str = "Rien à annuler";
 pub const NOTIFY_AVERAGE_NEEDS_TWO: &str = "Sélectionnez au moins deux traces pour les moyenner.";
 pub const NOTIFY_EXPORT_FAILED: &str = "Export impossible";
 pub const EXPORT_DIRECTORY_NAME: &str = "SoundTuning";
+
+pub const RANGE_SEPARATOR: &str = "–";
+pub const ALIGNMENT_TRACE_A: &str = "Trace A";
+pub const ALIGNMENT_TRACE_B: &str = "Trace B";
+pub const ALIGNMENT_CHOOSE_TRACE: &str = "Choisir…";
+pub const ALIGNMENT_CRITERION_LEVEL: &str = "Niveau max";
+pub const ALIGNMENT_CRITERION_FLAT: &str = "Plus plat";
+pub const ALIGNMENT_BAND: &str = "Bande";
+pub const ALIGNMENT_BAND_HINT: &str = "Maj + glisser sur le tracé pour choisir la bande.";
+pub const ALIGNMENT_PROPOSAL: &str = "Proposition";
+pub const ALIGNMENT_USE_PROPOSAL: &str = "Utiliser la proposition";
+pub const ALIGNMENT_APPLIED: &str = "Réglage à recopier dans le processeur";
+pub const ALIGNMENT_INVERT_B: &str = "Inverser la polarité de B";
+pub const ALIGNMENT_SIGN_HINT: &str = "Δ > 0 : retarder B · Δ < 0 : retarder A";
+pub const ALIGNMENT_NO_DELAY: &str = "Aucun délai";
+pub const ALIGNMENT_POLARITY_SUFFIX: &str = " · B inversée";
+pub const PREDICTED_SUM_LABEL: &str = "Somme prédite";
+
+pub fn format_signed_milliseconds(value: f64) -> String {
+    let sign = if value > 0.0 { "+" } else { "" };
+    format!("{sign}{}", format_milliseconds(value))
+}
+
+pub fn alignment_instruction(delay_ms: f64, inverted: bool) -> String {
+    let delay = if delay_ms.abs() < 0.005 {
+        ALIGNMENT_NO_DELAY.to_owned()
+    } else if delay_ms > 0.0 {
+        format!("Retarder B de {}", format_milliseconds(delay_ms))
+    } else {
+        format!("Retarder A de {}", format_milliseconds(-delay_ms))
+    };
+    if inverted {
+        format!("{delay}{ALIGNMENT_POLARITY_SUFFIX}")
+    } else {
+        delay
+    }
+}
+
+pub const EQ_GLOBAL_BYPASS: &str = "Bypass global";
+pub const EQ_VIEW_PREDICTED: &str = "Prédit";
+pub const EQ_VIEW_ONLY: &str = "EQ seul";
+pub const EQ_VIEW_INVERTED: &str = "Trace inversée";
+pub const EQ_TARGET_LIVE: &str = "Mesure en direct";
+pub const EQ_EXPORT_TEXT: &str = "Exporter texte";
+pub const EQ_EXPORT_JSON: &str = "Exporter JSON";
+pub const EQ_BYPASS: &str = "Bypass";
+pub const EQ_REMOVE: &str = "Retirer le filtre";
+pub const EQ_CURVE_LABEL: &str = "EQ";
+pub const EQ_PREDICTED_LABEL: &str = "Résultat prédit";
+pub const EQ_INVERTED_LABEL: &str = "Trace inversée";
+pub const NOTIFY_EQ_FULL: &str = "La banque contient déjà 16 filtres.";
+
+pub fn eq_bank_label(index: usize) -> String {
+    format!("Banque {}", bank_label(index))
+}
+
+pub fn filter_number(number: usize) -> String {
+    format!("F{number}")
+}
 
 pub const FILTER_BELL: &str = "Cloche";
 pub const FILTER_LOW_SHELF: &str = "Plateau grave";
@@ -479,6 +541,16 @@ mod tests {
         assert_eq!(format_frequency(12_500.0), "12,5 kHz");
         assert_eq!(format_axis_frequency(2000.0), "2k");
         assert_eq!(format_axis_frequency(50.0), "50");
+    }
+
+    #[test]
+    fn alignment_instruction_names_the_source_to_delay() {
+        assert_eq!(alignment_instruction(-1.5, false), "Retarder A de 1,50 ms");
+        assert_eq!(
+            alignment_instruction(2.0, true),
+            "Retarder B de 2,00 ms · B inversée"
+        );
+        assert_eq!(alignment_instruction(0.0, false), ALIGNMENT_NO_DELAY);
     }
 
     #[test]
