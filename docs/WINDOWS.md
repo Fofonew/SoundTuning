@@ -20,20 +20,20 @@ cargo test --workspace
 .\target\release\soundtuning.exe
 ```
 
-### Variante ASIO (latence minimale)
+### ASIO (latence minimale)
 
-ASIO n'est pas compilé par défaut : il dépend du SDK ASIO de Steinberg, non redistribuable.
+L'installeur produit par la CI est compilé **avec** ASIO : les pilotes ASIO installés apparaissent dans la liste des périphériques, suffixés « (ASIO) », à côté des périphériques WASAPI.
 
-1. Télécharger le SDK ASIO depuis le site développeur de Steinberg (compte gratuit) et le décompresser, par exemple dans `C:\SDK\asiosdk`.
-2. Installer LLVM (pour `bindgen`) : `winget install LLVM.LLVM`, puis vérifier `clang --version`.
-3. Déclarer le chemin du SDK puis compiler avec la feature :
+Pour compiler soi-même avec ASIO :
+
+1. Installer LLVM (pour `bindgen`) : `winget install LLVM.LLVM`, puis vérifier `clang --version` (au besoin : `$env:LIBCLANG_PATH = "C:\Program Files\LLVM\bin"`).
+2. Compiler avec la feature ; le SDK ASIO de Steinberg est téléchargé automatiquement pendant la compilation (ou, hors ligne, décompressé à la main et désigné par `$env:CPAL_ASIO_DIR = "C:\SDK\asiosdk"`) :
 
 ```powershell
-$env:CPAL_ASIO_DIR = "C:\SDK\asiosdk"
-cargo build --release --features asio
+cargo build --release -p app --features asio
 ```
 
-La feature `asio` du crate `app` active `audio-io/asio`, qui active `cpal/asio`. Sans le SDK, la compilation avec `--features asio` échoue : c'est attendu.
+La feature `asio` du crate `app` active `audio-io/asio`, qui active `cpal/asio`. Le binaire intègre du code du SDK Steinberg : vérifier ses conditions de licence avant toute diffusion publique de l'installeur.
 
 ## Procédure de test (à cocher sur le PC)
 
@@ -51,9 +51,16 @@ La feature `asio` du crate `app` active `audio-io/asio`, qui active `cpal/asio`.
 - [ ] Débrancher la carte pendant la mesure : bandeau « Carte son déconnectée », reprise en un clic après rebranchement.
 - [ ] CPU < 10 % d'un cœur en mesure continue (Gestionnaire des tâches, onglet Détails).
 
-### Audio ASIO (build `--features asio`)
-- [ ] Le pilote ASIO apparaît dans la liste des périphériques.
-- [ ] Mesure en référence interne et rebouclée identique au test WASAPI ; latence calibrée plus faible.
+### Audio ASIO (installeur de la CI ou build `--features asio`)
+- [ ] Le pilote ASIO de la carte apparaît dans « Réglages audio » sous la forme « Nom (ASIO) ».
+- [ ] Choisir l'entrée ASIO : la sortie passe sur « Automatique — Nom (ASIO) » ; la mesure démarre.
+- [ ] Mesure en référence interne et rebouclée identique au test WASAPI ; latence calibrée plus faible (refaire le calibrage : la clé de latence dépend du pilote).
+- [ ] Taille de tampon : changer le tampon dans le panneau du pilote ASIO, relancer la mesure, aucun craquement.
+- [ ] Format 24 bits : si le pilote travaille en 24 bits, les vu-mètres et la mesure restent corrects (niveaux identiques à WASAPI à ±0,5 dB).
+- [ ] Pendant une mesure ASIO, ouvrir « Réglages audio » : l'entrée et la sortie ASIO restent sélectionnées.
+
+### Sans carte son
+- [ ] Micro intégré du portable et haut-parleurs (ou casque, sortie HDMI, Bluetooth) : sortie « Automatique », la mesure démarre ; si la fréquence demandée n'est pas disponible, une notification indique la fréquence adoptée.
 
 ### Fichiers
 - [ ] Configuration et session dans `%APPDATA%\SoundTuning\` ; relancer l'application restaure traces, EQ et réglages.
@@ -67,10 +74,13 @@ Outil : `cargo-packager` 0.11.8 (choix et justification : `docs/DECISIONS.md`, D
 Sur le PC de test, depuis la racine du dépôt :
 
 ```powershell
-cargo install cargo-packager --locked
+cargo install cargo-packager --locked --version 0.11.8
+cargo build --release -p app --features asio
 cd crates\app
 cargo packager --release --formats nsis
 ```
+
+La compilation release précède `cargo packager`, qui empaquette le binaire déjà construit (sans `--features asio`, l'installeur est sans ASIO).
 
 L'installeur est écrit dans `target\packages\soundtuning_0.1.0_x64-setup.exe`.
 

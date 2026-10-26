@@ -5,6 +5,7 @@ pub mod cli;
 pub mod commands;
 pub mod config;
 pub mod design;
+pub mod device_choice;
 pub mod eq_state;
 pub mod measurement;
 pub mod plot;

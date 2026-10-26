@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use anyhow::Context;
-use audio_io::{ReferenceMode, StreamSettings};
+use audio_io::{AudioRoute, ReferenceMode, StreamSettings};
 use dsp_core::{Averaging, DEFAULT_AIR_TEMPERATURE_CELSIUS, Smoothing};
 use engine::{AnalysisSettings, DelayPolicy, EngineConfig};
 use serde::{Deserialize, Serialize};
@@ -127,16 +127,24 @@ impl AppConfig {
         self
     }
 
-    pub fn latency_key(&self) -> String {
+    pub fn configured_route(&self) -> AudioRoute {
+        AudioRoute {
+            input_device_id: self.stream.input_device_id.clone(),
+            output_device_id: self
+                .stream
+                .output_device_id
+                .clone()
+                .or_else(|| self.stream.input_device_id.clone()),
+            sample_rate_hz: self.stream.sample_rate_hz,
+        }
+    }
+
+    pub fn latency_key(&self, route: &AudioRoute) -> String {
         format!(
             "{}|{}|{}|{}",
-            self.stream.input_device_id.as_deref().unwrap_or("default"),
-            self.stream
-                .output_device_id
-                .as_deref()
-                .or(self.stream.input_device_id.as_deref())
-                .unwrap_or("default"),
-            self.stream.sample_rate_hz,
+            route.input_device_id.as_deref().unwrap_or("default"),
+            route.output_device_id.as_deref().unwrap_or("default"),
+            route.sample_rate_hz,
             self.stream
                 .buffer_frames
                 .map_or_else(|| "auto".to_owned(), |frames| frames.to_string())
@@ -147,9 +155,11 @@ impl AppConfig {
         matches!(self.stream.reference, ReferenceMode::Internal)
     }
 
-    pub fn calibrated_latency_ms(&self) -> Option<f64> {
+    pub fn calibrated_latency_ms(&self, route: &AudioRoute) -> Option<f64> {
         if self.uses_internal_reference() {
-            self.system_latency_ms.get(&self.latency_key()).copied()
+            self.system_latency_ms
+                .get(&self.latency_key(route))
+                .copied()
         } else {
             None
         }
@@ -162,11 +172,11 @@ impl AppConfig {
         }
     }
 
-    pub fn engine_config(&self) -> EngineConfig {
+    pub fn engine_config(&self, route: &AudioRoute) -> EngineConfig {
         EngineConfig {
             settings: self.analysis.to_settings(),
             policy: self.delay_policy(),
-            system_latency_ms: self.calibrated_latency_ms(),
+            system_latency_ms: self.calibrated_latency_ms(route),
         }
     }
 }
@@ -292,7 +302,9 @@ mod tests {
             wizard_completed: true,
             ..AppConfig::default()
         };
-        config.system_latency_ms.insert(config.latency_key(), 7.3);
+        config
+            .system_latency_ms
+            .insert(config.latency_key(&config.configured_route()), 7.3);
         store.save(&config).unwrap();
         assert_eq!(store.load(), config);
         std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
@@ -312,12 +324,40 @@ mod tests {
     #[test]
     fn latency_is_only_used_with_the_internal_reference() {
         let mut config = AppConfig::default();
-        config.system_latency_ms.insert(config.latency_key(), 5.0);
-        assert_eq!(config.engine_config().system_latency_ms, Some(5.0));
+        let route = config.configured_route();
+        config
+            .system_latency_ms
+            .insert(config.latency_key(&route), 5.0);
+        assert_eq!(config.engine_config(&route).system_latency_ms, Some(5.0));
         config.stream.reference = ReferenceMode::Loopback {
             reference_channel_index: 1,
         };
-        assert_eq!(config.engine_config().system_latency_ms, None);
+        assert_eq!(config.engine_config(&route).system_latency_ms, None);
+    }
+
+    #[test]
+    fn latency_follows_the_output_actually_opened() {
+        let mut config = AppConfig::default();
+        config.stream.input_device_id = Some("coreaudio:mic".into());
+        let speakers = AudioRoute {
+            input_device_id: Some("coreaudio:mic".into()),
+            output_device_id: Some("coreaudio:speakers".into()),
+            sample_rate_hz: 48_000,
+        };
+        let headphones = AudioRoute {
+            output_device_id: Some("coreaudio:headphones".into()),
+            ..speakers.clone()
+        };
+        config
+            .system_latency_ms
+            .insert(config.latency_key(&speakers), 12.0);
+        assert_eq!(config.calibrated_latency_ms(&speakers), Some(12.0));
+        assert_eq!(config.calibrated_latency_ms(&headphones), None);
+        let resampled = AudioRoute {
+            sample_rate_hz: 44_100,
+            ..speakers
+        };
+        assert_eq!(config.calibrated_latency_ms(&resampled), None);
     }
 
     #[test]

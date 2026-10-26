@@ -50,7 +50,6 @@ product-name = "SoundTuning"
 identifier = "app.soundtuning.desktop"
 description = "Mesure acoustique double FFT pour le calage de systèmes de sonorisation"
 authors = ["Dimitri"]
-before-packaging-command = "cargo build --release -p app"
 out-dir = "../../target/packages"
 binaries-dir = "../../target/release"
 binaries = [{ path = "soundtuning", main = true }]

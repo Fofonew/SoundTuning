@@ -1,6 +1,6 @@
 use std::time::{Duration, Instant};
 
-use audio_io::{DeviceInfo, ReferenceMode, list_devices};
+use audio_io::{AudioRoute, DeviceInfo, ReferenceMode, list_devices};
 use dsp_core::distance_m_for_delay_ms;
 use eframe::egui::{self, CornerRadius, Frame, Margin, Panel, Stroke};
 use engine::EngineCommand;
@@ -11,6 +11,7 @@ use crate::config::{AppConfig, ConfigStore};
 use crate::design::tokens::{STORED_TRACE_COLOR_COUNT, size, spacing, stroke};
 use crate::design::widgets::Tone;
 use crate::design::{Theme, fonts, theme};
+use crate::device_choice;
 use crate::eq_state::{EqState, EqTarget, EqView, inverted_db, predicted_db};
 use crate::measurement::{MeasurementController, SourceSpec};
 use crate::plot::{PlotView, RangePreset, TraceStyle};
@@ -126,6 +127,7 @@ pub struct SoundTuningApp {
     awaiting_delay_result: bool,
     last_notified_delay_sequence: u64,
     device_catalog: DeviceCatalog,
+    known_devices: Vec<DeviceInfo>,
     low_coherence_cache: (u64, bool),
     session: Session,
     session_writer: SessionWriter,
@@ -169,6 +171,7 @@ impl SoundTuningApp {
             awaiting_delay_result: false,
             last_notified_delay_sequence: 0,
             device_catalog: options.devices.clone(),
+            known_devices: Vec::new(),
             low_coherence_cache: (0, false),
             session: loaded.session,
             session_writer: SessionWriter::spawn(options.session_store.clone()),
@@ -266,7 +269,7 @@ impl SoundTuningApp {
                     .push(text::NOTIFY_AUDIO_APPLIED, Tone::Success, None);
             }
             AudioCommand::RefreshDevices => {
-                let devices = self.device_catalog.devices();
+                let devices = self.available_devices();
                 if let Some(panel) = self.audio_settings.as_mut() {
                     panel.replace_devices(devices);
                 }
@@ -724,6 +727,43 @@ impl SoundTuningApp {
         self.export_file("csv", &csv);
     }
 
+    fn adopt_adjusted_sample_rate(&mut self) {
+        let Some(sample_rate_hz) = self.measurement.take_sample_rate_adjustment() else {
+            return;
+        };
+        self.notifications.push(
+            text::sample_rate_adjusted(sample_rate_hz, self.config.stream.sample_rate_hz),
+            Tone::Warning,
+            None,
+        );
+    }
+
+    fn current_route(&self) -> AudioRoute {
+        self.measurement
+            .route()
+            .cloned()
+            .unwrap_or_else(|| self.config.configured_route())
+    }
+
+    fn available_devices(&mut self) -> Vec<DeviceInfo> {
+        let mut devices = self.device_catalog.devices();
+        if self.measurement.is_running() {
+            let selected = [
+                self.config.stream.input_device_id.as_deref(),
+                self.config.stream.output_device_id.as_deref(),
+            ];
+            for id in selected.into_iter().flatten() {
+                if device_choice::find(&devices, id).is_none()
+                    && let Some(known) = device_choice::find(&self.known_devices, id)
+                {
+                    devices.push(known.clone());
+                }
+            }
+        }
+        self.known_devices.clone_from(&devices);
+        devices
+    }
+
     fn mark_config_dirty(&mut self) {
         self.config_dirty_since.get_or_insert_with(Instant::now);
     }
@@ -872,7 +912,7 @@ impl SoundTuningApp {
                 } else {
                     self.config.side_panel_open = true;
                     self.audio_settings = Some(AudioSettingsPanel::new(
-                        self.device_catalog.devices(),
+                        self.available_devices(),
                         &self.config.stream,
                     ));
                 }
@@ -911,7 +951,7 @@ impl SoundTuningApp {
         let delay = self.measurement.snapshot().delay;
         let from_current_engine = self.measurement.snapshot().sequence > 0;
         if let Some(latency_ms) = delay.system_latency_ms.filter(|_| from_current_engine) {
-            let key = self.config.latency_key();
+            let key = self.config.latency_key(&self.current_route());
             let stored = self.config.system_latency_ms.get(&key).copied();
             if self.config.uses_internal_reference()
                 && stored.is_none_or(|stored| (stored - latency_ms).abs() > f64::EPSILON)
@@ -981,7 +1021,11 @@ impl SoundTuningApp {
                 acoustic_ms / MILLISECONDS_PER_SECOND * f64::from(snapshot.sample_rate_hz),
             ),
             confidence_db: delay.latest.map(|latest| latest.confidence_db),
-            approximate: self.is_live_internal() && self.config.calibrated_latency_ms().is_none(),
+            approximate: self.is_live_internal()
+                && self
+                    .config
+                    .calibrated_latency_ms(&self.current_route())
+                    .is_none(),
         }
     }
 
@@ -1044,7 +1088,10 @@ impl SoundTuningApp {
             start_error: self.measurement.last_error().map(str::to_owned),
             alert: self.measurement.input_alert(),
             live_internal_reference: self.is_live_internal(),
-            latency_calibrated: self.config.calibrated_latency_ms().is_some()
+            latency_calibrated: self
+                .config
+                .calibrated_latency_ms(&self.current_route())
+                .is_some()
                 || snapshot.delay.system_latency_ms.is_some(),
             separate_clocks: self.measurement.uses_separate_clocks(),
             low_coherence: self.low_coherence_cache.1 && self.measurement.is_running(),
@@ -1100,8 +1147,9 @@ impl SoundTuningApp {
                 self.start_measurement();
             }
             WizardAction::RefreshDevices => {
+                let devices = self.available_devices();
                 if let Some(wizard) = self.wizard.as_mut() {
-                    wizard.devices = self.device_catalog.devices();
+                    wizard.devices = devices;
                 }
             }
             WizardAction::StopPreview => self.stop_measurement(),
@@ -1126,6 +1174,7 @@ impl eframe::App for SoundTuningApp {
         self.apply_theme(&context);
         let palette = self.config.theme.palette();
         self.measurement.refresh();
+        self.adopt_adjusted_sample_rate();
         self.update_low_coherence();
         self.process_engine_events();
         self.notify_delay_drift();

@@ -771,7 +771,7 @@ fn command_comma_opens_audio_settings_and_apply_saves_the_devices() {
     harness.run_steps(2);
     let stream = &harness.state().config().stream;
     assert_eq!(stream.input_device_id.as_deref(), Some("coreaudio:UAX22"));
-    assert_eq!(stream.output_device_id.as_deref(), Some("coreaudio:UAX22"));
+    assert_eq!(stream.output_device_id, None);
     assert_eq!(stream.generator.output_channel_indices, vec![1]);
     assert_eq!(*stream, draft);
     assert!(

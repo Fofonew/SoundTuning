@@ -30,10 +30,10 @@ pub fn print_devices() -> anyhow::Result<()> {
             "{}\n",
             text::device_line(
                 &device.id,
-                &device.name,
+                &text::device_name(&device),
                 device.input_channel_count,
                 device.output_channel_count,
-                &device.supported_sample_rates_hz,
+                &device.sample_rates_hz(),
                 &marks,
             )
         );
@@ -89,7 +89,15 @@ pub fn record(arguments: &RecordArguments) -> anyhow::Result<()> {
         bail!("recording duration must be positive");
     }
     let settings = stream_settings_for_recording(arguments);
-    let mut session = LiveSession::open(&settings).context("opening audio streams")?;
+    let mut session = LiveSession::open(&settings)
+        .map_err(|error| anyhow::anyhow!(text::audio_error(&error)))
+        .context("opening audio streams")?;
+    if session.sample_rate_hz() != settings.sample_rate_hz {
+        println!(
+            "{}",
+            text::sample_rate_adjusted(session.sample_rate_hz(), settings.sample_rate_hz)
+        );
+    }
     let mut source = session
         .take_frame_source()
         .context("audio frame source already taken")?;

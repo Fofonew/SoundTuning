@@ -39,6 +39,10 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --workspace
       - run: cargo bench --workspace --no-run
+      - if: runner.os == 'Windows'
+        run: cargo check -p app --features asio
+        env:
+          LIBCLANG_PATH: C:\Program Files\LLVM\bin
 
   windows-cross-check:
     runs-on: macos-latest
@@ -66,6 +70,12 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: cargo install cargo-packager --locked --version 0.11.8
+      - if: runner.os == 'macOS'
+        run: cargo build --release -p app
+      - if: runner.os == 'Windows'
+        run: cargo build --release -p app --features asio
+        env:
+          LIBCLANG_PATH: C:\Program Files\LLVM\bin
       - run: cargo packager --release --formats ${{ matrix.formats }}
         working-directory: crates/app
       - if: runner.os == 'macOS'

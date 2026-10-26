@@ -59,6 +59,16 @@ impl Default for StreamSettings {
 }
 
 impl StreamSettings {
+    pub fn required_output_channels(&self) -> usize {
+        self.generator
+            .output_channel_indices
+            .iter()
+            .copied()
+            .max()
+            .unwrap_or(0)
+            + 1
+    }
+
     pub fn generator_channel_mask(&self) -> u64 {
         self.generator
             .output_channel_indices
@@ -79,6 +89,14 @@ mod tests {
         assert_eq!(settings.measurement_channel_index, 0);
         assert_eq!(settings.reference, ReferenceMode::Internal);
         assert_eq!(settings.generator.kind, NoiseKind::Pink);
+    }
+
+    #[test]
+    fn required_outputs_follow_the_highest_generator_channel() {
+        let mut settings = StreamSettings::default();
+        assert_eq!(settings.required_output_channels(), 1);
+        settings.generator.output_channel_indices = vec![0, 3];
+        assert_eq!(settings.required_output_channels(), 4);
     }
 
     #[test]

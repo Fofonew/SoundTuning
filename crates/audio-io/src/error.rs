@@ -19,6 +19,13 @@ pub enum AudioIoError {
         direction: &'static str,
         sample_rate_hz: u32,
     },
+    #[error(
+        "no sample rate is shared by input ({input_rates_hz:?}) and output ({output_rates_hz:?})"
+    )]
+    NoCommonSampleRate {
+        input_rates_hz: Vec<u32>,
+        output_rates_hz: Vec<u32>,
+    },
     #[error("unsupported sample format: {0}")]
     UnsupportedSampleFormat(String),
     #[error("the noise generator needs at least one output channel")]

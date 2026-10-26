@@ -1,17 +1,18 @@
 use std::sync::Arc;
 
 use cpal::traits::{DeviceTrait, StreamTrait};
-use cpal::{FromSample, SampleFormat, SizedSample, StreamInstant};
+use cpal::{FromSample, I24, SampleFormat, SizedSample, StreamInstant};
 use rtrb::{Consumer, Producer, RingBuffer};
 
 use crate::aligner::{InternalReferenceAligner, LoopbackFrameSource};
 use crate::clock::StreamClock;
-use crate::devices::find_device;
+use crate::devices::{find_device, sample_format_preference, usable_sample_rates};
 use crate::error::AudioIoError;
 use crate::frames::{FrameSource, GeneratorSample, InputFrame, ReadReport, StereoFrame};
 use crate::generator::{GeneratorControls, NoiseGenerator};
 use crate::health::StreamHealth;
 use crate::meter::MeterBank;
+use crate::sample_rate::negotiate_sample_rate;
 use crate::settings::{ReferenceMode, StreamSettings};
 
 const RING_BUFFER_SECONDS: usize = 2;
@@ -23,6 +24,13 @@ const OUTPUT_DIRECTION: &str = "output";
 struct StreamConfigChoice {
     config: cpal::StreamConfig,
     sample_format: SampleFormat,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AudioRoute {
+    pub input_device_id: Option<String>,
+    pub output_device_id: Option<String>,
+    pub sample_rate_hz: u32,
 }
 
 pub enum LiveFrameSource {
@@ -53,7 +61,7 @@ pub struct LiveSession {
     meters: Arc<MeterBank>,
     health: Arc<StreamHealth>,
     generator: Arc<GeneratorControls>,
-    sample_rate_hz: u32,
+    route: AudioRoute,
     input_device_name: String,
     output_device_name: Option<String>,
     generator_error: Option<String>,
@@ -71,9 +79,6 @@ struct SharedStreamState {
 impl LiveSession {
     pub fn open(settings: &StreamSettings) -> Result<Self, AudioIoError> {
         validate_generator_channels(settings)?;
-        let host = cpal::default_host();
-        let sample_rate_hz = settings.sample_rate_hz;
-        let ring_capacity = sample_rate_hz as usize * RING_BUFFER_SECONDS;
         let shared = SharedStreamState {
             meters: Arc::new(MeterBank::default()),
             health: Arc::new(StreamHealth::default()),
@@ -86,7 +91,7 @@ impl LiveSession {
             output_clock: Arc::new(StreamClock::default()),
         };
 
-        let input_device = find_device(&host, settings.input_device_id.as_deref(), true)?;
+        let input_device = find_device(settings.input_device_id.as_deref(), true)?;
         let routing = InputRouting {
             measurement_channel_index: settings.measurement_channel_index,
             loopback_channel_index: match settings.reference {
@@ -96,8 +101,44 @@ impl LiveSession {
                 ReferenceMode::Internal => None,
             },
         };
+        let input_ranges: Vec<_> = input_device.supported_input_configs()?.collect();
+        let input_rates = usable_sample_rates(&input_ranges, routing.required_channels());
+
+        let is_internal = matches!(settings.reference, ReferenceMode::Internal);
+        let wants_output = is_internal || settings.generator.enabled;
+        let mut output = None;
+        let mut generator_error = None;
+        if wants_output {
+            match OutputCandidate::resolve(settings, &input_device) {
+                Ok(candidate) => output = Some(candidate),
+                Err(error) if !is_internal => {
+                    tracing::warn!(%error, "generator output unavailable in loopback mode");
+                    generator_error = Some(error.to_string());
+                }
+                Err(error) => return Err(error),
+            }
+        }
+
+        let shared_output_rates = output
+            .as_ref()
+            .filter(|_| is_internal)
+            .map(|candidate| candidate.rates.as_slice());
+        let sample_rate_hz = match (
+            negotiate_sample_rate(settings.sample_rate_hz, &input_rates, shared_output_rates),
+            shared_output_rates,
+        ) {
+            (Some(rate), _) => rate,
+            (None, Some(output_rates)) if !input_rates.is_empty() && !output_rates.is_empty() => {
+                return Err(AudioIoError::NoCommonSampleRate {
+                    input_rates_hz: input_rates,
+                    output_rates_hz: output_rates.to_vec(),
+                });
+            }
+            (None, _) => settings.sample_rate_hz,
+        };
+        let ring_capacity = sample_rate_hz as usize * RING_BUFFER_SECONDS;
         let input_config = choose_stream_config(
-            input_device.supported_input_configs()?,
+            &input_ranges,
             sample_rate_hz,
             routing.required_channels(),
             settings.buffer_frames,
@@ -112,16 +153,16 @@ impl LiveSession {
             &shared,
         )?;
 
-        let is_internal = matches!(settings.reference, ReferenceMode::Internal);
-        let wants_output = is_internal || settings.generator.enabled;
-        let output_device_id = settings
-            .output_device_id
-            .as_deref()
-            .or(settings.input_device_id.as_deref());
         let mut opened_output = None;
-        let mut generator_error = None;
-        if wants_output {
-            match open_generator_output(&host, output_device_id, settings, ring_capacity, &shared) {
+        if let Some(candidate) = output {
+            let output_rate_hz = if candidate.rates.contains(&sample_rate_hz) {
+                sample_rate_hz
+            } else {
+                negotiate_sample_rate(settings.sample_rate_hz, &candidate.rates, None)
+                    .unwrap_or(sample_rate_hz)
+            };
+            match open_generator_output(candidate, output_rate_hz, settings, ring_capacity, &shared)
+            {
                 Ok(opened) => opened_output = Some(opened),
                 Err(error) if !is_internal => {
                     tracing::warn!(%error, "generator output unavailable in loopback mode");
@@ -132,6 +173,14 @@ impl LiveSession {
         }
 
         let input_device_id = input_device.id().ok();
+        let route = AudioRoute {
+            input_device_id: input_device_id.as_ref().map(ToString::to_string),
+            output_device_id: opened_output
+                .as_ref()
+                .and_then(|opened| opened.device_id.as_ref())
+                .map(ToString::to_string),
+            sample_rate_hz,
+        };
         let uses_separate_clocks = is_internal
             && opened_output
                 .as_ref()
@@ -169,6 +218,7 @@ impl LiveSession {
         tracing::info!(
             input = %input_device_name,
             output = ?output_device_name,
+            requested_sample_rate_hz = settings.sample_rate_hz,
             sample_rate_hz,
             uses_separate_clocks,
             "audio streams started"
@@ -180,7 +230,7 @@ impl LiveSession {
             meters: shared.meters,
             health: shared.health,
             generator: shared.controls,
-            sample_rate_hz,
+            route,
             input_device_name,
             output_device_name,
             generator_error,
@@ -205,7 +255,11 @@ impl LiveSession {
     }
 
     pub fn sample_rate_hz(&self) -> u32 {
-        self.sample_rate_hz
+        self.route.sample_rate_hz
+    }
+
+    pub fn route(&self) -> &AudioRoute {
+        &self.route
     }
 
     pub fn input_device_name(&self) -> &str {
@@ -252,23 +306,15 @@ fn device_display_name(device: &cpal::Device) -> String {
         .unwrap_or_else(|_| device.to_string())
 }
 
-fn sample_format_preference(format: SampleFormat) -> u8 {
-    match format {
-        SampleFormat::F32 => 3,
-        SampleFormat::I32 => 2,
-        SampleFormat::I16 => 1,
-        _ => 0,
-    }
-}
-
 fn choose_stream_config(
-    ranges: impl Iterator<Item = cpal::SupportedStreamConfigRange>,
+    ranges: &[cpal::SupportedStreamConfigRange],
     sample_rate_hz: u32,
     minimum_channels: usize,
     buffer_frames: Option<u32>,
     direction: &'static str,
 ) -> Result<StreamConfigChoice, AudioIoError> {
     let ranges: Vec<_> = ranges
+        .iter()
         .filter(|range| sample_format_preference(range.sample_format()) > 0)
         .filter(|range| range.contains_rate(sample_rate_hz))
         .collect();
@@ -298,7 +344,7 @@ fn choose_stream_config(
             },
         });
     };
-    let supported = (*best).try_with_sample_rate(sample_rate_hz).ok_or(
+    let supported = (**best).try_with_sample_rate(sample_rate_hz).ok_or(
         AudioIoError::UnsupportedSampleRate {
             direction,
             sample_rate_hz,
@@ -351,7 +397,9 @@ fn build_input_stream(
 ) -> Result<cpal::Stream, AudioIoError> {
     match choice.sample_format {
         SampleFormat::F32 => typed_input_stream::<f32>(device, choice, routing, producer, shared),
+        SampleFormat::F64 => typed_input_stream::<f64>(device, choice, routing, producer, shared),
         SampleFormat::I32 => typed_input_stream::<i32>(device, choice, routing, producer, shared),
+        SampleFormat::I24 => typed_input_stream::<I24>(device, choice, routing, producer, shared),
         SampleFormat::I16 => typed_input_stream::<i16>(device, choice, routing, producer, shared),
         other => Err(AudioIoError::UnsupportedSampleFormat(other.to_string())),
     }
@@ -432,25 +480,58 @@ struct OpenedGeneratorOutput {
     device_id: Option<cpal::DeviceId>,
 }
 
+struct OutputCandidate {
+    device: cpal::Device,
+    ranges: Vec<cpal::SupportedStreamConfigRange>,
+    rates: Vec<u32>,
+    required_channels: usize,
+}
+
+impl OutputCandidate {
+    fn resolve(
+        settings: &StreamSettings,
+        input_device: &cpal::Device,
+    ) -> Result<Self, AudioIoError> {
+        let required_channels = settings.required_output_channels();
+        if settings.output_device_id.is_none() {
+            let ranges: Vec<_> = input_device
+                .supported_output_configs()
+                .map(Iterator::collect)
+                .unwrap_or_default();
+            let rates = usable_sample_rates(&ranges, required_channels);
+            if !rates.is_empty() {
+                return Ok(Self {
+                    device: input_device.clone(),
+                    ranges,
+                    rates,
+                    required_channels,
+                });
+            }
+        }
+        let device = find_device(settings.output_device_id.as_deref(), false)?;
+        let ranges: Vec<_> = device.supported_output_configs()?.collect();
+        let rates = usable_sample_rates(&ranges, required_channels);
+        Ok(Self {
+            device,
+            ranges,
+            rates,
+            required_channels,
+        })
+    }
+}
+
 fn open_generator_output(
-    host: &cpal::Host,
-    output_device_id: Option<&str>,
+    candidate: OutputCandidate,
+    sample_rate_hz: u32,
     settings: &StreamSettings,
     ring_capacity: usize,
     shared: &SharedStreamState,
 ) -> Result<OpenedGeneratorOutput, AudioIoError> {
-    let device = find_device(host, output_device_id, false)?;
-    let highest_requested_channel = settings
-        .generator
-        .output_channel_indices
-        .iter()
-        .copied()
-        .max()
-        .unwrap_or(0);
+    let device = candidate.device;
     let choice = choose_stream_config(
-        device.supported_output_configs()?,
-        settings.sample_rate_hz,
-        highest_requested_channel + 1,
+        &candidate.ranges,
+        sample_rate_hz,
+        candidate.required_channels,
         settings.buffer_frames,
         OUTPUT_DIRECTION,
     )?;
@@ -469,8 +550,14 @@ fn open_generator_output(
         SampleFormat::F32 => {
             typed_output_stream::<f32>(&device, &choice, routing, reference_producer, shared)
         }
+        SampleFormat::F64 => {
+            typed_output_stream::<f64>(&device, &choice, routing, reference_producer, shared)
+        }
         SampleFormat::I32 => {
             typed_output_stream::<i32>(&device, &choice, routing, reference_producer, shared)
+        }
+        SampleFormat::I24 => {
+            typed_output_stream::<I24>(&device, &choice, routing, reference_producer, shared)
         }
         SampleFormat::I16 => {
             typed_output_stream::<i16>(&device, &choice, routing, reference_producer, shared)

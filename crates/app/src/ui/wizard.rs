@@ -11,6 +11,7 @@ use crate::design::tokens::{radius, size, spacing, stroke, text_size};
 use crate::design::widgets::{
     Emphasis, MeterReading, action_button, combo_label, level_meter, muted,
 };
+use crate::device_choice;
 use crate::text;
 
 const WIZARD_WIDTH: f32 = 640.0;
@@ -254,12 +255,11 @@ impl Wizard {
         config: &mut AppConfig,
         meters: Option<(MeterReading, MeterReading)>,
     ) -> WizardAction {
-        let (input_count, output_count) = self.selected_device(config).map_or((1, 2), |device| {
-            (
-                device.input_channel_count.max(1),
-                device.output_channel_count,
-            )
-        });
+        let input_count = self
+            .selected_device(config)
+            .map_or(1, |device| device.input_channel_count.max(1));
+        let output_count = device_choice::resolved_output(&self.devices, &config.stream)
+            .map_or(2, |device| device.output_channel_count);
         let mut changed = false;
         let is_internal = matches!(config.stream.reference, ReferenceMode::Internal);
         if option_card(
@@ -478,11 +478,12 @@ fn device_row(
     device: &DeviceInfo,
     selected: bool,
 ) -> egui::Response {
-    let (rect, response) = selectable_frame(ui, palette, DEVICE_ROW_HEIGHT, selected, &device.name);
+    let name = text::device_name(device);
+    let (rect, response) = selectable_frame(ui, palette, DEVICE_ROW_HEIGHT, selected, &name);
     ui.painter().text(
         rect.left_center() + vec2(spacing::LG, -9.0),
         Align2::LEFT_CENTER,
-        &device.name,
+        name,
         fonts::ui_medium(text_size::BODY),
         palette.text_primary,
     );

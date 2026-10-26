@@ -4,8 +4,9 @@ use std::sync::mpsc::{Receiver, TryRecvError, channel};
 use std::time::Instant;
 
 use audio_io::{
-    FilePlayback, FrameSource, GeneratorControls, LiveSession, MeterBank, MeterSnapshot,
-    ReadReport, RecordingCursor, StereoFrame, StereoRecording, StreamFault, StreamHealth,
+    AudioRoute, FilePlayback, FrameSource, GeneratorControls, LiveSession, MeterBank,
+    MeterSnapshot, ReadReport, RecordingCursor, StereoFrame, StereoRecording, StreamFault,
+    StreamHealth,
 };
 use dsp_core::DisplayGrid;
 use engine::{EngineCommand, EngineHandle, MeasurementSnapshot};
@@ -113,6 +114,8 @@ struct RunningMeasurement {
     generator: Option<Arc<GeneratorControls>>,
     source_label: String,
     uses_separate_clocks: bool,
+    route: AudioRoute,
+    adjusted_sample_rate_hz: Option<u32>,
 }
 
 pub struct MeasurementController {
@@ -202,6 +205,17 @@ impl MeasurementController {
     pub fn uses_separate_clocks(&self) -> bool {
         self.running()
             .is_some_and(|running| running.uses_separate_clocks)
+    }
+
+    pub fn route(&self) -> Option<&AudioRoute> {
+        self.running().map(|running| &running.route)
+    }
+
+    pub fn take_sample_rate_adjustment(&mut self) -> Option<u32> {
+        match &mut self.lifecycle {
+            Lifecycle::Running(running) => running.adjusted_sample_rate_hz.take(),
+            Lifecycle::Idle | Lifecycle::Starting(_) => None,
+        }
     }
 
     pub fn generator(&self) -> Option<&Arc<GeneratorControls>> {
@@ -345,11 +359,14 @@ fn open_measurement(
     config: &AppConfig,
     grid: Arc<DisplayGrid>,
 ) -> Result<RunningMeasurement, String> {
-    let engine_config = config.engine_config();
     match source {
         SourceSpec::Live => {
             let mut session =
-                LiveSession::open(&config.stream).map_err(|error| error.to_string())?;
+                LiveSession::open(&config.stream).map_err(|error| text::audio_error(&error))?;
+            let route = session.route().clone();
+            let adjusted_sample_rate_hz = (route.sample_rate_hz != config.stream.sample_rate_hz)
+                .then_some(route.sample_rate_hz);
+            let engine_config = config.engine_config(&route);
             let frames = session
                 .take_frame_source()
                 .ok_or_else(|| text::ERROR_SOURCE_UNAVAILABLE.to_owned())?;
@@ -369,9 +386,13 @@ fn open_measurement(
                 generator,
                 source_label,
                 uses_separate_clocks,
+                route,
+                adjusted_sample_rate_hz,
             })
         }
         SourceSpec::File { path, pacing } => {
+            let route = config.configured_route();
+            let engine_config = config.engine_config(&route);
             let meters = Arc::new(MeterBank::default());
             let file_name = path.file_name().map_or_else(
                 || path.display().to_string(),
@@ -408,6 +429,8 @@ fn open_measurement(
                 generator: None,
                 source_label: text::file_source_label(&file_name, sample_rate_hz),
                 uses_separate_clocks: false,
+                route,
+                adjusted_sample_rate_hz: None,
             })
         }
     }

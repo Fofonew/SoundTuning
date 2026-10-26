@@ -1,16 +1,16 @@
-use audio_io::{DeviceInfo, ReferenceMode, StreamSettings};
+use audio_io::{DeviceInfo, ReferenceMode, StreamSettings, negotiate_sample_rate};
 use eframe::egui::{self, Align, Layout, RichText};
 
 use crate::design::Palette;
 use crate::design::fonts;
 use crate::design::tokens::{spacing, text_size};
 use crate::design::widgets::{Emphasis, action_button, combo_label, muted, section_title};
+use crate::device_choice;
 use crate::text;
 use crate::ui::wizard::{channel_combo, output_selector};
 
 const BUFFER_CHOICES: [Option<u32>; 6] =
     [None, Some(64), Some(128), Some(256), Some(512), Some(1024)];
-const PREFERRED_SAMPLE_RATE_HZ: u32 = 48_000;
 const STEREO_CHANNELS: usize = 2;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -41,33 +41,44 @@ impl AudioSettingsPanel {
         self.normalize();
     }
 
-    fn device(&self, id: Option<&str>) -> Option<&DeviceInfo> {
-        id.and_then(|id| self.devices.iter().find(|device| device.id == id))
+    fn input_device(&self) -> Option<&DeviceInfo> {
+        device_choice::resolved_input(&self.devices, &self.draft)
+    }
+
+    fn output_device(&self) -> Option<&DeviceInfo> {
+        device_choice::resolved_output(&self.devices, &self.draft)
     }
 
     fn input_channel_count(&self) -> usize {
-        self.device(self.draft.input_device_id.as_deref())
+        self.input_device()
             .map_or(1, |device| device.input_channel_count.max(1))
     }
 
     fn output_channel_count(&self) -> usize {
-        self.device(self.draft.output_device_id.as_deref())
+        self.output_device()
             .map_or(0, |device| device.output_channel_count)
     }
 
     fn sample_rates(&self) -> Vec<u32> {
-        self.device(self.draft.input_device_id.as_deref())
-            .map(|device| device.supported_sample_rates_hz.clone())
-            .filter(|rates| !rates.is_empty())
-            .unwrap_or_else(|| vec![self.draft.sample_rate_hz])
+        device_choice::shared_sample_rates(&self.devices, &self.draft)
     }
 
     pub fn select_input(&mut self, id: &str) {
         self.draft.input_device_id = Some(id.to_owned());
+        let input = device_choice::find(&self.devices, id);
+        let output_driver = self
+            .draft
+            .output_device_id
+            .as_deref()
+            .and_then(|output| device_choice::find(&self.devices, output))
+            .map(|device| device.driver.as_str());
+        if let Some(input) = input
+            && output_driver.is_some_and(|driver| driver != input.driver)
+        {
+            self.draft.output_device_id = None;
+        }
         if self.output_channel_count() == 0
-            && let Some(device) = self
-                .device(Some(id))
-                .filter(|device| device.supports_output())
+            && let Some(device) = input.filter(|device| device.supports_output())
         {
             self.draft.output_device_id = Some(device.id.clone());
         }
@@ -89,12 +100,11 @@ impl AudioSettingsPanel {
             *reference_channel_index = (*reference_channel_index).min(inputs - 1);
         }
         let rates = self.sample_rates();
-        if !rates.contains(&self.draft.sample_rate_hz) {
-            self.draft.sample_rate_hz = if rates.contains(&PREFERRED_SAMPLE_RATE_HZ) {
-                PREFERRED_SAMPLE_RATE_HZ
-            } else {
-                rates.first().copied().unwrap_or(PREFERRED_SAMPLE_RATE_HZ)
-            };
+        if !rates.is_empty() && !rates.contains(&self.draft.sample_rate_hz) {
+            self.draft.sample_rate_hz =
+                negotiate_sample_rate(self.draft.sample_rate_hz, &rates, None)
+                    .or_else(|| rates.first().copied())
+                    .unwrap_or(self.draft.sample_rate_hz);
         }
         let outputs = self.output_channel_count();
         if outputs < STEREO_CHANNELS
@@ -153,9 +163,11 @@ pub fn show(
             }
 
             field_label(ui, palette, text::AUDIO_INPUT_DEVICE);
-            let input_name = panel
-                .device(panel.draft.input_device_id.as_deref())
-                .map_or(text::AUDIO_NONE.to_owned(), |device| device.name.clone());
+            let input_name = match panel.draft.input_device_id.as_deref() {
+                Some(id) => device_choice::find(&panel.devices, id)
+                    .map_or_else(|| id.to_owned(), text::device_name),
+                None => text::AUDIO_SYSTEM_INPUT.to_owned(),
+            };
             let mut chosen_input = None;
             let combo = egui::ComboBox::from_id_salt("audio-input")
                 .width(width - spacing::SM)
@@ -169,7 +181,10 @@ pub fn show(
                     {
                         let selected =
                             panel.draft.input_device_id.as_deref() == Some(device.id.as_str());
-                        if ui.selectable_label(selected, &device.name).clicked() {
+                        if ui
+                            .selectable_label(selected, text::device_name(device))
+                            .clicked()
+                        {
                             chosen_input = Some(device.id.clone());
                         }
                     }
@@ -180,9 +195,18 @@ pub fn show(
             }
 
             field_label(ui, palette, text::AUDIO_OUTPUT_DEVICE);
-            let output_name = panel
-                .device(panel.draft.output_device_id.as_deref())
-                .map_or(text::AUDIO_NONE.to_owned(), |device| device.name.clone());
+            let auto_output = text::auto_output_label(device_choice::resolved_output(
+                &panel.devices,
+                &StreamSettings {
+                    output_device_id: None,
+                    ..panel.draft.clone()
+                },
+            ));
+            let output_name = match panel.draft.output_device_id.as_deref() {
+                Some(id) => device_choice::find(&panel.devices, id)
+                    .map_or_else(|| id.to_owned(), text::device_name),
+                None => auto_output.clone(),
+            };
             let mut chosen_output = None;
             let combo = egui::ComboBox::from_id_salt("audio-output")
                 .width(width - spacing::SM)
@@ -190,7 +214,7 @@ pub fn show(
                 .selected_text(output_name)
                 .show_ui(ui, |ui| {
                     if ui
-                        .selectable_label(panel.draft.output_device_id.is_none(), text::AUDIO_NONE)
+                        .selectable_label(panel.draft.output_device_id.is_none(), auto_output)
                         .clicked()
                     {
                         chosen_output = Some(None);
@@ -202,7 +226,10 @@ pub fn show(
                     {
                         let selected =
                             panel.draft.output_device_id.as_deref() == Some(device.id.as_str());
-                        if ui.selectable_label(selected, &device.name).clicked() {
+                        if ui
+                            .selectable_label(selected, text::device_name(device))
+                            .clicked()
+                        {
                             chosen_output = Some(Some(device.id.clone()));
                         }
                     }
@@ -213,7 +240,11 @@ pub fn show(
             }
 
             field_label(ui, palette, text::AUDIO_SAMPLE_RATE);
-            let rates = panel.sample_rates();
+            let mut rates = panel.sample_rates();
+            if rates.is_empty() {
+                muted(ui, palette, text::AUDIO_NO_COMMON_RATE);
+                rates.push(panel.draft.sample_rate_hz);
+            }
             let combo = egui::ComboBox::from_id_salt("audio-sample-rate")
                 .width(width - spacing::SM)
                 .selected_text(text::format_sample_rate(panel.draft.sample_rate_hz))
@@ -351,9 +382,20 @@ mod tests {
         DeviceInfo {
             id: id.into(),
             name: id.into(),
+            driver: "CoreAudio".into(),
+            is_default_driver: true,
             input_channel_count: inputs,
             output_channel_count: outputs,
-            supported_sample_rates_hz: rates.to_vec(),
+            input_sample_rates_hz: if inputs > 0 {
+                rates.to_vec()
+            } else {
+                Vec::new()
+            },
+            output_sample_rates_hz: if outputs > 0 {
+                rates.to_vec()
+            } else {
+                Vec::new()
+            },
             is_default_input: false,
             is_default_output: false,
         }
@@ -384,11 +426,48 @@ mod tests {
     }
 
     #[test]
-    fn an_input_only_selection_picks_the_same_device_for_output_when_none_is_set() {
+    fn a_duplex_input_is_also_the_automatic_output() {
         let devices = vec![device("uax", 2, 2, &[48_000])];
         let mut panel = AudioSettingsPanel::new(devices, &StreamSettings::default());
         panel.select_input("uax");
-        assert_eq!(panel.draft.output_device_id.as_deref(), Some("uax"));
+        assert_eq!(
+            panel.output_device().map(|device| device.id.as_str()),
+            Some("uax")
+        );
         assert_eq!(panel.draft.sample_rate_hz, 48_000);
+    }
+
+    #[test]
+    fn a_laptop_microphone_uses_the_system_output_at_a_shared_rate() {
+        let mut microphone = device("mic", 1, 0, &[44_100, 48_000]);
+        microphone.is_default_input = true;
+        let mut speakers = device("speakers", 0, 2, &[44_100]);
+        speakers.is_default_output = true;
+        let mut panel =
+            AudioSettingsPanel::new(vec![microphone, speakers], &StreamSettings::default());
+        panel.select_input("mic");
+        assert_eq!(panel.draft.output_device_id, None);
+        assert_eq!(panel.output_channel_count(), 2);
+        assert_eq!(panel.sample_rates(), vec![44_100]);
+        assert_eq!(panel.draft.sample_rate_hz, 44_100);
+    }
+
+    #[test]
+    fn switching_to_an_asio_input_drops_an_output_from_another_driver() {
+        let mut asio = device("asio:UAX", 2, 2, &[48_000]);
+        asio.driver = "ASIO".into();
+        asio.is_default_driver = false;
+        let devices = vec![device("wasapi:speakers", 0, 2, &[48_000]), asio];
+        let current = StreamSettings {
+            output_device_id: Some("wasapi:speakers".into()),
+            ..StreamSettings::default()
+        };
+        let mut panel = AudioSettingsPanel::new(devices, &current);
+        panel.select_input("asio:UAX");
+        assert_eq!(panel.draft.output_device_id, None);
+        assert_eq!(
+            panel.output_device().map(|device| device.id.as_str()),
+            Some("asio:UAX")
+        );
     }
 }

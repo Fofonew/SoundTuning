@@ -22,6 +22,9 @@ Cocher, dater et noter les observations. Matériel de référence : UAX 2-2, mic
 - [ ] Fenêtre minimale (phase 0) : Démarrer / Arrêter ouvre et ferme les flux sans erreur, vu-mètres référence (générateur) et mesure (micro) cohérents.
 
 - [ ] Bouton « Audio » (⌘,) : changer d'entrée, de sortie et de canaux, « Appliquer les réglages » : la mesure repart sur la nouvelle carte, les vu-mètres suivent ; les réglages sont retrouvés au lancement suivant.
+- [ ] Sans carte son : entrée « Micro MacBook », sortie « Automatique — Haut-parleurs MacBook » : la mesure démarre, le bruit rose sort des haut-parleurs. Idem avec un casque, des AirPods (sortie seule) ou un écran HDMI en sortie.
+- [ ] Sortie à 44,1 kHz seulement (forcer le format dans « Configuration audio et MIDI ») avec la fréquence réglée sur 48 kHz : la mesure démarre à 44,1 kHz et une notification « Fréquence adaptée à 44,1 kHz » s'affiche.
+- [ ] Entrée et sortie sans fréquence commune : message en français listant les fréquences de chaque côté, sans plantage.
 
 ## Traces et sessions
 
@@ -51,7 +54,7 @@ Cocher, dater et noter les observations. Matériel de référence : UAX 2-2, mic
 ## Packaging
 
 - [ ] Télécharger l'artefact CI `soundtuning-macos-latest` (`SoundTuning-macos.zip`), décompresser : l'application n'est pas signée, macOS la met en quarantaine (« endommagée ») ; l'ouvrir par clic droit → Ouvrir, ou `xattr -cr SoundTuning.app`. Au premier démarrage de la mesure, macOS demande l'accès au micro avec le texte de `NSMicrophoneUsageDescription`.
-- [ ] Windows : installeur `soundtuning_0.1.0_x64-setup.exe` (artefact `soundtuning-windows-latest`), voir `docs/WINDOWS.md`.
+- [ ] Windows : installeur `soundtuning_0.1.0_x64-setup.exe` (artefact `soundtuning-windows-latest`, compilé avec ASIO), voir `docs/WINDOWS.md`.
 
 ## Performance
 

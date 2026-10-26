@@ -10,8 +10,7 @@ pub const CLI_RECORD_ABOUT: &str =
 pub const CLI_SECONDS_HELP: &str = "Durée de l'enregistrement en secondes.";
 pub const CLI_OUTPUT_HELP: &str = "Fichier WAV de sortie.";
 pub const CLI_DEVICE_HELP: &str = "Identifiant du périphérique d'entrée (voir « devices »).";
-pub const CLI_OUTPUT_DEVICE_HELP: &str =
-    "Identifiant du périphérique de sortie du générateur (par défaut : celui d'entrée).";
+pub const CLI_OUTPUT_DEVICE_HELP: &str = "Identifiant du périphérique de sortie du générateur (par défaut : celui d'entrée s'il a des sorties, sinon la sortie du système).";
 pub const CLI_SAMPLE_RATE_HELP: &str = "Fréquence d'échantillonnage en Hz.";
 pub const CLI_MEASUREMENT_CHANNEL_HELP: &str = "Entrée du micro de mesure (à partir de 1).";
 pub const CLI_LOOPBACK_CHANNEL_HELP: &str =
@@ -68,7 +67,9 @@ pub const AUDIO_BUFFER_AUTO: &str = "Automatique";
 pub const AUDIO_REFERENCE_MODE: &str = "Référence";
 pub const AUDIO_REFERENCE_INTERNAL: &str = "Interne";
 pub const AUDIO_REFERENCE_LOOPBACK: &str = "Rebouclée";
-pub const AUDIO_NONE: &str = "Aucune";
+pub const AUDIO_SYSTEM_INPUT: &str = "Entrée par défaut du système";
+pub const AUDIO_AUTO_OUTPUT: &str = "Automatique";
+pub const AUDIO_NO_COMMON_RATE: &str = "Aucune fréquence commune à cette entrée et à cette sortie : choisissez une autre sortie ou la référence rebouclée.";
 pub const AUDIO_NO_OUTPUT: &str = "Choisissez une sortie pour envoyer le bruit rose.";
 pub const AUDIO_APPLY: &str = "Appliquer les réglages";
 pub const AUDIO_APPLY_HINT: &str =
@@ -613,8 +614,90 @@ pub fn file_source_label(file_name: &str, sample_rate_hz: u32) -> String {
     )
 }
 
-pub fn audio_error(error: &str) -> String {
-    format!("Erreur audio : {error}")
+pub fn device_name(device: &audio_io::DeviceInfo) -> String {
+    if device.is_default_driver {
+        device.name.clone()
+    } else {
+        format!("{} ({})", device.name, device.driver)
+    }
+}
+
+pub fn auto_output_label(resolved: Option<&audio_io::DeviceInfo>) -> String {
+    match resolved {
+        Some(device) => format!("{AUDIO_AUTO_OUTPUT} — {}", device_name(device)),
+        None => format!("{AUDIO_AUTO_OUTPUT} — sortie du système"),
+    }
+}
+
+fn format_rate_list(rates_hz: &[u32]) -> String {
+    if rates_hz.is_empty() {
+        return "aucune".to_owned();
+    }
+    rates_hz
+        .iter()
+        .map(|rate| format_sample_rate(*rate))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+fn direction_label(direction: &str) -> &'static str {
+    if direction == "input" {
+        "l'entrée"
+    } else {
+        "la sortie"
+    }
+}
+
+pub fn audio_error(error: &audio_io::AudioIoError) -> String {
+    use audio_io::AudioIoError;
+    match error {
+        AudioIoError::DeviceNotFound(_) => {
+            "périphérique audio introuvable : vérifiez qu'il est branché puis ouvrez les réglages audio".to_owned()
+        }
+        AudioIoError::ChannelOutOfRange {
+            direction,
+            channel_index,
+            available,
+        } => format!(
+            "{} n'a pas de canal {} (elle en a {available})",
+            direction_label(direction),
+            channel_index + 1
+        ),
+        AudioIoError::UnsupportedSampleRate {
+            direction,
+            sample_rate_hz,
+        } => format!(
+            "{} ne prend pas en charge {}",
+            direction_label(direction),
+            format_sample_rate(*sample_rate_hz)
+        ),
+        AudioIoError::NoCommonSampleRate {
+            input_rates_hz,
+            output_rates_hz,
+        } => format!(
+            "aucune fréquence commune entre l'entrée ({}) et la sortie ({}) : choisissez une autre sortie ou la référence rebouclée",
+            format_rate_list(input_rates_hz),
+            format_rate_list(output_rates_hz)
+        ),
+        AudioIoError::UnsupportedSampleFormat(format) => {
+            format!("format d'échantillons non pris en charge ({format})")
+        }
+        AudioIoError::NoGeneratorChannel => {
+            "choisissez au moins une sortie pour le bruit rose".to_owned()
+        }
+        AudioIoError::MissingGeneratorOutput => {
+            "la référence interne a besoin d'une sortie audio : choisissez-en une dans les réglages audio".to_owned()
+        }
+        other => other.to_string(),
+    }
+}
+
+pub fn sample_rate_adjusted(actual_hz: u32, requested_hz: u32) -> String {
+    format!(
+        "Fréquence adaptée à {} : {} n'est pas disponible sur l'entrée et la sortie choisies",
+        format_sample_rate(actual_hz),
+        format_sample_rate(requested_hz)
+    )
 }
 
 pub fn delay_found(milliseconds: f64) -> String {
@@ -719,5 +802,44 @@ mod tests {
         assert_eq!(format_seconds(2.0), "2 s");
         assert_eq!(format_smoothing(0), SMOOTHING_NONE);
         assert_eq!(format_smoothing(48), "1/48");
+    }
+
+    #[test]
+    fn audio_errors_are_explained_in_french() {
+        let error = audio_io::AudioIoError::NoCommonSampleRate {
+            input_rates_hz: vec![48_000],
+            output_rates_hz: vec![44_100],
+        };
+        assert_eq!(
+            audio_error(&error),
+            "aucune fréquence commune entre l'entrée (48,0 kHz) et la sortie (44,1 kHz) : choisissez une autre sortie ou la référence rebouclée"
+        );
+        let error = audio_io::AudioIoError::UnsupportedSampleRate {
+            direction: "output",
+            sample_rate_hz: 48_000,
+        };
+        assert_eq!(
+            audio_error(&error),
+            "la sortie ne prend pas en charge 48,0 kHz"
+        );
+    }
+
+    #[test]
+    fn devices_from_another_driver_show_it() {
+        let mut device = audio_io::DeviceInfo {
+            id: "asio:UAX".into(),
+            name: "UAX 2-2".into(),
+            driver: "ASIO".into(),
+            is_default_driver: false,
+            input_channel_count: 2,
+            output_channel_count: 2,
+            input_sample_rates_hz: vec![48_000],
+            output_sample_rates_hz: vec![48_000],
+            is_default_input: false,
+            is_default_output: false,
+        };
+        assert_eq!(device_name(&device), "UAX 2-2 (ASIO)");
+        device.is_default_driver = true;
+        assert_eq!(device_name(&device), "UAX 2-2");
     }
 }
