@@ -156,6 +156,14 @@ pub const ACTION_VIEW_PHASE: &str = "Vue phase";
 pub const ACTION_VIEW_IMPULSE: &str = "Vue réponse impulsionnelle (IR)";
 pub const ACTION_TOGGLE_STACKED_VIEWS: &str = "Superposer deux vues";
 pub const ACTION_TOGGLE_FULLSCREEN: &str = "Plein écran (tracés seuls)";
+pub const ACTION_CHECK_FOR_UPDATES: &str = "Rechercher les mises à jour";
+pub const ACTION_OPEN_UPDATE_PAGE: &str = "Télécharger la nouvelle version";
+pub const ACTION_DISMISS_UPDATE: &str = "Masquer la nouvelle version";
+pub const BUTTON_DOWNLOAD_UPDATE: &str = "Télécharger";
+pub const BUTTON_LATER: &str = "Plus tard";
+pub const NOTIFY_UPDATE_CHECKING: &str = "Recherche des mises à jour…";
+pub const NOTIFY_UPDATE_UNREACHABLE: &str =
+    "Mises à jour injoignables (hors connexion ?). SoundTuning fonctionne normalement.";
 
 pub const BANNER_START_FAILED: &str = "Impossible de démarrer la mesure";
 pub const BANNER_DISCONNECTED: &str =
@@ -802,6 +810,14 @@ pub fn delay_details(distance_m: f64, samples: f64, approximate: bool) -> String
         format_meters(distance_m),
         format_samples(samples)
     )
+}
+
+pub fn update_available(latest: impl std::fmt::Display, current: impl std::fmt::Display) -> String {
+    format!("SoundTuning {latest} est disponible (version installée : {current}).")
+}
+
+pub fn up_to_date(current: impl std::fmt::Display) -> String {
+    format!("SoundTuning {current} est à jour.")
 }
 
 pub fn start_failed(error: &str) -> String {

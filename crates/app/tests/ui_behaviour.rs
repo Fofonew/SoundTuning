@@ -942,3 +942,143 @@ fn a_captured_trace_changes_definition_and_the_change_is_undoable() {
         &soundtuning::text::trace_control_label(soundtuning::text::TRACE_SMOOTHING, &trace.name),
     );
 }
+
+fn update_options(source: soundtuning::update::UpdateSource) -> soundtuning::app::AppOptions {
+    soundtuning::app::AppOptions {
+        updates: source,
+        ..file_options(Theme::Night, false)
+    }
+}
+
+fn newer_release() -> soundtuning::update::Release {
+    soundtuning::update::Release {
+        version: soundtuning::update::Version::new(99, 0, 0),
+        page_url: "https://github.com/Fofonew/SoundTuning/releases/tag/v99.0.0".to_owned(),
+    }
+}
+
+fn opened_urls(
+    harness: &egui_kittest::Harness<'static, soundtuning::app::SoundTuningApp>,
+) -> Vec<String> {
+    harness
+        .output()
+        .platform_output
+        .commands
+        .iter()
+        .filter_map(|command| match command {
+            eframe::egui::OutputCommand::OpenUrl(open) => Some(open.url.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn a_newer_release_shows_a_banner_that_opens_the_download_page() {
+    use soundtuning::update::UpdateSource;
+    let mut harness = harness(update_options(UpdateSource::Fixed(Some(newer_release()))));
+    harness.step();
+    assert_eq!(harness.state().available_update(), Some(&newer_release()));
+    harness.step();
+    assert!(
+        harness
+            .query_by_label_contains("SoundTuning 99.0.0 est disponible")
+            .is_some()
+    );
+    harness.get_by_label("Télécharger").click();
+    harness.step();
+    assert_eq!(opened_urls(&harness), vec![newer_release().page_url]);
+    assert_eq!(harness.state().available_update(), None);
+    harness.step();
+    assert!(harness.query_by_label_contains("99.0.0").is_none());
+}
+
+#[test]
+fn later_hides_the_update_banner_without_opening_anything() {
+    use soundtuning::update::UpdateSource;
+    let mut harness = harness(update_options(UpdateSource::Fixed(Some(newer_release()))));
+    harness.step();
+    harness.step();
+    harness.get_by_label("Plus tard").click();
+    harness.step();
+    assert!(opened_urls(&harness).is_empty());
+    assert_eq!(harness.state().available_update(), None);
+}
+
+#[test]
+fn offline_startup_is_silent_and_a_manual_check_explains_it() {
+    use soundtuning::actions::Action;
+    use soundtuning::update::UpdateSource;
+    let mut harness = harness(update_options(UpdateSource::Offline));
+    harness.step();
+    harness.step();
+    assert!(harness.state().notification_texts().is_empty());
+    assert_eq!(harness.state().available_update(), None);
+    harness.state_mut().handle_action(Action::CheckForUpdates);
+    harness.step();
+    let texts = harness.state().notification_texts();
+    assert!(
+        texts.iter().any(|text| text.contains("hors connexion")),
+        "{texts:?}"
+    );
+}
+
+#[test]
+fn a_manual_check_reports_an_up_to_date_version() {
+    use soundtuning::actions::Action;
+    use soundtuning::update::UpdateSource;
+    let mut harness = harness(update_options(UpdateSource::Fixed(None)));
+    harness.step();
+    assert!(harness.state().notification_texts().is_empty());
+    harness.state_mut().handle_action(Action::CheckForUpdates);
+    harness.step();
+    let expected = format!("SoundTuning {} est à jour.", env!("CARGO_PKG_VERSION"));
+    assert!(harness.state().notification_texts().contains(&expected));
+}
+
+#[test]
+fn bars_and_audio_settings_do_not_overlap_in_small_windows() {
+    use eframe::egui;
+    use egui_kittest::kittest::NodeT;
+    use soundtuning::design::tokens::size;
+    for (width, height) in [(1024.0, 600.0), (1280.0, 680.0), (1440.0, 900.0)] {
+        let options = file_options(Theme::Night, true);
+        let mut harness = egui_kittest::Harness::builder()
+            .with_size(egui::vec2(width, height))
+            .with_max_steps(64)
+            .build_eframe(move |creation_context| {
+                soundtuning::app::SoundTuningApp::new(&creation_context.egui_ctx, options)
+            });
+        wait_until_running(&mut harness);
+        harness.key_press_modifiers(Modifiers::COMMAND, Key::Comma);
+        harness.step();
+        harness.step();
+        let top_limit = soundtuning::app::top_bar_height();
+        let bottom_limit = height - size::BOTTOM_BAR_HEIGHT;
+        let mut rects: Vec<(String, egui::Rect)> = Vec::new();
+        for role in [Role::Button, Role::SpinButton, Role::Label, Role::CheckBox] {
+            for node in harness.query_all_by_role(role) {
+                let rect = node.rect();
+                let in_bars = rect.max.y <= top_limit || rect.min.y >= bottom_limit;
+                let label = node.accesskit_node().label().unwrap_or_default();
+                let in_audio_footer =
+                    ["Appliquer les réglages", "Actualiser"].contains(&label.as_str());
+                if (in_bars || in_audio_footer) && rect.area() > 0.0 {
+                    rects.push((format!("{role:?} {label}"), rect));
+                }
+            }
+        }
+        for (index, (first, first_rect)) in rects.iter().enumerate() {
+            assert!(
+                first_rect.max.x <= width + 0.5,
+                "{first} leaves the window at {width}"
+            );
+            for (second, second_rect) in &rects[index + 1..] {
+                let overlap = first_rect.intersect(*second_rect);
+                assert!(
+                    overlap.width() <= 0.5 || overlap.height() <= 0.5,
+                    "{first} overlaps {second} at {width}×{height}"
+                );
+            }
+        }
+    }
+}

@@ -15,6 +15,7 @@ use soundtuning::session::SessionStore;
 use soundtuning::ui::alignment_panel::AlignmentCommand;
 use soundtuning::ui::eq_panel::EqCommand;
 use soundtuning::ui::side_panel::SideTab;
+use soundtuning::update::UpdateSource;
 
 const SAMPLE_RATE_HZ: u32 = 48_000;
 const FIXTURE_SECONDS: usize = 6;
@@ -63,6 +64,7 @@ fn harness(path: &std::path::Path) -> Harness<'static, SoundTuningApp> {
             ..AppConfig::default()
         }),
         start_measurement: true,
+        updates: UpdateSource::Offline,
     };
     let mut harness = Harness::builder()
         .with_size(egui::vec2(WINDOW[0], WINDOW[1]))

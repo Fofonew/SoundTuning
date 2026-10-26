@@ -61,6 +61,16 @@ Cocher, dater et noter les observations. Matériel de référence : UAX 2-2, mic
 - [ ] Capturer une trace en 1/48, la passer en 1/6 (ligne « Définition ») : identique à une mesure live en 1/6 sur le même signal (comparer avec le lissage de la barre inférieure en 1/6) ; Cmd+Z revient à 1/48.
 - [ ] Session de 20 traces : la sauvegarde automatique reste invisible (pas d'à-coup du tracé).
 
+## Mises à jour et petites fenêtres (Windows)
+
+- [ ] Hors connexion (Wi-Fi coupé) : SoundTuning démarre normalement, aucun message ; palette › « Rechercher les mises à jour » affiche « Mises à jour injoignables (hors connexion ?) ».
+- [ ] Connecté, après publication d'une version plus récente (`docs/RELEASE.md`) : le bandeau « SoundTuning X.Y.Z est disponible » s'affiche ; « Télécharger » ouvre la page de la release ; « Plus tard » le masque.
+- [ ] Connecté, version à jour : rien au lancement ; recherche manuelle : « SoundTuning X.Y.Z est à jour. ».
+- [ ] Derrière un proxy d'entreprise : même comportement (sinon noter le message du journal).
+- [ ] Windows à 125 % et 150 % d'échelle : au premier lancement, la fenêtre tient dans l'écran (agrandie si besoin) ; barres haute et basse sans chevauchement ; « Audio » : boutons « Appliquer les réglages » et « Actualiser » visibles, champs défilants.
+- [ ] Windows : réduire la fenêtre (bouton « Réduire ») pendant une mesure, attendre 30 s, la restaurer : l'affichage reprend à la bonne taille, sans gel ni zone noire. Si le problème persiste : relancer avec `set WGPU_BACKEND=gl` puis `soundtuning.exe` et noter le résultat.
+- [ ] Redimensionner jusqu'à la taille minimale (1024 × 600 points) : aucun chevauchement.
+
 ## Packaging
 
 - [ ] Télécharger l'artefact CI `soundtuning-macos-latest` (`SoundTuning-macos.zip`), décompresser : l'application n'est pas signée, macOS la met en quarantaine (« endommagée ») ; l'ouvrir par clic droit → Ouvrir, ou `xattr -cr SoundTuning.app`. Au premier démarrage de la mesure, macOS demande l'accès au micro avec le texte de `NSMicrophoneUsageDescription`.

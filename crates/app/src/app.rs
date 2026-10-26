@@ -36,6 +36,7 @@ use crate::ui::top_bar::{self, DelayReadout, TopBarModel};
 use crate::ui::traces_panel::{self, RenameState, TraceCommand};
 use crate::ui::view_bar::{self, ViewCommand};
 use crate::ui::wizard::{Wizard, WizardAction};
+use crate::update::{CheckTrigger, Release, UpdateChecker, UpdateSource, UpdateStatus, Version};
 
 const CONFIG_SAVE_DELAY: Duration = Duration::from_millis(800);
 const SESSION_SAVE_DELAY: Duration = Duration::from_secs(2);
@@ -58,6 +59,13 @@ enum MergeKey {
 type CachedEqCurve = (EqState, u64, Vec<Option<f64>>);
 const FALLBACK_SAMPLE_RATE_HZ: u32 = 48_000;
 const UPPER_PANE_FRACTION: f32 = 0.42;
+const WINDOW_FIT_FRAMES: u32 = 30;
+const MONITOR_FILL_LIMIT: f32 = 0.95;
+
+pub fn window_exceeds_monitor(inner_size: egui::Vec2, monitor_size: egui::Vec2) -> bool {
+    inner_size.x > monitor_size.x * MONITOR_FILL_LIMIT
+        || inner_size.y > monitor_size.y * MONITOR_FILL_LIMIT
+}
 
 pub fn top_bar_height() -> f32 {
     size::TOP_BAR_HEIGHT + 2.0 * spacing::SM
@@ -101,6 +109,7 @@ pub struct AppOptions {
     pub devices: DeviceCatalog,
     pub initial_config: Option<AppConfig>,
     pub start_measurement: bool,
+    pub updates: UpdateSource,
 }
 
 impl AppOptions {
@@ -113,6 +122,7 @@ impl AppOptions {
             devices: DeviceCatalog::System,
             initial_config: None,
             start_measurement: false,
+            updates: UpdateSource::GitHub,
         }
     }
 }
@@ -129,6 +139,7 @@ pub struct SoundTuningApp {
     plot_fullscreen: bool,
     viewport_fullscreen: bool,
     os_reported_fullscreen: bool,
+    window_fit_frames_left: u32,
     command_palette: CommandPalette,
     notifications: Notifications,
     wizard: Option<Wizard>,
@@ -153,6 +164,9 @@ pub struct SoundTuningApp {
     last_plot_rect: Option<egui::Rect>,
     audio_settings: Option<AudioSettingsPanel>,
     export_directory: std::path::PathBuf,
+    updates: UpdateChecker,
+    available_update: Option<Release>,
+    url_to_open: Option<String>,
 }
 
 impl SoundTuningApp {
@@ -179,6 +193,7 @@ impl SoundTuningApp {
             plot_fullscreen: false,
             viewport_fullscreen: false,
             os_reported_fullscreen: false,
+            window_fit_frames_left: WINDOW_FIT_FRAMES,
             command_palette: CommandPalette::default(),
             notifications: Notifications::default(),
             wizard,
@@ -203,7 +218,11 @@ impl SoundTuningApp {
             last_plot_rect: None,
             audio_settings: None,
             export_directory: options.export_directory.clone(),
+            updates: UpdateChecker::new(options.updates.clone(), Version::current()),
+            available_update: None,
+            url_to_open: None,
         };
+        app.updates.start(CheckTrigger::Startup);
         app.apply_theme(context);
         if let Some(LoadIssue::Corrupt {
             restored_backup, ..
@@ -243,6 +262,10 @@ impl SoundTuningApp {
 
     pub fn is_wizard_visible(&self) -> bool {
         self.wizard.is_some()
+    }
+
+    pub fn available_update(&self) -> Option<&Release> {
+        self.available_update.as_ref()
     }
 
     pub fn notification_texts(&self) -> Vec<String> {
@@ -926,6 +949,19 @@ impl SoundTuningApp {
             Action::ViewImpulse => self.apply_view_command(ViewCommand::Main(ViewKind::Impulse)),
             Action::ToggleStackedViews => self.apply_view_command(ViewCommand::ToggleStacked),
             Action::ToggleFullscreen => self.apply_view_command(ViewCommand::ToggleFullscreen),
+            Action::CheckForUpdates => {
+                if !self.updates.is_checking() {
+                    self.notifications
+                        .push(text::NOTIFY_UPDATE_CHECKING, Tone::Neutral, None);
+                }
+                self.updates.start(CheckTrigger::Manual);
+            }
+            Action::OpenUpdatePage => {
+                if let Some(release) = self.available_update.take() {
+                    self.url_to_open = Some(release.page_url);
+                }
+            }
+            Action::DismissUpdate => self.available_update = None,
             Action::ToggleTheme => {
                 self.config.theme = self.config.theme.toggled();
                 self.mark_config_dirty();
@@ -1158,6 +1194,26 @@ impl SoundTuningApp {
         median < snapshot.settings.coherence_threshold
     }
 
+    fn fit_window_to_monitor(&mut self, context: &egui::Context) {
+        if self.window_fit_frames_left == 0 {
+            return;
+        }
+        self.window_fit_frames_left -= 1;
+        let (inner_size, monitor_size) = context.input(|input| {
+            let viewport = input.viewport();
+            (
+                viewport.inner_rect.map(|rect| rect.size()),
+                viewport.monitor_size,
+            )
+        });
+        if let (Some(inner_size), Some(monitor_size)) = (inner_size, monitor_size) {
+            self.window_fit_frames_left = 0;
+            if window_exceeds_monitor(inner_size, monitor_size) {
+                context.send_viewport_cmd(egui::ViewportCommand::Maximized(true));
+            }
+        }
+    }
+
     fn banner_inputs(&self) -> BannerInputs {
         let snapshot = self.measurement.snapshot();
         let (reference, measurement) = self.measurement.meter_readings();
@@ -1177,6 +1233,28 @@ impl SoundTuningApp {
             calibrating: snapshot.delay.calibrating_latency,
             calibration_failed: snapshot.delay.calibration_failed,
             file_finished: snapshot.source_finished,
+            available_update: self
+                .available_update
+                .as_ref()
+                .map(|release| release.version),
+        }
+    }
+
+    fn poll_updates(&mut self) {
+        let Some((trigger, status)) = self.updates.poll() else {
+            return;
+        };
+        match (trigger, status) {
+            (_, UpdateStatus::Available(release)) => self.available_update = Some(release),
+            (CheckTrigger::Manual, UpdateStatus::UpToDate) => {
+                self.notifications
+                    .push(text::up_to_date(Version::current()), Tone::Success, None)
+            }
+            (CheckTrigger::Manual, UpdateStatus::Unreachable) => {
+                self.notifications
+                    .push(text::NOTIFY_UPDATE_UNREACHABLE, Tone::Warning, None);
+            }
+            (CheckTrigger::Startup, UpdateStatus::UpToDate | UpdateStatus::Unreachable) => {}
         }
     }
 
@@ -1249,6 +1327,7 @@ impl SoundTuningApp {
 impl eframe::App for SoundTuningApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let context = ui.ctx().clone();
+        self.fit_window_to_monitor(&context);
         self.apply_theme(&context);
         let palette = self.config.theme.palette();
         self.measurement.refresh();
@@ -1256,6 +1335,7 @@ impl eframe::App for SoundTuningApp {
         self.update_low_coherence();
         self.process_engine_events();
         self.notify_delay_drift();
+        self.poll_updates();
 
         let mut actions = if self.wizard.is_none() && !self.command_palette.is_open() {
             triggered_by_keyboard(&context)
@@ -1290,6 +1370,9 @@ impl eframe::App for SoundTuningApp {
             .show(&context, palette, self.is_mac, &mut actions);
         for action in actions {
             self.handle_action(action);
+        }
+        if let Some(url) = self.url_to_open.take() {
+            context.open_url(egui::OpenUrl::new_tab(url));
         }
         let (os_fullscreen, escape) = context.input(|input| {
             (

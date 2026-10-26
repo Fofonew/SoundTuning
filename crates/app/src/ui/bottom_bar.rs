@@ -5,7 +5,7 @@ use crate::actions::Action;
 use crate::config::StoredAnalysis;
 use crate::design::Palette;
 use crate::design::tokens::spacing;
-use crate::design::widgets::{Emphasis, action_button, chip};
+use crate::design::widgets::{Emphasis, action_button, action_button_width, chip, chip_width};
 use crate::text;
 
 pub(crate) const SMOOTHING_CHOICES: [u32; 6] = [0, 48, 24, 12, 6, 3];
@@ -96,6 +96,191 @@ fn step_direction(ui: &egui::Ui, response: &egui::Response) -> Option<bool> {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Density {
+    Full,
+    QuietShortcutsHidden,
+    ShortcutsHidden,
+    Compact,
+}
+
+impl Density {
+    const ALL: [Self; 4] = [
+        Self::Full,
+        Self::QuietShortcutsHidden,
+        Self::ShortcutsHidden,
+        Self::Compact,
+    ];
+
+    fn shows_shortcut(self, emphasis: Emphasis) -> bool {
+        match self {
+            Self::Full => true,
+            Self::QuietShortcutsHidden => emphasis != Emphasis::Quiet,
+            Self::ShortcutsHidden | Self::Compact => false,
+        }
+    }
+
+    fn shows_secondary_items(self) -> bool {
+        self != Self::Compact
+    }
+}
+
+struct BarButton {
+    label: &'static str,
+    action: Action,
+    emphasis: Emphasis,
+    enabled: bool,
+    secondary: bool,
+}
+
+fn bar_buttons(model: &BottomBarModel) -> [BarButton; 6] {
+    let button = |label, action, emphasis, enabled, secondary| BarButton {
+        label,
+        action,
+        emphasis,
+        enabled,
+        secondary,
+    };
+    let (start_label, start_emphasis) = if model.running {
+        (text::BUTTON_STOP, Emphasis::Secondary)
+    } else {
+        (text::BUTTON_START, Emphasis::Primary)
+    };
+    let freeze_label = if model.frozen {
+        text::BUTTON_UNFREEZE
+    } else {
+        text::BUTTON_FREEZE
+    };
+    [
+        button(
+            start_label,
+            Action::ToggleMeasurement,
+            start_emphasis,
+            true,
+            false,
+        ),
+        button(
+            freeze_label,
+            Action::ToggleFreeze,
+            Emphasis::Secondary,
+            model.running,
+            false,
+        ),
+        button(
+            text::BUTTON_CAPTURE,
+            Action::CaptureTrace,
+            Emphasis::Secondary,
+            model.running,
+            false,
+        ),
+        button(
+            text::BUTTON_TOGGLE_PANEL,
+            Action::ToggleSidePanel,
+            Emphasis::Quiet,
+            true,
+            false,
+        ),
+        button(
+            text::BUTTON_AUDIO_SETTINGS,
+            Action::OpenAudioSettings,
+            Emphasis::Quiet,
+            true,
+            false,
+        ),
+        button(
+            text::BUTTON_PALETTE,
+            Action::OpenPalette,
+            Emphasis::Quiet,
+            true,
+            true,
+        ),
+    ]
+}
+
+struct ChipTexts {
+    fft: String,
+    averaging: String,
+    smoothing: String,
+    coherence: String,
+    generator: Option<String>,
+}
+
+impl ChipTexts {
+    fn new(model: &BottomBarModel, analysis: &StoredAnalysis) -> Self {
+        Self {
+            fft: text::format_fft_length(analysis.fft_length),
+            averaging: analysis
+                .time_constant_s
+                .map_or_else(|| text::AVERAGING_INFINITE.to_owned(), text::format_seconds),
+            smoothing: text::format_smoothing(analysis.smoothing_fraction),
+            coherence: text::format_decimal(analysis.coherence_threshold, 2),
+            generator: model.generator_level_dbfs.map(text::format_dbfs),
+        }
+    }
+
+    fn chips<'a>(&'a self, model: &'a BottomBarModel, density: Density) -> Vec<(&'a str, &'a str)> {
+        let mut chips = vec![
+            (text::CHIP_FFT, self.fft.as_str()),
+            (text::CHIP_AVERAGING, self.averaging.as_str()),
+            (text::CHIP_SMOOTHING, self.smoothing.as_str()),
+            (text::CHIP_COHERENCE, self.coherence.as_str()),
+        ];
+        if density.shows_secondary_items() {
+            chips.push((text::CHIP_REFERENCE, model.reference_label.as_str()));
+        }
+        if let Some(generator) = &self.generator {
+            chips.push((text::CHIP_GENERATOR, generator.as_str()));
+        }
+        chips
+    }
+}
+
+fn required_width(
+    ui: &egui::Ui,
+    model: &BottomBarModel,
+    chips: &ChipTexts,
+    buttons: &[BarButton],
+    density: Density,
+    is_mac: bool,
+) -> f32 {
+    let chip_widths: Vec<f32> = chips
+        .chips(model, density)
+        .iter()
+        .map(|(caption, value)| chip_width(ui, caption, value))
+        .collect();
+    let button_widths: Vec<f32> = buttons
+        .iter()
+        .filter(|button| density.shows_secondary_items() || !button.secondary)
+        .map(|button| {
+            let shortcut = density
+                .shows_shortcut(button.emphasis)
+                .then(|| button.action.shortcut_text(is_mac))
+                .flatten();
+            action_button_width(ui, button.label, shortcut.as_deref())
+        })
+        .collect();
+    let items = chip_widths.len() + button_widths.len();
+    chip_widths.iter().sum::<f32>()
+        + button_widths.iter().sum::<f32>()
+        + items.saturating_sub(1) as f32 * spacing::SM
+        + spacing::LG
+}
+
+pub fn density_for(
+    ui: &egui::Ui,
+    model: &BottomBarModel,
+    analysis: &StoredAnalysis,
+    is_mac: bool,
+) -> Density {
+    let chips = ChipTexts::new(model, analysis);
+    let buttons = bar_buttons(model);
+    let available = ui.available_width();
+    Density::ALL
+        .into_iter()
+        .find(|density| required_width(ui, model, &chips, &buttons, *density, is_mac) <= available)
+        .unwrap_or(Density::Compact)
+}
+
 pub fn show(
     ui: &mut egui::Ui,
     palette: &Palette,
@@ -105,25 +290,18 @@ pub fn show(
     actions: &mut Vec<Action>,
 ) -> BottomBarChanges {
     let mut changes = BottomBarChanges::default();
+    let density = density_for(ui, model, analysis, is_mac);
+    let texts = ChipTexts::new(model, analysis);
     ui.horizontal_centered(|ui| {
         ui.spacing_mut().item_spacing.x = spacing::SM;
 
-        let fft = chip(
-            ui,
-            palette,
-            text::CHIP_FFT,
-            &text::format_fft_length(analysis.fft_length),
-            true,
-        );
+        let fft = chip(ui, palette, text::CHIP_FFT, &texts.fft, true);
         if let Some(forward) = step_direction(ui, &fft) {
             analysis.fft_length = cycle(&FFT_LENGTH_CHOICES, analysis.fft_length, forward);
             changes.analysis_changed = true;
         }
 
-        let averaging_value = analysis
-            .time_constant_s
-            .map_or_else(|| text::AVERAGING_INFINITE.to_owned(), text::format_seconds);
-        let averaging = chip(ui, palette, text::CHIP_AVERAGING, &averaging_value, true);
+        let averaging = chip(ui, palette, text::CHIP_AVERAGING, &texts.averaging, true);
         if let Some(forward) = step_direction(ui, &averaging) {
             let choices: Vec<Option<f64>> = TIME_CONSTANT_CHOICES_S
                 .iter()
@@ -135,26 +313,14 @@ pub fn show(
             changes.analysis_changed = true;
         }
 
-        let smoothing = chip(
-            ui,
-            palette,
-            text::CHIP_SMOOTHING,
-            &text::format_smoothing(analysis.smoothing_fraction),
-            true,
-        );
+        let smoothing = chip(ui, palette, text::CHIP_SMOOTHING, &texts.smoothing, true);
         if let Some(forward) = step_direction(ui, &smoothing) {
             analysis.smoothing_fraction =
                 cycle(&SMOOTHING_CHOICES, analysis.smoothing_fraction, forward);
             changes.analysis_changed = true;
         }
 
-        let coherence = chip(
-            ui,
-            palette,
-            text::CHIP_COHERENCE,
-            &text::format_decimal(analysis.coherence_threshold, 2),
-            true,
-        );
+        let coherence = chip(ui, palette, text::CHIP_COHERENCE, &texts.coherence, true);
         if let Some(forward) = step_direction(ui, &coherence) {
             let delta = if forward {
                 COHERENCE_STEP
@@ -167,22 +333,18 @@ pub fn show(
             changes.analysis_changed = true;
         }
 
-        chip(
-            ui,
-            palette,
-            text::CHIP_REFERENCE,
-            &model.reference_label,
-            false,
-        );
-
-        if let Some(level) = model.generator_level_dbfs {
-            let generator = chip(
+        if density.shows_secondary_items() {
+            chip(
                 ui,
                 palette,
-                text::CHIP_GENERATOR,
-                &text::format_dbfs(level),
-                true,
+                text::CHIP_REFERENCE,
+                &model.reference_label,
+                false,
             );
+        }
+
+        if let (Some(level), Some(level_text)) = (model.generator_level_dbfs, &texts.generator) {
+            let generator = chip(ui, palette, text::CHIP_GENERATOR, level_text, true);
             if let Some(forward) =
                 keyboard_direction(ui, &generator).or_else(|| scroll_direction(ui, &generator))
             {
@@ -201,87 +363,26 @@ pub fn show(
 
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             ui.spacing_mut().item_spacing.x = spacing::SM;
-            let (label, emphasis) = if model.running {
-                (text::BUTTON_STOP, Emphasis::Secondary)
-            } else {
-                (text::BUTTON_START, Emphasis::Primary)
-            };
-            if action_button(
-                ui,
-                palette,
-                label,
-                Action::ToggleMeasurement.shortcut_text(is_mac).as_deref(),
-                emphasis,
-                true,
-            )
-            .clicked()
-            {
-                actions.push(Action::ToggleMeasurement);
-            }
-            let freeze_label = if model.frozen {
-                text::BUTTON_UNFREEZE
-            } else {
-                text::BUTTON_FREEZE
-            };
-            if action_button(
-                ui,
-                palette,
-                freeze_label,
-                Action::ToggleFreeze.shortcut_text(is_mac).as_deref(),
-                Emphasis::Secondary,
-                model.running,
-            )
-            .clicked()
-            {
-                actions.push(Action::ToggleFreeze);
-            }
-            if action_button(
-                ui,
-                palette,
-                text::BUTTON_CAPTURE,
-                Action::CaptureTrace.shortcut_text(is_mac).as_deref(),
-                Emphasis::Secondary,
-                model.running,
-            )
-            .clicked()
-            {
-                actions.push(Action::CaptureTrace);
-            }
-            if action_button(
-                ui,
-                palette,
-                text::BUTTON_TOGGLE_PANEL,
-                Action::ToggleSidePanel.shortcut_text(is_mac).as_deref(),
-                Emphasis::Quiet,
-                true,
-            )
-            .clicked()
-            {
-                actions.push(Action::ToggleSidePanel);
-            }
-            if action_button(
-                ui,
-                palette,
-                text::BUTTON_AUDIO_SETTINGS,
-                Action::OpenAudioSettings.shortcut_text(is_mac).as_deref(),
-                Emphasis::Quiet,
-                true,
-            )
-            .clicked()
-            {
-                actions.push(Action::OpenAudioSettings);
-            }
-            if action_button(
-                ui,
-                palette,
-                text::BUTTON_PALETTE,
-                Action::OpenPalette.shortcut_text(is_mac).as_deref(),
-                Emphasis::Quiet,
-                true,
-            )
-            .clicked()
-            {
-                actions.push(Action::OpenPalette);
+            for button in bar_buttons(model) {
+                if !density.shows_secondary_items() && button.secondary {
+                    continue;
+                }
+                let shortcut = density
+                    .shows_shortcut(button.emphasis)
+                    .then(|| button.action.shortcut_text(is_mac))
+                    .flatten();
+                if action_button(
+                    ui,
+                    palette,
+                    button.label,
+                    shortcut.as_deref(),
+                    button.emphasis,
+                    button.enabled,
+                )
+                .clicked()
+                {
+                    actions.push(button.action);
+                }
             }
         });
     });

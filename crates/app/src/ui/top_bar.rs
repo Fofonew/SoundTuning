@@ -5,12 +5,14 @@ use crate::design::Palette;
 use crate::design::fonts;
 use crate::design::tokens::{size, spacing, stroke, text_size};
 use crate::design::widgets::{
-    Emphasis, MeterReading, Tone, action_button, confidence_segments, level_meter, status_pill,
+    Emphasis, MeterReading, Tone, action_button, action_button_width, confidence_segments,
+    level_meter, status_pill,
 };
 use crate::text;
 
 const DELAY_BLOCK_WIDTH: f32 = 232.0;
-const BUTTON_GROUP_WIDTH: f32 = 236.0;
+const FULL_LEFT_MIN_WIDTH: f32 = 320.0;
+const MIN_SOURCE_WIDTH: f32 = 160.0;
 const FINE_GROUP_WIDTH: f32 = 2.0 * size::MIN_CLICK_HEIGHT + TRACKING_WIDTH + 2.0 * spacing::XS;
 const TRACKING_WIDTH: f32 = 76.0;
 const METER_GROUP_WIDTH: f32 = 2.0 * size::METER_WIDTH + spacing::LG;
@@ -46,12 +48,22 @@ pub fn show(
     actions: &mut Vec<Action>,
 ) {
     let total_width = ui.available_width();
-    let right_width = BUTTON_GROUP_WIDTH
-        + FINE_GROUP_WIDTH
-        + DELAY_BLOCK_WIDTH
-        + METER_GROUP_WIDTH
-        + 4.0 * spacing::XL;
-    let left_width = (total_width - right_width).max(160.0);
+    let full_right_width = right_group_width(ui, is_mac, false);
+    let compact = total_width < full_right_width + FULL_LEFT_MIN_WIDTH;
+    let right_width = if compact {
+        right_group_width(ui, is_mac, true)
+    } else {
+        full_right_width
+    };
+    let group_gap = if compact { spacing::MD } else { spacing::XL };
+    let left_width = (total_width - right_width).max(if compact { 0.0 } else { MIN_SOURCE_WIDTH });
+    let shortcut = |action: Action| {
+        if compact {
+            None
+        } else {
+            action.shortcut_text(is_mac)
+        }
+    };
     let height = ui.available_height();
     ui.horizontal(|ui| {
         ui.allocate_ui_with_layout(
@@ -60,11 +72,13 @@ pub fn show(
             |ui| {
                 ui.spacing_mut().item_spacing.x = spacing::MD;
                 status_pill(ui, palette, model.status_tone, model.status_text);
-                ui.label(
-                    RichText::new(text::APP_NAME)
-                        .font(fonts::ui_semibold(text_size::TITLE))
-                        .color(palette.text_primary),
-                );
+                if !compact {
+                    ui.label(
+                        RichText::new(text::APP_NAME)
+                            .font(fonts::ui_semibold(text_size::TITLE))
+                            .color(palette.text_primary),
+                    );
+                }
                 if let Some(source) = &model.source_label {
                     ui.add(
                         egui::Label::new(
@@ -83,7 +97,7 @@ pub fn show(
                 ui,
                 palette,
                 text::BUTTON_APPLY_DELAY,
-                Action::ApplyDelay.shortcut_text(is_mac).as_deref(),
+                shortcut(Action::ApplyDelay).as_deref(),
                 Emphasis::Secondary,
                 model.can_apply_delay,
             )
@@ -95,7 +109,7 @@ pub fn show(
                 ui,
                 palette,
                 text::BUTTON_FIND_DELAY,
-                Action::FindDelay.shortcut_text(is_mac).as_deref(),
+                shortcut(Action::FindDelay).as_deref(),
                 Emphasis::Secondary,
                 model.running,
             )
@@ -111,7 +125,7 @@ pub fn show(
                 Layout::top_down(Align::Max),
                 |ui| delay_block(ui, palette, &model.delay),
             );
-            ui.add_space(spacing::XL);
+            ui.add_space(group_gap);
             ui.allocate_ui_with_layout(
                 vec2(METER_GROUP_WIDTH, METER_BLOCK_HEIGHT),
                 Layout::left_to_right(Align::Center),
@@ -128,6 +142,31 @@ pub fn show(
             );
         });
     });
+}
+
+fn right_group_width(ui: &egui::Ui, is_mac: bool, compact: bool) -> f32 {
+    let shortcut = |action: Action| {
+        if compact {
+            None
+        } else {
+            action.shortcut_text(is_mac)
+        }
+    };
+    let buttons = action_button_width(
+        ui,
+        text::BUTTON_APPLY_DELAY,
+        shortcut(Action::ApplyDelay).as_deref(),
+    ) + action_button_width(
+        ui,
+        text::BUTTON_FIND_DELAY,
+        shortcut(Action::FindDelay).as_deref(),
+    ) + spacing::SM;
+    let gaps = if compact {
+        4.0 * spacing::MD
+    } else {
+        4.0 * spacing::XL
+    };
+    buttons + FINE_GROUP_WIDTH + DELAY_BLOCK_WIDTH + METER_GROUP_WIDTH + gaps
 }
 
 fn delay_block(ui: &mut egui::Ui, palette: &Palette, delay: &DelayReadout) {

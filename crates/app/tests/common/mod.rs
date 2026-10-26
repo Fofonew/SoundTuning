@@ -13,6 +13,7 @@ use soundtuning::config::{AppConfig, ConfigStore};
 use soundtuning::design::Theme;
 use soundtuning::measurement::{FilePacing, SourceSpec};
 use soundtuning::session::SessionStore;
+use soundtuning::update::UpdateSource;
 
 pub const SAMPLE_RATE_HZ: u32 = 48_000;
 pub const WINDOW_SIZE: [f32; 2] = [1440.0, 900.0];
@@ -121,6 +122,7 @@ pub fn file_options(theme: Theme, start: bool) -> AppOptions {
             ..AppConfig::default()
         }),
         start_measurement: start,
+        updates: UpdateSource::Offline,
     }
 }
 
@@ -134,6 +136,7 @@ pub fn first_launch_options() -> AppOptions {
         devices: DeviceCatalog::Fixed(fake_devices()),
         initial_config: Some(AppConfig::default()),
         start_measurement: false,
+        updates: UpdateSource::Offline,
     }
 }
 

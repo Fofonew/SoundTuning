@@ -5,8 +5,8 @@ version.workspace = true
 publish.workspace = true
 
 [dependencies]
-audio-io = { version = "0.1.0", path = "../audio-io" }
-dsp-core = { version = "0.1.0", path = "../dsp-core" }
+audio-io = { path = "../audio-io" }
+dsp-core = { path = "../dsp-core" }
 thiserror = "2.0.21"
 tracing = "0.1.44"
 triple_buffer = "9.0.0"

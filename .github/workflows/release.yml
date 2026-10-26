@@ -1,0 +1,60 @@
+name: Release
+
+on:
+  push:
+    tags: ["v[0-9]+.[0-9]+.[0-9]+"]
+
+permissions:
+  contents: read
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.check.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: check
+        shell: bash
+        run: |
+          tag_version="${GITHUB_REF_NAME#v}"
+          crate_version=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)
+          if [ "$tag_version" != "$crate_version" ]; then
+            echo "::error::Le tag $GITHUB_REF_NAME ne correspond pas à la version $crate_version de Cargo.toml"
+            exit 1
+          fi
+          echo "version=$crate_version" >> "$GITHUB_OUTPUT"
+
+  ci:
+    needs: version
+    uses: ./.github/workflows/ci.yml
+
+  publish:
+    needs: [version, ci]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+      - name: Name the release assets
+        shell: bash
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          mkdir release
+          mv dist/soundtuning-macos-latest/SoundTuning-macos.zip "release/SoundTuning-$VERSION-macos.zip"
+          mv dist/soundtuning-windows-latest/*-setup.exe "release/SoundTuning-$VERSION-windows-x64-setup.exe"
+          ls -l release
+      - name: Publish the GitHub release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" release/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "SoundTuning $VERSION" \
+            --generate-notes \
+            --verify-tag

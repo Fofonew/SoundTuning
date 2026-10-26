@@ -4,7 +4,9 @@ use eframe::egui::{self, Align, Layout, RichText};
 use crate::design::Palette;
 use crate::design::fonts;
 use crate::design::tokens::{spacing, text_size};
-use crate::design::widgets::{Emphasis, action_button, combo_label, muted, section_title};
+use crate::design::widgets::{
+    Emphasis, action_button, action_button_width, combo_label, muted, section_title,
+};
 use crate::device_choice;
 use crate::text;
 use crate::ui::wizard::{channel_combo, output_selector};
@@ -153,9 +155,66 @@ pub fn show(
         muted(ui, palette, text::AUDIO_FILE_MODE_NOTE);
     }
     let width = ui.available_width();
+    let changed = panel.draft != *current;
+    ui.with_layout(Layout::bottom_up(Align::Min), |ui| {
+        muted(ui, palette, text::AUDIO_APPLY_HINT);
+        let buttons_on_one_row = action_button_width(ui, text::AUDIO_APPLY, None)
+            + action_button_width(ui, text::WIZARD_REFRESH, None)
+            + ui.spacing().item_spacing.x
+            <= width;
+        let footer_layout = if buttons_on_one_row {
+            Layout::left_to_right(Align::Center)
+        } else {
+            Layout::bottom_up(Align::Min)
+        };
+        ui.allocate_ui_with_layout(egui::vec2(width, 0.0), footer_layout, |ui| {
+            let apply = |ui: &mut egui::Ui| {
+                action_button(
+                    ui,
+                    palette,
+                    text::AUDIO_APPLY,
+                    None,
+                    Emphasis::Primary,
+                    changed,
+                )
+                .clicked()
+            };
+            let refresh = |ui: &mut egui::Ui| {
+                action_button(
+                    ui,
+                    palette,
+                    text::WIZARD_REFRESH,
+                    None,
+                    Emphasis::Quiet,
+                    true,
+                )
+                .clicked()
+            };
+            let (apply_clicked, refresh_clicked) = if buttons_on_one_row {
+                let applied = apply(ui);
+                (applied, refresh(ui))
+            } else {
+                let refreshed = refresh(ui);
+                (apply(ui), refreshed)
+            };
+            if apply_clicked {
+                commands.push(AudioCommand::Apply(panel.draft.clone()));
+            }
+            if refresh_clicked {
+                commands.push(AudioCommand::RefreshDevices);
+            }
+        });
+        ui.add_space(spacing::MD);
+        ui.with_layout(Layout::top_down(Align::Min), |ui| {
+            audio_fields(ui, palette, panel, width);
+        });
+    });
+    commands
+}
+
+fn audio_fields(ui: &mut egui::Ui, palette: &Palette, panel: &mut AudioSettingsPanel, width: f32) {
     egui::ScrollArea::vertical()
-        .auto_shrink([false, true])
-        .max_height((ui.available_height() - 3.0 * spacing::XXL).max(0.0))
+        .auto_shrink([false, false])
         .show(ui, |ui| {
             ui.set_max_width(width);
             if panel.devices.is_empty() {
@@ -341,37 +400,6 @@ pub fn show(
             }
             panel.normalize();
         });
-
-    ui.add_space(spacing::MD);
-    let changed = panel.draft != *current;
-    ui.horizontal_wrapped(|ui| {
-        if action_button(
-            ui,
-            palette,
-            text::AUDIO_APPLY,
-            None,
-            Emphasis::Primary,
-            changed,
-        )
-        .clicked()
-        {
-            commands.push(AudioCommand::Apply(panel.draft.clone()));
-        }
-        if action_button(
-            ui,
-            palette,
-            text::WIZARD_REFRESH,
-            None,
-            Emphasis::Quiet,
-            true,
-        )
-        .clicked()
-        {
-            commands.push(AudioCommand::RefreshDevices);
-        }
-    });
-    muted(ui, palette, text::AUDIO_APPLY_HINT);
-    commands
 }
 
 #[cfg(test)]

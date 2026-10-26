@@ -33,10 +33,13 @@ pub enum Action {
     ViewImpulse,
     ToggleStackedViews,
     ToggleFullscreen,
+    CheckForUpdates,
+    OpenUpdatePage,
+    DismissUpdate,
 }
 
 impl Action {
-    pub const ALL: [Self; 29] = [
+    pub const ALL: [Self; 30] = [
         Self::ToggleMeasurement,
         Self::FindDelay,
         Self::ApplyDelay,
@@ -66,6 +69,7 @@ impl Action {
         Self::ViewImpulse,
         Self::ToggleStackedViews,
         Self::ToggleFullscreen,
+        Self::CheckForUpdates,
     ];
 
     const SHORTCUT_PRIORITY: [Self; 25] = [
@@ -127,6 +131,9 @@ impl Action {
             Self::ViewImpulse => text::ACTION_VIEW_IMPULSE,
             Self::ToggleStackedViews => text::ACTION_TOGGLE_STACKED_VIEWS,
             Self::ToggleFullscreen => text::ACTION_TOGGLE_FULLSCREEN,
+            Self::CheckForUpdates => text::ACTION_CHECK_FOR_UPDATES,
+            Self::OpenUpdatePage => text::ACTION_OPEN_UPDATE_PAGE,
+            Self::DismissUpdate => text::ACTION_DISMISS_UPDATE,
         }
     }
 
@@ -164,7 +171,10 @@ impl Action {
             Self::ResetView
             | Self::CalibrateLatency
             | Self::ExportSession
-            | Self::RestartMeasurement => None,
+            | Self::RestartMeasurement
+            | Self::CheckForUpdates
+            | Self::OpenUpdatePage
+            | Self::DismissUpdate => None,
         }
     }
 

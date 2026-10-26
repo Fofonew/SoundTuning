@@ -96,3 +96,14 @@ Critères : hiérarchie visuelle, lisibilité à 1 m, alignements, espacements, 
 ### Vues — tour 2 (2026-10-26)
 - Critiques : aucune régression sur EQ, alignement, traces, réglages audio (la barre de vues décale le tracé de 40 px, l'aire centrale reste > 70 %) ; phase repliée à ±180° sans trait vertical parasite ; IR normalisée au plus grand pic, enveloppe min/max par colonne ; plein écran : panneau latéral et barre inférieure masqués, délai toujours visible en haut. Défaut connu assumé : trace et mesure identiques se superposent exactement (la trace n'est visible qu'après un changement).
 - Captures après : `docs/ui-review/vues/phase_stacked-tour2-apres.png`, `impulse-tour2-apres.png`, `impulse_stacked_fullscreen_daylight-tour2-apres.png`, `eq-tour2-apres.png`.
+
+### Petites fenêtres (Windows 125–150 %) — tour 1 (2026-10-26, signalé par l'utilisateur)
+- Reproduction : `egui_kittest` à 1280 × 680 avec un facteur 1,25 (Windows 1920 × 1080 à 150 %, barre des tâches déduite) et à 1024 × 640, réglages audio ouverts.
+- Critiques : barre inférieure : « Réf. interne » chevauche « Commandes » ; à 1024 px, pastilles et boutons s'empilent les uns sur les autres ; barre supérieure : vu-mètres sur le nom du logiciel ; réglages audio : l'aide sous « Appliquer les réglages » est coupée par la barre inférieure.
+- Corrections : densités de la barre inférieure choisies d'après les largeurs mesurées ; barre supérieure compacte ; pied des réglages audio fixé en bas, champs défilants.
+- Captures avant : `docs/ui-review/fenetre-reduite/avant_1280_125.png`, `avant_1024.png`.
+
+### Petites fenêtres — tour 2 (2026-10-26)
+- Critiques : dans le pied des réglages audio, « Actualiser » passait à la ligne vers le bas et recouvrait l'aide (rangée à retour automatique dans une mise en page de bas en haut).
+- Corrections : les deux boutons sont sur une ligne s'ils tiennent, sinon empilés explicitement. Vérifié à 1024 × 600 : traces, alignement, EQ, assistant, sans chevauchement ; à 1280 × 680 : raccourcis des boutons discrets masqués seulement.
+- Captures après : `docs/ui-review/fenetre-reduite/apres_1280_125.png`, `apres_1024.png`, `apres_min_traces.png`, `apres_min_eq.png`.

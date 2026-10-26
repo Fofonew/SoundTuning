@@ -7,6 +7,7 @@ use crate::design::tokens::{radius, spacing, stroke, text_size};
 use crate::design::widgets::{Emphasis, Tone, action_button};
 use crate::measurement::InputAlert;
 use crate::text;
+use crate::update::Version;
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct BannerInputs {
@@ -21,6 +22,7 @@ pub struct BannerInputs {
     pub calibrating: bool,
     pub calibration_failed: bool,
     pub file_finished: bool,
+    pub available_update: Option<Version>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -28,6 +30,7 @@ pub struct Banner {
     pub tone: Tone,
     pub text: String,
     pub action: Option<(&'static str, Action)>,
+    pub secondary_action: Option<(&'static str, Action)>,
 }
 
 pub fn collect_banners(inputs: &BannerInputs) -> Vec<Banner> {
@@ -36,12 +39,14 @@ pub fn collect_banners(inputs: &BannerInputs) -> Vec<Banner> {
         tone,
         text: text.to_owned(),
         action,
+        secondary_action: None,
     };
     if let Some(error) = &inputs.start_error {
         banners.push(Banner {
             tone: Tone::Danger,
             text: text::start_failed(error),
             action: Some((text::BUTTON_RETRY, Action::RestartMeasurement)),
+            secondary_action: None,
         });
     }
     match inputs.alert {
@@ -90,6 +95,14 @@ pub fn collect_banners(inputs: &BannerInputs) -> Vec<Banner> {
     if inputs.running && inputs.file_finished {
         banners.push(banner(Tone::Neutral, text::BANNER_FILE_FINISHED, None));
     }
+    if let Some(latest) = inputs.available_update {
+        banners.push(Banner {
+            tone: Tone::Accent,
+            text: text::update_available(latest, Version::current()),
+            action: Some((text::BUTTON_DOWNLOAD_UPDATE, Action::OpenUpdatePage)),
+            secondary_action: Some((text::BUTTON_LATER, Action::DismissUpdate)),
+        });
+    }
     banners
 }
 
@@ -120,12 +133,23 @@ pub fn show_banners(
                         )
                         .wrap(),
                     );
-                    if let Some((label, action)) = banner.action {
+                    if banner.action.is_some() || banner.secondary_action.is_some() {
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            if action_button(ui, palette, label, None, Emphasis::Secondary, true)
-                                .clicked()
+                            for (label, action, emphasis) in [
+                                banner
+                                    .secondary_action
+                                    .map(|(label, action)| (label, action, Emphasis::Quiet)),
+                                banner
+                                    .action
+                                    .map(|(label, action)| (label, action, Emphasis::Secondary)),
+                            ]
+                            .into_iter()
+                            .flatten()
                             {
-                                actions.push(action);
+                                if action_button(ui, palette, label, None, emphasis, true).clicked()
+                                {
+                                    actions.push(action);
+                                }
                             }
                         });
                     }
@@ -156,6 +180,24 @@ mod tests {
             banners[0].action.map(|(_, action)| action),
             Some(Action::CalibrateLatency)
         );
+    }
+
+    #[test]
+    fn a_newer_release_is_offered_even_when_idle() {
+        let banners = collect_banners(&BannerInputs {
+            available_update: Some(Version::new(9, 0, 0)),
+            ..BannerInputs::default()
+        });
+        assert_eq!(banners.len(), 1);
+        assert_eq!(
+            banners[0].action.map(|(_, action)| action),
+            Some(Action::OpenUpdatePage)
+        );
+        assert_eq!(
+            banners[0].secondary_action.map(|(_, action)| action),
+            Some(Action::DismissUpdate)
+        );
+        assert!(banners[0].text.contains("9.0.0"));
     }
 
     #[test]

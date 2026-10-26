@@ -92,6 +92,14 @@ fn accent_text_color(palette: &Palette) -> Color32 {
     }
 }
 
+pub fn action_button_width(ui: &Ui, label: &str, shortcut: Option<&str>) -> f32 {
+    let galley = ui
+        .painter()
+        .layout_no_wrap(label.to_owned(), fonts::label(), Color32::WHITE);
+    let keycap_extent = shortcut.map_or(0.0, |text| keycap_width(ui, text) + spacing::SM);
+    galley.size().x + keycap_extent + 2.0 * spacing::MD
+}
+
 pub fn action_button(
     ui: &mut Ui,
     palette: &Palette,
@@ -101,13 +109,9 @@ pub fn action_button(
     enabled: bool,
 ) -> Response {
     let font = fonts::label();
-    let galley = ui
-        .painter()
-        .layout_no_wrap(label.to_owned(), font.clone(), Color32::WHITE);
     let keycap = shortcut.map(|text| (text, keycap_width(ui, text)));
-    let keycap_extent = keycap.map_or(0.0, |(_, width)| width + spacing::SM);
     let desired = vec2(
-        galley.size().x + keycap_extent + 2.0 * spacing::MD,
+        action_button_width(ui, label, shortcut),
         size::BUTTON_HEIGHT,
     );
     let sense = if enabled {
@@ -202,6 +206,27 @@ pub fn action_button(
     }
 }
 
+fn chip_extent(caption_width: f32, value_width: f32) -> f32 {
+    caption_width + value_width + spacing::SM + 2.0 * spacing::MD
+}
+
+pub fn chip_width(ui: &Ui, caption: &str, value: &str) -> f32 {
+    let painter = ui.painter();
+    let caption_width = painter
+        .layout_no_wrap(caption.to_owned(), fonts::caption(), Color32::WHITE)
+        .size()
+        .x;
+    let value_width = painter
+        .layout_no_wrap(
+            value.to_owned(),
+            fonts::value_medium(text_size::VALUE),
+            Color32::WHITE,
+        )
+        .size()
+        .x;
+    chip_extent(caption_width, value_width)
+}
+
 pub fn chip(
     ui: &mut Ui,
     palette: &Palette,
@@ -218,7 +243,7 @@ pub fn chip(
         palette.text_primary,
     );
     let desired = vec2(
-        caption_galley.size().x + value_galley.size().x + spacing::SM + 2.0 * spacing::MD,
+        chip_extent(caption_galley.size().x, value_galley.size().x),
         size::BUTTON_HEIGHT,
     );
     let sense = if interactive {

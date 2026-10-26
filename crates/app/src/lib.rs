@@ -12,6 +12,7 @@ pub mod plot;
 pub mod session;
 pub mod text;
 pub mod ui;
+pub mod update;
 
 use clap::Parser;
 
@@ -20,7 +21,7 @@ use crate::cli::{Cli, Command};
 use crate::measurement::{FilePacing, SourceSpec};
 
 const INITIAL_WINDOW_SIZE: [f32; 2] = [1440.0, 900.0];
-const MIN_WINDOW_SIZE: [f32; 2] = [1280.0, 720.0];
+const MIN_WINDOW_SIZE: [f32; 2] = [1024.0, 600.0];
 
 pub fn run() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
@@ -50,6 +51,7 @@ fn run_window(input_file: Option<std::path::PathBuf>) -> anyhow::Result<()> {
             .with_title(text::APP_NAME)
             .with_inner_size(INITIAL_WINDOW_SIZE)
             .with_min_inner_size(MIN_WINDOW_SIZE),
+        wgpu_options: wgpu_options(),
         ..eframe::NativeOptions::default()
     };
     eframe::run_native(
@@ -63,4 +65,16 @@ fn run_window(input_file: Option<std::path::PathBuf>) -> anyhow::Result<()> {
         }),
     )
     .map_err(|error| anyhow::anyhow!("window failed: {error}"))
+}
+
+fn wgpu_options() -> eframe::egui_wgpu::WgpuConfiguration {
+    let mut options = eframe::egui_wgpu::WgpuConfiguration::default();
+    let backend_forced_by_environment = eframe::wgpu::Backends::from_env().is_some();
+    if cfg!(target_os = "windows")
+        && !backend_forced_by_environment
+        && let eframe::egui_wgpu::WgpuSetup::CreateNew(setup) = &mut options.wgpu_setup
+    {
+        setup.instance_descriptor.backends = eframe::wgpu::Backends::DX12;
+    }
+    options
 }
