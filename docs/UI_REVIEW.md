@@ -66,3 +66,14 @@ Critères : hiérarchie visuelle, lisibilité à 1 m, alignements, espacements, 
 - Critiques : ligne Δ centrée verticalement dans tout l'espace restant (case de polarité et aide poussées hors de l'écran) ; aide « Δ > 0 … » coupée avec un « A » orphelin.
 - Corrections : ligne Δ en `horizontal` ; aide sur deux lignes explicites. Vérifié : somme prédite (rose, `predicted`, trait épais) nettement distincte des traces Okabe–Ito et de la trace live ; bande choisie ombrée avec ses bornes en chiffres ; proposition (accent) et réglage à recopier (texte principal) hiérarchisés.
 - Captures : après `docs/ui-review/phase-5/alignment-tour2-apres.png`.
+
+### Phase 6 — tour 1 (2026-10-26)
+- Écran : EQ sur la mesure en direct (figée), 3 filtres (cloche 1 kHz −5 dB, plateau grave 120 Hz −4 dB, coupe-bas LR 24 à 30 Hz), vue « Prédit ».
+- Critiques : panneau EQ beaucoup trop large (contenu poussé hors de l'écran, seule une bande de 70 px visible) : ligne « Banque A/B + Bypass global », éditeur de filtre « type + Bypass + × » sur une ligne, libellé « Coupe-bas Linkwitz-Riley 24 dB/oct » non tronqué dans la liste du type, rangées d'export non repliables.
+- Corrections : « Bypass global » sur sa propre ligne ; listes de type, de pente et de cible à largeur fixe et tronquées ; la liste du type n'affiche que la famille (la pente a sa propre liste) ; rangées en `horizontal_wrapped` ; suppression alignée à droite.
+- Captures : avant `docs/ui-review/phase-6/eq-tour1-avant.png`.
+
+### Phase 6 — tour 2 (2026-10-26)
+- Critiques : carte de filtre sur quatre lignes (Q seul sur une ligne), « Trace inversée » renvoyée à la ligne dans le sélecteur de vue.
+- Corrections : carte en trois lignes (type + × ; fréquence + gain ; Q + largeur en octaves + Bypass à droite) ; bouton de vue « Inversée » (le libellé complet reste celui de la courbe). Vérifié : résultat prédit (rose, épais) plat à −6 dB entre 60 Hz et 10 kHz, courbe d'EQ (accent, fine) distincte, poignées numérotées, filtre sélectionné en accent dans le tracé et dans le panneau.
+- Captures : après `docs/ui-review/phase-6/eq-tour2-apres.png`.

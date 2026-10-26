@@ -226,3 +226,13 @@ Non corrigé, justifié :
 - Annuler : les modifications continues (glissé de bande, Δ, décalage) forment une étape ; l'étape se ferme dès que le pointeur est relâché et qu'aucun champ n'a le focus.
 - Notifications ancrées à gauche du panneau latéral quand il est ouvert (ne masquent plus ses commandes).
 - Revue `ecc:rust-reviewer` : tous les points HIGH et MEDIUM corrigés sauf « libellé de bande alloué à chaque image » (une chaîne courte par image, négligeable).
+
+### D-033 — EQ virtuel (phase 6, 2026-10-26)
+- Cible : mesure en direct ou trace mémorisée ; EQ évalué sur la grille d'affichage à la fs de la cible (trace : fs de sa capture). Courbe d'EQ mise en cache tant que l'état d'EQ et la fs ne changent pas.
+- Vues : « Prédit » = |H·EQ| (somme des dB, exacte pour la magnitude) + courbe d'EQ fine ; « EQ seul » ; « Inversée » = trace inversée autour de son niveau moyen 200 Hz–5 kHz (pour poser l'EQ dessus) + courbe d'EQ.
+- Poignées sur le tracé (onglet EQ ouvert) : position (fréquence, gain) ; glisser = fréquence et gain (gain ignoré pour coupe-bas/haut et notch), molette sur une poignée = Q (×e^{0,004·Δ}), clic = sélection, double-clic sur le tracé = cloche ajoutée à l'endroit cliqué (dans l'onglet EQ, le double-clic n'efface plus la vue). Bornes : 20 Hz–20 kHz, ±24 dB, Q 0,1–20. E ajoute une cloche à 1 kHz et ouvre l'onglet EQ.
+- Annuler : un glisser ou une rafale de molette = une étape.
+- Exports : `soundtuning-AAAAMMJJ-HHMMSS.txt` (liste lisible) et `.json` (filtres de la banque active) dans `~/Documents/SoundTuning`.
+- Tests : critère « EQ » de la spec côté app (cloche +6 dB + EQ −6 dB → plat ±0,1 dB), glisser, molette, double-clic, exports, annulations.
+- Revue `ecc:rust-reviewer` de la phase 6. Corrigé : sélection jamais posée sur un indice hors limites (glisser périmé après changement de banque, suppression ou annulation) et glisser annulé si la poignée disparaît ; chaque nouveau glisser de poignée ouvre une nouvelle étape d'annulation ; double-clic sur une poignée n'ajoute plus de filtre ; clic dans le vide désélectionne ; la poignée garde le décalage de prise (ne saute plus sous le curseur) ; annuler/rétablir conserve la vue d'EQ courante ; trace inversée : repli sur la moyenne globale si la bande 200 Hz–5 kHz est vide.
+- Non corrigé, justifié : 4 à 5 vecteurs de 957 points alloués par image en mode EQ (≈ 40 Ko, mesuré négligeable devant le budget de 1 ms ; la courbe d'EQ elle-même est en cache) ; fs de repli 48 kHz tant qu'aucune mesure n'a donné la sienne (la courbe d'EQ seule reste utile) ; noms d'export déjà uniques (`create_new` + suffixe `-2`, `-3`…), contrairement à ce que suppose la revue.

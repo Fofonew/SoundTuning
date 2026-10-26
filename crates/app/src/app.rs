@@ -11,6 +11,7 @@ use crate::config::{AppConfig, ConfigStore};
 use crate::design::tokens::{STORED_TRACE_COLOR_COUNT, size, spacing, stroke};
 use crate::design::widgets::Tone;
 use crate::design::{Theme, fonts, theme};
+use crate::eq_state::{EqState, EqTarget, EqView, inverted_db, predicted_db};
 use crate::measurement::{MeasurementController, SourceSpec};
 use crate::plot::{PlotView, RangePreset, TraceStyle};
 use crate::session::{
@@ -21,9 +22,10 @@ use crate::text;
 use crate::ui::alignment_panel::{self, AlignmentCommand};
 use crate::ui::banners::{BannerInputs, collect_banners, show_banners};
 use crate::ui::bottom_bar::{self, BottomBarModel};
+use crate::ui::eq_panel::{self, EqCommand};
 use crate::ui::notifications::Notifications;
 use crate::ui::palette::CommandPalette;
-use crate::ui::plot_panel::{BandSelection, OverlayTrace, PlotInputs, PlotPanel};
+use crate::ui::plot_panel::{BandSelection, OverlayTrace, PlotEvents, PlotInputs, PlotPanel};
 use crate::ui::side_panel::{self, SideTab};
 use crate::ui::top_bar::{self, DelayReadout, TopBarModel};
 use crate::ui::traces_panel::{self, RenameState, TraceCommand};
@@ -44,7 +46,11 @@ type CachedSum = (Option<AlignmentSumKey>, Option<Vec<Option<f64>>>);
 enum MergeKey {
     Offset(u64),
     Alignment,
+    Eq,
 }
+
+type CachedEqCurve = (EqState, u64, Vec<Option<f64>>);
+const FALLBACK_SAMPLE_RATE_HZ: u32 = 48_000;
 
 pub fn top_bar_height() -> f32 {
     size::TOP_BAR_HEIGHT + 2.0 * spacing::SM
@@ -129,6 +135,8 @@ pub struct SoundTuningApp {
     last_merge: Option<MergeKey>,
     drift_notified: bool,
     alignment_sum: Option<CachedSum>,
+    eq_curve: Option<CachedEqCurve>,
+    last_plot_rect: Option<egui::Rect>,
     export_directory: std::path::PathBuf,
 }
 
@@ -169,6 +177,8 @@ impl SoundTuningApp {
             last_merge: None,
             drift_notified: false,
             alignment_sum: None,
+            eq_curve: None,
+            last_plot_rect: None,
             export_directory: options.export_directory.clone(),
         };
         app.apply_theme(context);
@@ -228,6 +238,10 @@ impl SoundTuningApp {
         self.side_tab = tab;
     }
 
+    pub fn last_plot_rect(&self) -> Option<egui::Rect> {
+        self.last_plot_rect
+    }
+
     pub fn session(&self) -> &Session {
         &self.session
     }
@@ -252,7 +266,9 @@ impl SoundTuningApp {
     }
 
     fn end_merge_when_idle(&mut self, context: &egui::Context) {
-        let pointer_down = context.input(|input| input.pointer.any_down());
+        let pointer_down = context.input(|input| {
+            input.pointer.any_down() || input.smooth_scroll_delta.y.abs() > f32::EPSILON
+        });
         let focused = context.memory(|memory| memory.focused()).is_some();
         if !pointer_down && !focused {
             self.last_merge = None;
@@ -271,6 +287,147 @@ impl SoundTuningApp {
         });
         if selection.finished {
             self.last_merge = None;
+        }
+    }
+
+    pub fn apply_test_eq(&mut self, command: EqCommand) {
+        self.apply_eq_command(command);
+        self.last_merge = None;
+    }
+
+    fn apply_eq_command(&mut self, command: EqCommand) {
+        match command {
+            EqCommand::Update(state) => {
+                self.edit_session_merged(MergeKey::Eq, |session| session.eq = state);
+            }
+            EqCommand::AddFilter => self.add_eq_filter(eq_panel::default_new_filter()),
+            EqCommand::ExportText => {
+                let contents = self.session.eq.export_text();
+                self.export_file("txt", &contents);
+            }
+            EqCommand::ExportJson => match self.session.eq.export_json() {
+                Ok(contents) => self.export_file("json", &contents),
+                Err(error) => {
+                    tracing::warn!(%error, "EQ export failed");
+                    self.notifications
+                        .push(text::NOTIFY_EXPORT_FAILED, Tone::Danger, None);
+                }
+            },
+        }
+    }
+
+    fn add_eq_filter(&mut self, filter: crate::eq_state::StoredFilter) {
+        let mut added = None;
+        self.edit_session(|session| added = session.eq.add_filter(filter));
+        self.last_merge = None;
+        if added.is_none() {
+            self.notifications
+                .push(text::NOTIFY_EQ_FULL, Tone::Warning, None);
+        }
+    }
+
+    fn apply_eq_plot_events(&mut self, events: &PlotEvents) {
+        if let Some(drag) = events.eq_drag {
+            if drag.started {
+                self.last_merge = None;
+            }
+            self.edit_session_merged(MergeKey::Eq, |session| {
+                session
+                    .eq
+                    .move_filter(drag.index, drag.frequency_hz, drag.gain_db);
+            });
+            if drag.finished {
+                self.last_merge = None;
+            }
+        } else if let Some(selection) = events.eq_selected {
+            self.session.eq.selected_filter = selection;
+        }
+        if let Some((index, factor)) = events.eq_q_factor {
+            self.edit_session_merged(MergeKey::Eq, |session| session.eq.scale_q(index, factor));
+        }
+        if let Some((frequency_hz, gain_db)) = events.double_click_hz_db {
+            self.add_eq_filter(eq_panel::new_filter_at(frequency_hz, gain_db));
+        }
+    }
+
+    fn eq_sample_rate_hz(&self) -> u32 {
+        let rate = match self.session.eq.target {
+            EqTarget::Trace(id) => self
+                .session
+                .trace(id)
+                .map(|trace| trace.metadata.sample_rate_hz),
+            EqTarget::Live => Some(self.measurement.snapshot().sample_rate_hz),
+        };
+        rate.filter(|rate| *rate > 0)
+            .unwrap_or(FALLBACK_SAMPLE_RATE_HZ)
+    }
+
+    fn eq_target_db(&self) -> Option<Vec<Option<f64>>> {
+        match self.session.eq.target {
+            EqTarget::Trace(id) => self.session.trace(id).map(|trace| trace.displayed_db()),
+            EqTarget::Live => {
+                let snapshot = self.measurement.snapshot();
+                (snapshot.averages > 0).then(|| snapshot.magnitude_db.clone())
+            }
+        }
+    }
+
+    fn eq_overlays(
+        &mut self,
+        palette: &crate::design::Palette,
+    ) -> Vec<(&'static str, Vec<Option<f64>>, TraceStyle)> {
+        let sample_rate_hz = u64::from(self.eq_sample_rate_hz());
+        let stale = self
+            .eq_curve
+            .as_ref()
+            .is_none_or(|(state, rate, _)| *rate != sample_rate_hz || *state != self.session.eq);
+        if stale {
+            let curve = self.session.eq.response_db(
+                self.measurement.grid().frequencies_hz(),
+                sample_rate_hz as f64,
+            );
+            self.eq_curve = Some((self.session.eq.clone(), sample_rate_hz, curve));
+        }
+        let Some((_, _, curve)) = self.eq_curve.as_ref() else {
+            return Vec::new();
+        };
+        let strong = |color| TraceStyle {
+            color,
+            width: stroke::TRACE_LIVE,
+            halo: None,
+        };
+        let light = TraceStyle {
+            color: palette.accent,
+            width: stroke::TRACE_STORED,
+            halo: None,
+        };
+        let target = self.eq_target_db();
+        match (self.session.eq.view, target) {
+            (EqView::Predicted, Some(target)) => vec![
+                (text::EQ_CURVE_LABEL, curve.clone(), light),
+                (
+                    text::EQ_PREDICTED_LABEL,
+                    predicted_db(&target, curve),
+                    strong(palette.predicted),
+                ),
+            ],
+            (EqView::InvertedTrace, Some(target)) => vec![
+                (
+                    text::EQ_INVERTED_LABEL,
+                    inverted_db(&target, self.measurement.grid().frequencies_hz()),
+                    strong(palette.text_muted),
+                ),
+                (
+                    text::EQ_CURVE_LABEL,
+                    curve.clone(),
+                    strong(palette.predicted),
+                ),
+            ],
+            _ => vec![(
+                text::EQ_CURVE_LABEL,
+                curve.clone(),
+                strong(palette.predicted),
+            )],
         }
     }
 
@@ -469,15 +626,12 @@ impl SoundTuningApp {
         }
     }
 
-    fn export_csv(&mut self) {
-        let csv = self
-            .session
-            .to_csv(self.measurement.grid().frequencies_hz());
+    fn export_file(&mut self, extension: &str, contents: &str) {
         let stem = format!(
             "{EXPORT_FILE_PREFIX}-{}",
             chrono::Local::now().format("%Y%m%d-%H%M%S")
         );
-        match write_export(&self.export_directory, &stem, "csv", &csv) {
+        match write_export(&self.export_directory, &stem, extension, contents) {
             Ok(path) => self
                 .notifications
                 .push(text::exported_to(&path), Tone::Success, None),
@@ -487,6 +641,13 @@ impl SoundTuningApp {
                     .push(text::NOTIFY_EXPORT_FAILED, Tone::Danger, None);
             }
         }
+    }
+
+    fn export_csv(&mut self) {
+        let csv = self
+            .session
+            .to_csv(self.measurement.grid().frequencies_hz());
+        self.export_file("csv", &csv);
     }
 
     fn mark_config_dirty(&mut self) {
@@ -603,7 +764,9 @@ impl SoundTuningApp {
             }
             Action::CaptureTrace => self.capture_trace(),
             Action::Undo => {
+                let view = self.session.eq.view;
                 let text = if self.history.undo(&mut self.session) {
+                    self.session.eq.keep_view_after_history(view);
                     self.session_dirty_since.get_or_insert_with(Instant::now);
                     text::NOTIFY_UNDONE
                 } else {
@@ -613,7 +776,9 @@ impl SoundTuningApp {
                 self.notifications.push(text, Tone::Neutral, None);
             }
             Action::Redo => {
+                let view = self.session.eq.view;
                 if self.history.redo(&mut self.session) {
+                    self.session.eq.keep_view_after_history(view);
                     self.session_dirty_since.get_or_insert_with(Instant::now);
                     self.notifications
                         .push(text::NOTIFY_REDONE, Tone::Neutral, None);
@@ -621,7 +786,11 @@ impl SoundTuningApp {
                 self.last_merge = None;
             }
             Action::ExportSession => self.export_csv(),
-            Action::AddEqFilter => {}
+            Action::AddEqFilter => {
+                self.config.side_panel_open = true;
+                self.side_tab = SideTab::Eq;
+                self.add_eq_filter(eq_panel::default_new_filter());
+            }
             Action::ToggleDelayTracking => {
                 self.config.delay_tracking = !self.config.delay_tracking;
                 self.measurement
@@ -1000,6 +1169,7 @@ impl SoundTuningApp {
 
         let mut trace_commands = Vec::new();
         let mut alignment_commands = Vec::new();
+        let mut eq_commands = Vec::new();
         if self.config.side_panel_open {
             Panel::right("side-panel")
                 .exact_size(size::SIDE_PANEL_WIDTH)
@@ -1025,12 +1195,9 @@ impl SoundTuningApp {
                         SideTab::Alignment => {
                             alignment_commands = alignment_panel::show(ui, palette, &self.session);
                         }
-                        SideTab::Eq => side_panel::empty_state(
-                            ui,
-                            palette,
-                            text::EMPTY_EQ_TITLE,
-                            text::EMPTY_EQ_BODY,
-                        ),
+                        SideTab::Eq => {
+                            eq_commands = eq_panel::show(ui, palette, &self.session);
+                        }
                     }
                 });
         }
@@ -1041,6 +1208,20 @@ impl SoundTuningApp {
         for command in alignment_commands {
             self.apply_alignment_command(command);
         }
+        for command in eq_commands {
+            self.apply_eq_command(command);
+        }
+        let eq_mode = self.config.side_panel_open && self.side_tab == SideTab::Eq;
+        let eq_curves = if eq_mode {
+            self.eq_overlays(palette)
+        } else {
+            Vec::new()
+        };
+        let eq_handles = if eq_mode {
+            self.session.eq.handles()
+        } else {
+            Vec::new()
+        };
         let alignment_mode = self.config.side_panel_open
             && self.side_tab == SideTab::Alignment
             && self.session.alignment.is_ready();
@@ -1055,6 +1236,7 @@ impl SoundTuningApp {
 
         let banners = collect_banners(&self.banner_inputs());
         let mut band_selection = None;
+        let mut plot_events = PlotEvents::default();
         egui::CentralPanel::default()
             .frame(
                 Frame::new()
@@ -1090,6 +1272,16 @@ impl SoundTuningApp {
                             halo: None,
                         },
                     }))
+                    .chain(
+                        eq_curves
+                            .iter()
+                            .map(|(label, values_db, style)| OverlayTrace {
+                                label,
+                                values_db,
+                                offset_db: 0.0,
+                                style: *style,
+                            }),
+                    )
                     .collect();
                 let alignment = &self.session.alignment;
                 let inputs = PlotInputs {
@@ -1100,12 +1292,15 @@ impl SoundTuningApp {
                     overlays: &overlays,
                     band_hz: alignment_mode
                         .then_some((alignment.band_low_hz, alignment.band_high_hz)),
+                    eq_handles: &eq_handles,
                 };
                 let events = self.plot.show(ui, palette, &inputs, self.is_mac, actions);
-                if events.double_click_hz_db.is_some() {
+                if events.double_click_hz_db.is_some() && !eq_mode {
                     actions.push(Action::ResetView);
                 }
                 band_selection = events.band_selection;
+                plot_events = events;
+                self.last_plot_rect = events.plot_rect;
                 if let (false, Some(plot_rect)) = (banners.is_empty(), events.plot_rect) {
                     egui::Area::new(egui::Id::unique("state-banners"))
                         .order(egui::Order::Middle)
@@ -1118,6 +1313,9 @@ impl SoundTuningApp {
             });
         if let Some(selection) = band_selection {
             self.apply_band_selection(selection);
+        }
+        if eq_mode {
+            self.apply_eq_plot_events(&plot_events);
         }
     }
 }

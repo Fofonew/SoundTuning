@@ -1,4 +1,7 @@
-use dsp_core::{CutSlope, EqFilter, FilterKind, MAX_EQ_FILTERS, bandwidth_octaves_from_q};
+use dsp_core::{
+    Complex64, CutSlope, EqFilter, FilterKind, MAX_EQ_FILTERS, amplitude_to_db,
+    bandwidth_octaves_from_q, eq_response,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::text;
@@ -6,6 +9,56 @@ use crate::text;
 const DEFAULT_Q: f64 = 1.4;
 const DEFAULT_CUT_Q: f64 = 0.707;
 const BANK_COUNT: usize = 2;
+const INVERSION_REFERENCE_BAND_HZ: (f64, f64) = (200.0, 5_000.0);
+pub const MIN_Q: f64 = 0.1;
+pub const MAX_Q: f64 = 20.0;
+pub const MIN_FREQUENCY_HZ: f64 = 20.0;
+pub const MAX_FREQUENCY_HZ: f64 = 20_000.0;
+pub const GAIN_LIMIT_DB: f64 = 24.0;
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct EqHandle {
+    pub index: usize,
+    pub frequency_hz: f64,
+    pub gain_db: f64,
+    pub selected: bool,
+    pub bypassed: bool,
+}
+
+pub fn predicted_db(target_db: &[Option<f64>], eq_db: &[Option<f64>]) -> Vec<Option<f64>> {
+    target_db
+        .iter()
+        .zip(eq_db)
+        .map(|(target, eq)| Some((*target)? + (*eq)?))
+        .collect()
+}
+
+pub fn inverted_db(target_db: &[Option<f64>], frequencies_hz: &[f64]) -> Vec<Option<f64>> {
+    let (low_hz, high_hz) = INVERSION_REFERENCE_BAND_HZ;
+    let (sum, count) = target_db
+        .iter()
+        .zip(frequencies_hz)
+        .filter(|(_, frequency_hz)| (low_hz..=high_hz).contains(*frequency_hz))
+        .filter_map(|(value, _)| *value)
+        .fold((0.0, 0_usize), |(sum, count), value| {
+            (sum + value, count + 1)
+        });
+    let reference_db = if count == 0 {
+        let (sum, count) = target_db
+            .iter()
+            .flatten()
+            .fold((0.0, 0_usize), |(sum, count), value| {
+                (sum + value, count + 1)
+            });
+        if count == 0 { 0.0 } else { sum / count as f64 }
+    } else {
+        sum / count as f64
+    };
+    target_db
+        .iter()
+        .map(|value| value.map(|level| reference_db - level))
+        .collect()
+}
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum StoredSlope {
@@ -207,6 +260,72 @@ impl EqState {
         self.selected_filter = None;
     }
 
+    pub fn response_db(&self, frequencies_hz: &[f64], sample_rate_hz: f64) -> Vec<Option<f64>> {
+        let mut response = vec![Complex64::new(1.0, 0.0); frequencies_hz.len()];
+        if eq_response(
+            &self.active_dsp_filters(),
+            frequencies_hz,
+            sample_rate_hz,
+            &mut response,
+        )
+        .is_err()
+        {
+            return vec![None; frequencies_hz.len()];
+        }
+        response
+            .iter()
+            .map(|value| amplitude_to_db(value.norm()))
+            .collect()
+    }
+
+    pub fn handles(&self) -> Vec<EqHandle> {
+        self.filters()
+            .iter()
+            .enumerate()
+            .map(|(index, filter)| EqHandle {
+                index,
+                frequency_hz: filter.frequency_hz,
+                gain_db: filter.gain_db,
+                selected: self.selected_filter == Some(index),
+                bypassed: filter.bypassed || self.global_bypass,
+            })
+            .collect()
+    }
+
+    pub fn move_filter(&mut self, index: usize, frequency_hz: f64, gain_db: f64) {
+        if let Some(filter) = self
+            .filters_mut()
+            .and_then(|filters| filters.get_mut(index))
+        {
+            filter.frequency_hz = frequency_hz.clamp(MIN_FREQUENCY_HZ, MAX_FREQUENCY_HZ);
+            if filter.kind.to_dsp().uses_gain() {
+                filter.gain_db = gain_db.clamp(-GAIN_LIMIT_DB, GAIN_LIMIT_DB);
+            }
+            self.selected_filter = Some(index);
+        }
+    }
+
+    pub fn keep_view_after_history(&mut self, view: EqView) {
+        self.view = view;
+        if self
+            .selected_filter
+            .is_some_and(|index| index >= self.filters().len())
+        {
+            self.selected_filter = None;
+        }
+    }
+
+    pub fn scale_q(&mut self, index: usize, factor: f64) {
+        if let Some(filter) = self
+            .filters_mut()
+            .and_then(|filters| filters.get_mut(index))
+            && filter.kind.to_dsp().uses_q()
+        {
+            filter.q = (filter.q * factor).clamp(MIN_Q, MAX_Q);
+            self.selected_filter = Some(index);
+        }
+    }
+
     pub fn active_dsp_filters(&self) -> Vec<EqFilter> {
         if self.global_bypass {
             return Vec::new();
@@ -293,5 +412,65 @@ mod tests {
         assert_eq!(state.export_text().lines().count(), 3);
         let json: Vec<StoredFilter> = serde_json::from_str(&state.export_json().unwrap()).unwrap();
         assert_eq!(json.len(), 2);
+    }
+
+    #[test]
+    fn eq_cancels_a_matching_bell_within_a_tenth_of_a_db() {
+        let sample_rate_hz = 48_000.0;
+        let frequencies: Vec<f64> = dsp_core::DisplayGrid::new(20.0, 20_000.0, 96.0)
+            .frequencies_hz()
+            .to_vec();
+        let room = dsp_core::BiquadCoefficients::bell(1000.0, 2.0, 6.0, sample_rate_hz);
+        let target: Vec<Option<f64>> = frequencies
+            .iter()
+            .map(|frequency_hz| {
+                amplitude_to_db(room.response_at(*frequency_hz, sample_rate_hz).norm())
+            })
+            .collect();
+        let mut state = EqState::default();
+        let mut correction = StoredFilter::new(StoredFilterKind::Bell, 1000.0, -6.0);
+        correction.q = 2.0;
+        state.add_filter(correction);
+        let eq = state.response_db(&frequencies, sample_rate_hz);
+        for value in predicted_db(&target, &eq) {
+            assert!(value.unwrap().abs() <= 0.1);
+        }
+    }
+
+    #[test]
+    fn inverted_trace_mirrors_around_its_mid_band_level() {
+        let frequencies = [100.0, 1000.0, 2000.0];
+        let inverted = inverted_db(&[Some(-10.0), Some(-3.0), Some(-5.0)], &frequencies);
+        assert_eq!(inverted, vec![Some(6.0), Some(-1.0), Some(1.0)]);
+    }
+
+    #[test]
+    fn dragging_clamps_and_ignores_gain_for_cuts() {
+        let mut state = EqState::default();
+        state.add_filter(StoredFilter::new(
+            StoredFilterKind::HighCut(StoredSlope::Butterworth12),
+            8000.0,
+            0.0,
+        ));
+        state.move_filter(0, 50_000.0, 12.0);
+        assert_eq!(state.filters()[0].frequency_hz, MAX_FREQUENCY_HZ);
+        assert_eq!(state.filters()[0].gain_db, 0.0);
+        state.add_filter(StoredFilter::new(StoredFilterKind::Bell, 1000.0, 0.0));
+        state.move_filter(1, 500.0, 40.0);
+        assert_eq!(state.filters()[1].gain_db, GAIN_LIMIT_DB);
+        state.scale_q(1, 100.0);
+        assert_eq!(state.filters()[1].q, MAX_Q);
+        state.selected_filter = None;
+        state.move_filter(7, 100.0, 0.0);
+        state.scale_q(7, 2.0);
+        assert_eq!(state.selected_filter, None);
+        state.selected_filter = Some(1);
+        state.remove_filter(1);
+        state.selected_filter = Some(5);
+        state.keep_view_after_history(EqView::EqOnly);
+        assert_eq!(state.selected_filter, None);
+        assert_eq!(state.view, EqView::EqOnly);
+        state.move_filter(0, 100.0, 0.0);
+        assert!(state.handles()[0].selected);
     }
 }

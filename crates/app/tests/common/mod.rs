@@ -17,6 +17,7 @@ use soundtuning::session::SessionStore;
 pub const SAMPLE_RATE_HZ: u32 = 48_000;
 pub const WINDOW_SIZE: [f32; 2] = [1440.0, 900.0];
 const FIXTURE_SECONDS: usize = 8;
+const FAST_STEP_SECONDS: f32 = 1.0 / 60.0;
 const FIXTURE_DELAY_SAMPLES: usize = 96;
 
 fn pink_noise(length: usize, seed: u64) -> Vec<f64> {
@@ -134,6 +135,16 @@ pub fn harness(options: AppOptions) -> Harness<'static, SoundTuningApp> {
     Harness::builder()
         .with_size(egui::vec2(WINDOW_SIZE[0], WINDOW_SIZE[1]))
         .with_max_steps(64)
+        .build_eframe(move |creation_context| {
+            SoundTuningApp::new(&creation_context.egui_ctx, options)
+        })
+}
+
+pub fn fast_clock_harness(options: AppOptions) -> Harness<'static, SoundTuningApp> {
+    Harness::builder()
+        .with_size(egui::vec2(WINDOW_SIZE[0], WINDOW_SIZE[1]))
+        .with_max_steps(64)
+        .with_step_dt(FAST_STEP_SECONDS)
         .build_eframe(move |creation_context| {
             SoundTuningApp::new(&creation_context.egui_ctx, options)
         })

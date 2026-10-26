@@ -27,6 +27,23 @@ Cocher, dater et noter les observations. Matériel de référence : UAX 2-2, mic
 - [ ] Quitter l'application (ou la forcer à quitter) puis relancer : les traces sont restaurées.
 - [ ] Export CSV ouvert dans un tableur (séparateur « ; ») : fréquences, niveaux et cohérence par trace.
 
+- [ ] F2 renomme la trace sélectionnée, Échap annule ; la case « Sél. » sélectionne sans renommer.
+- [ ] Session : rendre `session.json` illisible (texte quelconque) puis relancer : notification « Session illisible mise de côté… », fichier `session.corrupt-….json` présent, dernière sauvegarde valide restaurée.
+
+## Délais et alignement
+
+- [ ] Au démarrage de la mesure, le délai est trouvé et appliqué sans intervention (référence interne calibrée et rebouclée).
+- [ ] Déplacer le micro d'environ 1 m pendant la mesure : notification « Délai changé : … — Appliquer » ; A applique le nouveau délai ; la notification ne se répète pas tant que le micro reste à la nouvelle place.
+- [ ] Touche T (ou bouton « Suivi ») : en suivi, le délai suit le micro sans notification ; désactivé, il reste figé.
+- [ ] ⇧← / ⇧→ et boutons − / + : le délai affiché varie de 0,01 ms par appui, la courbe de phase/le niveau des aigus réagit.
+- [ ] Alignement tête / sub réel : capturer chaque source seule, choisir A et B, bande 60–150 Hz à la souris (Maj + glisser) : la valeur proposée, recopiée dans le processeur, donne une somme mesurée conforme à la somme prédite (±1 dB dans la bande).
+
+## EQ virtuel
+
+- [ ] Onglet EQ : double-clic sur le tracé ajoute une cloche à l'endroit cliqué ; glisser une poignée déplace fréquence et gain ; molette sur une poignée change le Q ; aucune saccade des courbes pendant l'édition.
+- [ ] Recopier les filtres exportés (texte) dans un processeur réel : la mesure après correction suit le « Résultat prédit » (±1 dB hors zones de faible cohérence).
+- [ ] Banques A/B, bypass global et par filtre : bascule instantanée de la courbe prédite.
+
 ## Performance
 
 - [ ] Démarrage jusqu'à la première image utilisable < 1 s (release, Apple Silicon).

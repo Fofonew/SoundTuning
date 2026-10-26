@@ -5,16 +5,17 @@ use crate::design::Palette;
 use crate::design::fonts;
 use crate::design::tokens::{radius, spacing, stroke, text_size};
 use crate::design::widgets::{Emphasis, action_button, muted};
-use crate::eq_state::{EqState, EqTarget, EqView, StoredFilter, StoredFilterKind, StoredSlope};
+use crate::eq_state::{
+    EqState, EqTarget, EqView, GAIN_LIMIT_DB, MAX_FREQUENCY_HZ, MAX_Q, MIN_FREQUENCY_HZ, MIN_Q,
+    StoredFilter, StoredFilterKind, StoredSlope,
+};
 use crate::session::Session;
 use crate::text;
 
-const MIN_FREQUENCY_HZ: f64 = 20.0;
-const MAX_FREQUENCY_HZ: f64 = 20_000.0;
-const GAIN_LIMIT_DB: f64 = 24.0;
-const MIN_Q: f64 = 0.1;
-const MAX_Q: f64 = 20.0;
 const NEW_FILTER_FREQUENCY_HZ: f64 = 1000.0;
+const KIND_COMBO_WIDTH: f32 = 120.0;
+const SLOPE_COMBO_WIDTH: f32 = 150.0;
+const ACTIONS_RESERVED_HEIGHT: f32 = 120.0;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum EqCommand {
@@ -40,7 +41,7 @@ pub fn show(ui: &mut egui::Ui, palette: &Palette, session: &Session) -> Vec<EqCo
     let mut commands = Vec::new();
     let mut state = session.eq.clone();
     ui.add_space(spacing::MD);
-    ui.horizontal(|ui| {
+    ui.horizontal_wrapped(|ui| {
         for bank in 0..2 {
             if ui
                 .add(egui::Button::selectable(
@@ -53,14 +54,14 @@ pub fn show(ui: &mut egui::Ui, palette: &Palette, session: &Session) -> Vec<EqCo
                 state.switch_bank();
             }
         }
-        ui.checkbox(&mut state.global_bypass, text::EQ_GLOBAL_BYPASS);
     });
+    ui.checkbox(&mut state.global_bypass, text::EQ_GLOBAL_BYPASS);
     ui.add_space(spacing::SM);
-    ui.horizontal(|ui| {
+    ui.horizontal_wrapped(|ui| {
         for (view, label) in [
             (EqView::Predicted, text::EQ_VIEW_PREDICTED),
             (EqView::EqOnly, text::EQ_VIEW_ONLY),
-            (EqView::InvertedTrace, text::EQ_VIEW_INVERTED),
+            (EqView::InvertedTrace, text::EQ_VIEW_INVERTED_SHORT),
         ] {
             if ui
                 .add(egui::Button::selectable(state.view == view, label))
@@ -79,7 +80,8 @@ pub fn show(ui: &mut egui::Ui, palette: &Palette, session: &Session) -> Vec<EqCo
         ),
     };
     egui::ComboBox::from_id_salt("eq-target")
-        .width(ui.available_width())
+        .width(ui.available_width() - spacing::SM)
+        .truncate()
         .selected_text(target_name)
         .show_ui(ui, |ui| {
             ui.selectable_value(&mut state.target, EqTarget::Live, text::EQ_TARGET_LIVE);
@@ -95,7 +97,8 @@ pub fn show(ui: &mut egui::Ui, palette: &Palette, session: &Session) -> Vec<EqCo
     }
     let mut remove = None;
     egui::ScrollArea::vertical()
-        .max_height(ui.available_height() - 140.0)
+        .auto_shrink([false, true])
+        .max_height((ui.available_height() - ACTIONS_RESERVED_HEIGHT).max(0.0))
         .show(ui, |ui| {
             if let Some(filters) = state.banks.get_mut(state.active_bank) {
                 for (index, filter) in filters.iter_mut().enumerate() {
@@ -132,7 +135,7 @@ pub fn show(ui: &mut egui::Ui, palette: &Palette, session: &Session) -> Vec<EqCo
         commands.push(EqCommand::AddFilter);
     }
     ui.add_space(spacing::XS);
-    ui.horizontal(|ui| {
+    ui.horizontal_wrapped(|ui| {
         if action_button(
             ui,
             palette,
@@ -190,14 +193,16 @@ fn filter_editor(
         .corner_radius(egui::CornerRadius::same(radius::MEDIUM))
         .inner_margin(egui::Margin::same(spacing::SM as i8))
         .show(ui, |ui| {
-            ui.horizontal(|ui| {
+            ui.horizontal_wrapped(|ui| {
                 ui.label(
                     RichText::new(text::filter_number(index + 1))
                         .font(fonts::value_medium(text_size::LABEL))
                         .color(palette.text_muted),
                 );
                 egui::ComboBox::from_id_salt(("filter-kind", index))
-                    .selected_text(text::filter_kind_label(filter.kind))
+                    .width(KIND_COMBO_WIDTH)
+                    .truncate()
+                    .selected_text(filter.kind.label())
                     .show_ui(ui, |ui| {
                         for kind in StoredFilterKind::MENU {
                             let current_slope = match filter.kind {
@@ -225,13 +230,14 @@ fn filter_editor(
                             }
                         }
                     });
-                ui.checkbox(&mut filter.bypassed, text::EQ_BYPASS);
-                remove = ui
-                    .button(text::TRACE_DELETE_GLYPH)
-                    .on_hover_text(text::EQ_REMOVE)
-                    .clicked();
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    remove = ui
+                        .add(egui::Button::new(text::TRACE_DELETE_GLYPH).frame(false))
+                        .on_hover_text(text::EQ_REMOVE)
+                        .clicked();
+                });
             });
-            ui.horizontal(|ui| {
+            ui.horizontal_wrapped(|ui| {
                 ui.add(
                     egui::DragValue::new(&mut filter.frequency_hz)
                         .range(MIN_FREQUENCY_HZ..=MAX_FREQUENCY_HZ)
@@ -246,6 +252,21 @@ fn filter_editor(
                             .custom_formatter(|value, _| text::format_db(value)),
                     );
                 }
+            });
+            if let StoredFilterKind::LowCut(slope) | StoredFilterKind::HighCut(slope) =
+                &mut filter.kind
+            {
+                egui::ComboBox::from_id_salt(("filter-slope", index))
+                    .width(SLOPE_COMBO_WIDTH)
+                    .truncate()
+                    .selected_text(slope.label())
+                    .show_ui(ui, |ui| {
+                        for option in StoredSlope::ALL {
+                            ui.selectable_value(slope, option, option.label());
+                        }
+                    });
+            }
+            ui.horizontal_wrapped(|ui| {
                 if filter.kind.to_dsp().uses_q() {
                     ui.add(
                         egui::DragValue::new(&mut filter.q)
@@ -254,25 +275,17 @@ fn filter_editor(
                             .custom_formatter(|value, _| text::format_q(value)),
                     );
                 }
-                if let StoredFilterKind::LowCut(slope) | StoredFilterKind::HighCut(slope) =
-                    &mut filter.kind
-                {
-                    egui::ComboBox::from_id_salt(("filter-slope", index))
-                        .selected_text(slope.label())
-                        .show_ui(ui, |ui| {
-                            for option in StoredSlope::ALL {
-                                ui.selectable_value(slope, option, option.label());
-                            }
-                        });
+                if let Some(octaves) = filter.bandwidth_octaves() {
+                    ui.label(
+                        RichText::new(text::format_octaves(octaves))
+                            .font(fonts::value(text_size::CAPTION))
+                            .color(palette.text_muted),
+                    );
                 }
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    ui.checkbox(&mut filter.bypassed, text::EQ_BYPASS);
+                });
             });
-            if let Some(octaves) = filter.bandwidth_octaves() {
-                ui.label(
-                    RichText::new(text::format_octaves(octaves))
-                        .font(fonts::value(text_size::CAPTION))
-                        .color(palette.text_muted),
-                );
-            }
         });
     remove
 }

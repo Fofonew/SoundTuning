@@ -9,6 +9,7 @@ use crate::design::Palette;
 use crate::design::fonts;
 use crate::design::tokens::{radius, size, spacing, stroke, text_size};
 use crate::design::widgets::{Emphasis, action_button};
+use crate::eq_state::EqHandle;
 use crate::plot::axis::{db_ticks, frequency_ticks};
 use crate::plot::{PlotFrame, PlotView, Polyline, TraceStyle, build_polyline};
 use crate::text;
@@ -28,6 +29,10 @@ const COHERENCE_LOW_ALPHA: f32 = 0.55;
 const EMPTY_STATE_WIDTH: f32 = 360.0;
 const MIN_PLOT_SIZE: f32 = 80.0;
 const BAND_FILL_ALPHA: f32 = 0.12;
+const HANDLE_RADIUS: f32 = 9.0;
+const HANDLE_HIT_RADIUS: f32 = 16.0;
+const HANDLE_BYPASSED_ALPHA: f32 = 0.45;
+const Q_SCROLL_SENSITIVITY: f64 = 0.004;
 const BAND_EDGE_ALPHA: f32 = 0.6;
 
 pub struct OverlayTrace<'a> {
@@ -44,6 +49,7 @@ pub struct PlotInputs<'a> {
     pub running: bool,
     pub overlays: &'a [OverlayTrace<'a>],
     pub band_hz: Option<(f64, f64)>,
+    pub eq_handles: &'a [EqHandle],
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -51,6 +57,18 @@ pub struct PlotEvents {
     pub double_click_hz_db: Option<(f64, f64)>,
     pub plot_rect: Option<Rect>,
     pub band_selection: Option<BandSelection>,
+    pub eq_drag: Option<EqDrag>,
+    pub eq_q_factor: Option<(usize, f64)>,
+    pub eq_selected: Option<Option<usize>>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct EqDrag {
+    pub index: usize,
+    pub frequency_hz: f64,
+    pub gain_db: f64,
+    pub started: bool,
+    pub finished: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -67,6 +85,7 @@ pub struct PlotPanel {
     overlay_polylines: Vec<Polyline>,
     band_drag_start_hz: Option<f64>,
     band_drag_current: Option<(f64, f64)>,
+    eq_drag: Option<(usize, egui::Vec2)>,
 }
 
 impl PlotPanel {
@@ -77,6 +96,7 @@ impl PlotPanel {
             overlay_polylines: Vec::new(),
             band_drag_start_hz: None,
             band_drag_current: None,
+            eq_drag: None,
         }
     }
 
@@ -161,6 +181,7 @@ impl PlotPanel {
         if let Some(band) = inputs.band_hz {
             self.paint_band(&painter, palette, plot_rect, band);
         }
+        let painter_handles = ui.painter_at(plot_rect.expand(HANDLE_RADIUS));
         for (polyline, overlay) in self.overlay_polylines.iter().zip(inputs.overlays) {
             paint_polyline(&painter, polyline, overlay.style);
         }
@@ -182,6 +203,7 @@ impl PlotPanel {
             StrokeKind::Inside,
         );
         self.paint_coherence_band(&painter, palette, band_rect, inputs);
+        self.paint_eq_handles(&painter_handles, palette, plot_rect, inputs.eq_handles);
 
         if let Some(hover) = response.hover_pos() {
             self.paint_crosshair(&painter, palette, plot_rect, hover, inputs);
@@ -218,6 +240,49 @@ impl PlotPanel {
             ));
         }
         let shift = ui.input(|input| input.modifiers.shift);
+        let hovered_handle = response
+            .hover_pos()
+            .or_else(|| response.interact_pointer_pos())
+            .and_then(|position| self.handle_at(plot_rect, position, inputs.eq_handles));
+        if hovered_handle.is_some() {
+            events.double_click_hz_db = None;
+        }
+        if response.clicked() && !inputs.eq_handles.is_empty() {
+            events.eq_selected = Some(hovered_handle);
+        }
+        if self
+            .eq_drag
+            .is_some_and(|(index, _)| index >= inputs.eq_handles.len())
+        {
+            self.eq_drag = None;
+        }
+        let mut drag_started = false;
+        if response.drag_started() && !shift {
+            self.eq_drag = ui
+                .input(|input| input.pointer.press_origin())
+                .and_then(|origin| {
+                    let index = self.handle_at(plot_rect, origin, inputs.eq_handles)?;
+                    let handle = inputs.eq_handles.get(index)?;
+                    Some((index, self.handle_position(plot_rect, handle) - origin))
+                });
+            drag_started = self.eq_drag.is_some();
+        }
+        if let Some((index, grab_offset)) = self.eq_drag {
+            let finished = !response.dragged() || response.drag_stopped();
+            if let Some(position) = response.interact_pointer_pos() {
+                let position = (position + grab_offset).clamp(plot_rect.min, plot_rect.max);
+                events.eq_drag = Some(EqDrag {
+                    index,
+                    frequency_hz: self.view.x_to_frequency(plot_rect, position.x),
+                    gain_db: self.view.y_to_db(plot_rect, position.y),
+                    started: drag_started,
+                    finished,
+                });
+            }
+            if finished {
+                self.eq_drag = None;
+            }
+        }
         if response.drag_started() && shift && inputs.band_hz.is_some() {
             self.band_drag_start_hz = response
                 .interact_pointer_pos()
@@ -245,7 +310,7 @@ impl PlotPanel {
                 self.band_drag_start_hz = None;
                 self.band_drag_current = None;
             }
-        } else if response.dragged() {
+        } else if response.dragged() && events.eq_drag.is_none() {
             let delta = response.drag_delta();
             self.view.pan(plot_rect, delta.x, delta.y);
         }
@@ -264,7 +329,10 @@ impl PlotPanel {
                 self.view.zoom_frequency(anchor_hz, factor);
                 self.view.zoom_level(anchor_db, factor);
             }
-            if scroll.y.abs() > f32::EPSILON {
+            if let Some(index) = hovered_handle.filter(|_| scroll.y.abs() > f32::EPSILON) {
+                events.eq_q_factor =
+                    Some((index, (f64::from(scroll.y) * Q_SCROLL_SENSITIVITY).exp()));
+            } else if scroll.y.abs() > f32::EPSILON {
                 let factor = (-f64::from(scroll.y) * SCROLL_ZOOM_SENSITIVITY).exp();
                 if alternate {
                     self.view.zoom_level(anchor_db, factor);
@@ -275,6 +343,62 @@ impl PlotPanel {
             if scroll.x.abs() > f32::EPSILON {
                 self.view.pan(plot_rect, scroll.x, 0.0);
             }
+        }
+    }
+
+    fn handle_position(&self, plot_rect: Rect, handle: &EqHandle) -> Pos2 {
+        let position = self
+            .view
+            .to_screen(plot_rect, handle.frequency_hz, handle.gain_db);
+        position.clamp(plot_rect.min, plot_rect.max)
+    }
+
+    fn handle_at(&self, plot_rect: Rect, position: Pos2, handles: &[EqHandle]) -> Option<usize> {
+        handles
+            .iter()
+            .map(|handle| {
+                (
+                    handle.index,
+                    self.handle_position(plot_rect, handle).distance(position),
+                )
+            })
+            .filter(|(_, distance)| *distance <= HANDLE_HIT_RADIUS)
+            .min_by(|left, right| left.1.total_cmp(&right.1))
+            .map(|(index, _)| index)
+    }
+
+    fn paint_eq_handles(
+        &self,
+        painter: &egui::Painter,
+        palette: &Palette,
+        plot_rect: Rect,
+        handles: &[EqHandle],
+    ) {
+        for handle in handles {
+            let center = self.handle_position(plot_rect, handle);
+            let color = if handle.selected {
+                palette.accent
+            } else {
+                palette.predicted
+            };
+            let color = if handle.bypassed {
+                color.gamma_multiply(HANDLE_BYPASSED_ALPHA)
+            } else {
+                color
+            };
+            painter.circle(
+                center,
+                HANDLE_RADIUS,
+                palette.plot_background,
+                Stroke::new(stroke::FOCUS, color),
+            );
+            painter.text(
+                center,
+                Align2::CENTER_CENTER,
+                (handle.index + 1).to_string(),
+                fonts::value_semibold(text_size::CAPTION),
+                color,
+            );
         }
     }
 

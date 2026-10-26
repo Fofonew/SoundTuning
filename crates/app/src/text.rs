@@ -249,6 +249,7 @@ pub const EQ_GLOBAL_BYPASS: &str = "Bypass global";
 pub const EQ_VIEW_PREDICTED: &str = "Prédit";
 pub const EQ_VIEW_ONLY: &str = "EQ seul";
 pub const EQ_VIEW_INVERTED: &str = "Trace inversée";
+pub const EQ_VIEW_INVERTED_SHORT: &str = "Inversée";
 pub const EQ_TARGET_LIVE: &str = "Mesure en direct";
 pub const EQ_EXPORT_TEXT: &str = "Exporter texte";
 pub const EQ_EXPORT_JSON: &str = "Exporter JSON";

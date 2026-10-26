@@ -577,3 +577,140 @@ fn a_changed_delay_raises_a_notification_that_applies_it() {
         (app.measurement().snapshot().delay.applied_ms - 2.0).abs() < 0.05
     });
 }
+
+#[test]
+fn eq_filters_are_added_dragged_scrolled_exported_and_undone() {
+    let mut options = file_options(Theme::Night, true);
+    let export_directory =
+        std::env::temp_dir().join(format!("soundtuning-eq-{}", std::process::id()));
+    options.export_directory = export_directory.clone();
+    let mut harness = harness(options);
+    wait_for_stable_measurement(&mut harness);
+
+    harness.key_press(Key::E);
+    harness.run_steps(3);
+    assert_eq!(
+        harness.state().side_tab(),
+        soundtuning::ui::side_panel::SideTab::Eq
+    );
+    assert_eq!(harness.state().session().eq.filters().len(), 1);
+    let filter = harness.state().session().eq.filters()[0];
+    assert_eq!(filter.frequency_hz, 1000.0);
+
+    let rect = harness.state().last_plot_rect().unwrap();
+    let view = harness.state().plot_view();
+    let handle = view.to_screen(rect, filter.frequency_hz, filter.gain_db);
+    let target = view.to_screen(rect, 2000.0, -6.0);
+    harness.hover_at(handle);
+    harness.step();
+    harness.drag_at(handle);
+    harness.step();
+    for step in 1..=4 {
+        harness.hover_at(handle + (target - handle) * (step as f32 / 4.0));
+        harness.step();
+    }
+    harness.drop_at(target);
+    harness.run_steps(3);
+    let moved = harness.state().session().eq.filters()[0];
+    assert!(
+        (moved.frequency_hz / 2000.0 - 1.0).abs() < 0.05,
+        "{moved:?}"
+    );
+    assert!((moved.gain_db + 6.0).abs() < 0.5, "{moved:?}");
+    assert_eq!(harness.state().plot_view(), view);
+
+    let moved_handle = view.to_screen(rect, moved.frequency_hz, moved.gain_db);
+    harness.hover_at(moved_handle);
+    harness.step();
+    harness.event(Event::MouseWheel {
+        unit: eframe::egui::MouseWheelUnit::Point,
+        delta: eframe::egui::vec2(0.0, 120.0),
+        phase: eframe::egui::TouchPhase::Move,
+        source: eframe::egui::MouseWheelSource::Wheel,
+        modifiers: Modifiers::NONE,
+    });
+    harness.run_steps(6);
+    assert!(harness.state().session().eq.filters()[0].q > moved.q);
+    assert_eq!(harness.state().plot_view(), view);
+
+    harness
+        .state_mut()
+        .apply_test_eq(soundtuning::ui::eq_panel::EqCommand::ExportText);
+    harness
+        .state_mut()
+        .apply_test_eq(soundtuning::ui::eq_panel::EqCommand::ExportJson);
+    let mut names: Vec<String> = std::fs::read_dir(&export_directory)
+        .unwrap()
+        .filter_map(Result::ok)
+        .map(|entry| entry.file_name().to_string_lossy().into_owned())
+        .collect();
+    names.sort();
+    assert!(names.iter().any(|name| name.ends_with(".txt")), "{names:?}");
+    assert!(
+        names.iter().any(|name| name.ends_with(".json")),
+        "{names:?}"
+    );
+
+    harness.remove_cursor();
+    harness.run_steps(2);
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+    harness.run_steps(2);
+    let after_undo = harness.state().session().eq.filters()[0];
+    assert!((after_undo.q - moved.q).abs() < 1.0e-9, "{after_undo:?}");
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+    harness.run_steps(2);
+    assert_eq!(
+        harness.state().session().eq.filters()[0].frequency_hz,
+        1000.0
+    );
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+    harness.run_steps(2);
+    assert!(harness.state().session().eq.filters().is_empty());
+    std::fs::remove_dir_all(export_directory).unwrap();
+}
+
+#[test]
+fn double_click_on_the_plot_adds_an_eq_filter_in_the_eq_tab() {
+    let mut harness = common::fast_clock_harness(file_options(Theme::Night, false));
+    harness
+        .state_mut()
+        .set_side_tab(soundtuning::ui::side_panel::SideTab::Eq);
+    harness.run_steps(2);
+    let rect = harness.state().last_plot_rect().unwrap();
+    let view = harness.state().plot_view();
+    let position = view.to_screen(rect, 60.0, 8.0);
+    harness.hover_at(position);
+    harness.step();
+    for _ in 0..2 {
+        harness.drag_at(position);
+        harness.event(Event::PointerButton {
+            pos: position,
+            button: eframe::egui::PointerButton::Primary,
+            pressed: false,
+            modifiers: Modifiers::NONE,
+        });
+        harness.step();
+    }
+    harness.run_steps(2);
+    let filters = harness.state().session().eq.filters().to_vec();
+    assert_eq!(filters.len(), 1, "{filters:?}");
+    assert!((filters[0].frequency_hz / 60.0 - 1.0).abs() < 0.02);
+    assert!((filters[0].gain_db - 8.0).abs() < 0.2);
+
+    let handle = view.to_screen(rect, filters[0].frequency_hz, filters[0].gain_db);
+    harness.hover_at(handle);
+    harness.step();
+    for _ in 0..2 {
+        harness.drag_at(handle);
+        harness.event(Event::PointerButton {
+            pos: handle,
+            button: eframe::egui::PointerButton::Primary,
+            pressed: false,
+            modifiers: Modifiers::NONE,
+        });
+        harness.step();
+    }
+    harness.run_steps(2);
+    assert_eq!(harness.state().session().eq.filters().len(), 1);
+    assert_eq!(harness.state().session().eq.selected_filter, Some(0));
+}

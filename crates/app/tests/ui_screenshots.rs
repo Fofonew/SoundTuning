@@ -121,3 +121,33 @@ fn screenshot_alignment() {
     assert!((proposal.abs() - 1.2).abs() < 0.05, "{proposal}");
     assert!(save_screenshot(&mut harness, "alignment").exists());
 }
+
+#[test]
+fn screenshot_eq() {
+    use soundtuning::eq_state::{StoredFilter, StoredFilterKind, StoredSlope};
+    use soundtuning::ui::eq_panel::EqCommand;
+    use soundtuning::ui::side_panel::SideTab;
+    let mut harness = rendering_harness(file_options(Theme::Night, true));
+    wait_for_stable_measurement(&mut harness);
+    harness.key_press(Key::F);
+    harness.step();
+    harness.state_mut().set_side_tab(SideTab::Eq);
+    let mut state = harness.state().session().eq.clone();
+    let mut bell = StoredFilter::new(StoredFilterKind::Bell, 1000.0, -5.0);
+    bell.q = 1.4;
+    let mut shelf = StoredFilter::new(StoredFilterKind::LowShelf, 120.0, -4.0);
+    shelf.q = 0.7;
+    let cut = StoredFilter::new(
+        StoredFilterKind::LowCut(StoredSlope::LinkwitzRiley24),
+        30.0,
+        0.0,
+    );
+    for filter in [bell, shelf, cut] {
+        state.add_filter(filter);
+    }
+    state.selected_filter = Some(0);
+    harness.state_mut().apply_test_eq(EqCommand::Update(state));
+    harness.step();
+    harness.step();
+    assert!(save_screenshot(&mut harness, "eq").exists());
+}
