@@ -1,2 +1,4 @@
 target/
 .claude/settings.local.json
+
+crates/app/tests/snapshots/

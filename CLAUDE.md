@@ -54,7 +54,7 @@ Skill `verify` : enchaîne fmt, clippy, tests, check Windows et benchs ; s'arrê
 
 - Noms de crates : `dsp-core`, `audio-io`, `engine`, `app` (non publiées).
 - Tests unitaires dans chaque module (`#[cfg(test)]`), tests d'acceptation dans `crates/*/tests/`, benchs dans `crates/*/benches/`.
-- Tests de captures PNG : `#[cfg(target_os = "macos")]`, sorties dans `crates/app/tests/snapshots/`.
+- Tests de captures PNG : `#[cfg(target_os = "macos")]`, sorties dans `crates/app/tests/snapshots/` (ignoré par git ; copies de référence dans `docs/ui-review/`).
 - Unités explicites dans les noms (`delay_ms`, `frequency_hz`, `gain_db`, `latency_samples`).
 - `f64` pour les coefficients et les accumulateurs, `f32` pour les échantillons des flux.
 - Commits : « phase N : <résumé> », en local, sans ligne d'attribution.

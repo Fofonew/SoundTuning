@@ -14,7 +14,7 @@ Date : 2026-10-26. Dépôt local uniquement (aucun remote, rien poussé).
 | 5 | Délai : recherche et application automatiques, suivi (T), dérive notifiée, réglage fin ±0,01 ms ; panneau Alignement (proposition adoptée, somme prédite, bande Maj + glisser) | `adec054` |
 | 6 | EQ virtuel : 16 filtres × banques A/B, bypass, poignées sur le tracé (glisser, molette = Q, double-clic = ajouter), vues Prédit / EQ seul / Inversée, cible live ou trace, exports texte et JSON | `b0a5a96` |
 | 7 | Finition : revue des 8 écrans dans les deux thèmes, accessibilité de tous les contrôles testée, bench d'image complète, profil CPU | `e6c4afa` |
-| 8 | CI complète macOS + Windows (lint, tests, benchs compilés, contrôle croisé Windows, packaging en artefacts), packaging `cargo-packager` (.app vérifié en local avec `NSMicrophoneUsageDescription`, NSIS en CI), `docs/WINDOWS.md` | commit « phase 8 » |
+| 8 | CI complète macOS + Windows (lint, tests, benchs compilés, contrôle croisé Windows, packaging en artefacts), packaging `cargo-packager` (.app vérifié en local avec `NSMicrophoneUsageDescription`, NSIS en CI), `docs/WINDOWS.md` | `ee5af1c` + commit de clôture |
 
 ### Critères chiffrés
 
@@ -37,7 +37,7 @@ Date : 2026-10-26. Dépôt local uniquement (aucun remote, rien poussé).
 
 ## Captures finales de chaque écran
 
-Dans `docs/ui-review/phase-7/*-tour2-apres.png` (régénérées par `cargo test -p app --test ui_screenshots`, sorties dans `crates/app/tests/snapshots/`) :
+Dans `docs/ui-review/phase-7/*-tour2-apres.png` (régénérées par `cargo test -p app --test ui_screenshots` dans `crates/app/tests/snapshots/`, dossier ignoré par git car réécrit à chaque passage des tests) :
 - `first_launch-tour2-apres.png` : assistant, étape 1 ;
 - `measurement_night-tour2-apres.png` et `measurement_daylight-tour2-apres.png` : mesure en cours ;
 - `traces-tour2-apres.png` : trois traces décalées, réticule ;
