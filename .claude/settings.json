@@ -1,0 +1,18 @@
+{
+  "env": {
+    "GATEGUARD_BASH_ROUTINE_DISABLED": "1",
+    "GATEGUARD_EXEMPT_GLOBS": "crates/**,docs/**,assets/**,packaging/**,.github/**,Cargo.toml,Cargo.lock,rust-toolchain.toml,rustfmt.toml,clippy.toml,deny.toml,README.md,CLAUDE.md,.gitignore"
+  },
+  "enabledPlugins": {
+    "rust-analyzer-lsp@claude-plugins-official": true,
+    "ecc@ecc": true
+  },
+  "extraKnownMarketplaces": {
+    "ecc": {
+      "source": {
+        "source": "git",
+        "url": "https://github.com/affaan-m/ECC.git"
+      }
+    }
+  }
+}
