@@ -23,25 +23,327 @@ pub const DEVICES_NONE: &str = "Aucun périphérique audio trouvé.";
 pub const DEFAULT_INPUT_MARK: &str = "entrée par défaut";
 pub const DEFAULT_OUTPUT_MARK: &str = "sortie par défaut";
 
-pub const METER_REFERENCE: &str = "Référence";
-pub const METER_MEASUREMENT: &str = "Mesure";
-pub const METER_CLIP: &str = "ÉCRÊTAGE";
+pub const KEY_SPACE: &str = "Espace";
+pub const KEY_CTRL: &str = "Ctrl";
+pub const KEY_SHIFT: &str = "Maj";
+
+pub const ACTION_TOGGLE_MEASUREMENT: &str = "Démarrer / arrêter la mesure";
+pub const ACTION_FIND_DELAY: &str = "Trouver le délai";
+pub const ACTION_APPLY_DELAY: &str = "Appliquer le délai";
+pub const ACTION_CAPTURE_TRACE: &str = "Capturer une trace";
+pub const ACTION_TOGGLE_FREEZE: &str = "Figer / libérer l'affichage";
+pub const ACTION_RANGE_FULL: &str = "Plage : plein spectre";
+pub const ACTION_RANGE_SUB: &str = "Plage : sub (20–200 Hz)";
+pub const ACTION_RANGE_MID: &str = "Plage : médium (150 Hz–4 kHz)";
+pub const ACTION_RANGE_HIGH: &str = "Plage : aigu (2–20 kHz)";
+pub const ACTION_RESET_VIEW: &str = "Réinitialiser le zoom";
+pub const ACTION_TOGGLE_THEME: &str = "Thème Nuit / Plein jour";
+pub const ACTION_OPEN_PALETTE: &str = "Palette de commandes";
+pub const ACTION_UNDO: &str = "Annuler";
+pub const ACTION_REDO: &str = "Rétablir";
+pub const ACTION_TOGGLE_SIDE_PANEL: &str = "Afficher / masquer le panneau latéral";
+pub const ACTION_TOGGLE_GENERATOR: &str = "Générateur marche / arrêt";
+pub const ACTION_CALIBRATE_LATENCY: &str = "Calibrer la latence de la carte";
+pub const ACTION_ADD_EQ_FILTER: &str = "Ajouter un filtre d'EQ";
+pub const ACTION_EXPORT_SESSION: &str = "Exporter (CSV, filtres)";
+pub const ACTION_RESTART_MEASUREMENT: &str = "Relancer la mesure";
+
 pub const BUTTON_START: &str = "Démarrer";
 pub const BUTTON_STOP: &str = "Arrêter";
+pub const BUTTON_CAPTURE: &str = "Capturer";
+pub const BUTTON_FREEZE: &str = "Figer";
+pub const BUTTON_UNFREEZE: &str = "Libérer";
+pub const BUTTON_FIND_DELAY: &str = "Trouver";
+pub const BUTTON_APPLY_DELAY: &str = "Appliquer";
+pub const BUTTON_PALETTE: &str = "Commandes";
+pub const BUTTON_RETRY: &str = "Réessayer";
+pub const BUTTON_RESUME: &str = "Reprendre";
+pub const BUTTON_CALIBRATE: &str = "Calibrer";
+pub const BUTTON_DISMISS: &str = "Fermer";
+pub const BUTTON_NEXT: &str = "Suivant";
+pub const BUTTON_BACK: &str = "Retour";
+pub const BUTTON_FINISH_WIZARD: &str = "Démarrer la mesure";
+pub const BUTTON_SKIP_WIZARD: &str = "Passer";
+pub const BUTTON_TOGGLE_PANEL: &str = "Panneau";
+
 pub const STATUS_STOPPED: &str = "Arrêté";
-pub const STATUS_RUNNING_LIVE: &str = "Mesure en cours";
-pub const STATUS_RUNNING_FILE: &str = "Lecture du fichier";
-pub const STATUS_DEVICE_DISCONNECTED: &str = "Carte son déconnectée";
-pub const STATUS_PERMISSION_DENIED: &str = "Accès au micro refusé : autorisez SoundTuning dans Réglages Système › Confidentialité › Micro.";
-pub const STATUS_SILENT_INPUT: &str =
-    "Entrée entièrement muette : vérifiez l'autorisation micro de macOS et le câblage.";
+pub const STATUS_WARMING_UP: &str = "Préchauffage";
+pub const STATUS_RUNNING: &str = "Mesure";
+pub const STATUS_FROZEN: &str = "Figé";
+pub const STATUS_ERROR: &str = "Erreur";
+pub const STATUS_FILE_FINISHED: &str = "Fichier terminé";
+
+pub const METER_REFERENCE: &str = "Réf.";
+pub const METER_MEASUREMENT: &str = "Mic";
+pub const METER_CLIP: &str = "ÉCRÊTAGE";
+
+pub const DELAY_TITLE: &str = "Délai";
+pub const DELAY_NONE: &str = "— ms";
+pub const DELAY_CONFIDENCE: &str = "Confiance du délai";
+
+pub const CHIP_FFT: &str = "FFT";
+pub const CHIP_AVERAGING: &str = "Moyenne";
+pub const CHIP_SMOOTHING: &str = "Lissage";
+pub const CHIP_COHERENCE: &str = "Seuil γ²";
+pub const CHIP_REFERENCE: &str = "Réf.";
+pub const CHIP_GENERATOR: &str = "Bruit rose";
+pub const AVERAGING_INFINITE: &str = "∞";
+pub const SMOOTHING_NONE: &str = "aucun";
+pub const REFERENCE_INTERNAL: &str = "interne";
+pub const GENERATOR_OFF: &str = "arrêt";
+
+pub const TAB_TRACES: &str = "Traces";
+pub const TAB_ALIGNMENT: &str = "Alignement";
+pub const TAB_EQ: &str = "EQ";
+pub const EMPTY_TRACES_TITLE: &str = "Aucune trace";
+pub const EMPTY_TRACES_BODY: &str = "Appuyez sur S pour figer la mesure en cours dans une trace.";
+pub const EMPTY_ALIGNMENT_TITLE: &str = "Aligner deux sources";
+pub const EMPTY_ALIGNMENT_BODY: &str =
+    "Capturez au moins deux traces (par exemple tête et sub), puis choisissez-les ici.";
+pub const EMPTY_EQ_TITLE: &str = "EQ virtuel";
+pub const EMPTY_EQ_BODY: &str = "Double-cliquez sur le tracé ou appuyez sur E pour ajouter un filtre. Aucun traitement n'est appliqué au son.";
+
+pub const PLOT_EMPTY_TITLE: &str = "Prêt à mesurer";
+pub const PLOT_EMPTY_BODY: &str = "Appuyez sur Espace pour démarrer la mesure continue.";
+pub const PLOT_WARMING_UP: &str = "Remplissage de la fenêtre d'analyse…";
+pub const COHERENCE_LABEL: &str = "Cohérence";
+pub const AXIS_DB: &str = "dB";
+pub const COHERENCE_AXIS_MAX: &str = "1";
+pub const COHERENCE_AXIS_MIN: &str = "0";
+pub const LIVE_TRACE_LABEL: &str = "Mesure";
+pub const PLOT_ACCESSIBLE_LABEL: &str = "Réponse en fréquence (magnitude) et cohérence";
+
+pub const BANNER_START_FAILED: &str = "Impossible de démarrer la mesure";
+pub const BANNER_DISCONNECTED: &str =
+    "Carte son déconnectée. Rebranchez-la puis reprenez la mesure.";
+pub const BANNER_PERMISSION: &str = "Accès au micro refusé. Ouvrez Réglages Système › Confidentialité et sécurité › Micro, autorisez SoundTuning, puis réessayez.";
+pub const BANNER_SILENT_INPUT: &str = "L'entrée micro est entièrement muette. Vérifiez le câble, le gain et l'autorisation micro de macOS (Réglages Système › Confidentialité et sécurité › Micro).";
+pub const BANNER_SILENT_REFERENCE: &str = "Référence absente : aucun signal de référence. Vérifiez le générateur ou le câble de rebouclage de la console.";
+pub const BANNER_LATENCY_NOT_CALIBRATED: &str = "Latence de la carte non calibrée : le délai et la distance incluent la latence de la carte. Reliez une sortie à une entrée puis calibrez.";
+pub const BANNER_SEPARATE_CLOCKS: &str = "Entrée et sortie sur deux périphériques différents : horloges distinctes, mesure moins fiable.";
+pub const BANNER_LOW_COHERENCE: &str = "Cohérence faible : rapprochez le micro, montez le niveau du signal ou réduisez le bruit ambiant.";
+pub const BANNER_CLIPPING: &str = "Écrêtage : baissez le gain d'entrée ou le niveau du générateur.";
+pub const BANNER_CALIBRATION_RUNNING: &str =
+    "Calibrage en cours : la sortie du générateur doit être reliée à l'entrée de mesure.";
+pub const BANNER_CALIBRATION_FAILED: &str =
+    "Calibrage impossible : aucun signal fiable sur le rebouclage. Vérifiez le câble.";
+pub const BANNER_FILE_FINISHED: &str = "Fin du fichier atteinte.";
+
+pub const PALETTE_PLACEHOLDER: &str = "Rechercher une commande…";
+pub const PALETTE_NO_MATCH: &str = "Aucune commande ne correspond.";
+
+pub const WIZARD_TITLE: &str = "Bienvenue dans SoundTuning";
+pub const WIZARD_STEP_DEVICE: &str = "Carte son";
+pub const WIZARD_STEP_CHANNELS: &str = "Référence et canaux";
+pub const WIZARD_STEP_TEST: &str = "Test";
+pub const WIZARD_DEVICE_HELP: &str = "Choisissez la carte son qui reçoit le micro de mesure.";
+pub const WIZARD_NO_DEVICE: &str =
+    "Aucune carte son avec entrée n'a été trouvée. Branchez votre interface puis réessayez.";
+pub const WIZARD_REFERENCE_INTERNAL: &str = "Référence interne (générateur)";
+pub const WIZARD_REFERENCE_INTERNAL_HELP: &str =
+    "Le logiciel envoie du bruit rose et s'en sert de référence. Idéal avant le concert.";
+pub const WIZARD_REFERENCE_LOOPBACK: &str = "Référence rebouclée (console)";
+pub const WIZARD_REFERENCE_LOOPBACK_HELP: &str =
+    "La sortie de la console revient sur une entrée : mesure sur la musique pendant le concert.";
+pub const WIZARD_MEASUREMENT_CHANNEL: &str = "Entrée du micro";
+pub const WIZARD_LOOPBACK_CHANNEL: &str = "Entrée de la référence";
+pub const WIZARD_GENERATOR_OUTPUT: &str = "Sortie du bruit rose";
+pub const WIZARD_OUTPUT_LEFT: &str = "Gauche";
+pub const WIZARD_OUTPUT_RIGHT: &str = "Droite";
+pub const WIZARD_OUTPUT_BOTH: &str = "Les deux";
+pub const WIZARD_TEST_HELP: &str = "Vérifiez que les vu-mètres bougent : le micro doit capter le bruit rose (ou la musique), la référence doit être présente.";
+pub const WIZARD_TEST_START: &str = "Lancer le test (bruit rose)";
+pub const WIZARD_REFRESH: &str = "Actualiser";
+pub const WIZARD_PREVIEW_ERROR: &str = "La carte ne peut pas être ouverte";
+
+pub const NOTIFY_DELAY_FOUND: &str = "Délai trouvé";
+pub const NOTIFY_DELAY_APPLIED: &str = "Délai appliqué";
+pub const NOTIFY_THEME_NIGHT: &str = "Thème Nuit";
+pub const NOTIFY_THEME_DAY: &str = "Thème Plein jour";
+pub const NOTIFY_LATENCY_CALIBRATED: &str = "Latence de la carte calibrée";
+
+pub const ERROR_SOURCE_UNAVAILABLE: &str = "source audio indisponible";
+
+pub const CSV_FREQUENCY_HEADER: &str = "Fréquence (Hz)";
+pub const TRACES_AVERAGE: &str = "Moyenne des sélectionnées";
+pub const TRACES_EXPORT_CSV: &str = "Exporter CSV";
+pub const TRACE_DELETE: &str = "Supprimer la trace";
+pub const TRACE_TOGGLE_VISIBLE: &str = "Afficher / masquer";
+pub const TRACE_SELECT: &str = "Sélectionner";
+pub const TRACE_COLOR: &str = "Changer la couleur";
+pub const TRACE_OFFSET: &str = "Décalage";
+pub const TRACE_RENAME_HINT: &str = "Double-cliquez pour renommer";
+pub const NOTIFY_NOTHING_TO_CAPTURE: &str = "Rien à capturer : démarrez la mesure d'abord.";
+pub const NOTIFY_UNDONE: &str = "Action annulée";
+pub const NOTIFY_REDONE: &str = "Action rétablie";
+pub const NOTIFY_NOTHING_TO_UNDO: &str = "Rien à annuler";
+pub const NOTIFY_AVERAGE_NEEDS_TWO: &str = "Sélectionnez au moins deux traces pour les moyenner.";
+pub const NOTIFY_EXPORT_FAILED: &str = "Export impossible";
+pub const EXPORT_DIRECTORY_NAME: &str = "SoundTuning";
+
+pub const FILTER_BELL: &str = "Cloche";
+pub const FILTER_LOW_SHELF: &str = "Plateau grave";
+pub const FILTER_HIGH_SHELF: &str = "Plateau aigu";
+pub const FILTER_LOW_CUT: &str = "Coupe-bas";
+pub const FILTER_HIGH_CUT: &str = "Coupe-haut";
+pub const FILTER_NOTCH: &str = "Notch";
+pub const SLOPE_BW12: &str = "Butterworth 12 dB/oct";
+pub const SLOPE_BW24: &str = "Butterworth 24 dB/oct";
+pub const SLOPE_LR24: &str = "Linkwitz-Riley 24 dB/oct";
+pub const SLOPE_LR48: &str = "Linkwitz-Riley 48 dB/oct";
+
+pub fn trace_name(number: u64, clock: &str) -> String {
+    format!("Trace {number} — {clock}")
+}
+
+pub fn average_trace_name(number: u64, clock: &str, member_count: usize) -> String {
+    format!("Moyenne {number} ({member_count} traces) — {clock}")
+}
+
+pub fn csv_coherence_header(trace_name: &str) -> String {
+    format!("{trace_name} γ²")
+}
+
+pub fn trace_captured(name: &str) -> String {
+    format!("Trace capturée : {name}")
+}
+
+pub fn exported_to(path: &str) -> String {
+    format!("Exporté : {path}")
+}
+
+pub fn bank_label(index: usize) -> &'static str {
+    if index == 0 { "A" } else { "B" }
+}
+
+pub fn eq_export_header(bank_index: usize) -> String {
+    format!("SoundTuning — EQ banque {}", bank_label(bank_index))
+}
+
+pub fn format_q(q: f64) -> String {
+    format!("Q {}", format_decimal(q, 2))
+}
+
+pub fn format_octaves(octaves: f64) -> String {
+    format!("{} oct.", format_decimal(octaves, 2))
+}
+
+pub fn eq_export_line(number: usize, filter: &crate::eq_state::StoredFilter) -> String {
+    let mut parts = vec![
+        format!("{number}."),
+        filter_kind_label(filter.kind),
+        format_frequency(filter.frequency_hz),
+    ];
+    if filter.kind.to_dsp().uses_gain() {
+        parts.push(format_db(filter.gain_db));
+    }
+    if filter.kind.to_dsp().uses_q() {
+        parts.push(format_q(filter.q));
+    }
+    if let Some(octaves) = filter.bandwidth_octaves() {
+        parts.push(format!("({})", format_octaves(octaves)));
+    }
+    if filter.bypassed {
+        parts.push("[bypass]".to_owned());
+    }
+    parts.join("  ")
+}
+
+pub fn filter_kind_label(kind: crate::eq_state::StoredFilterKind) -> String {
+    use crate::eq_state::StoredFilterKind;
+    match kind {
+        StoredFilterKind::LowCut(slope) | StoredFilterKind::HighCut(slope) => {
+            format!("{} {}", kind.label(), slope.label())
+        }
+        other => other.label().to_owned(),
+    }
+}
 
 pub fn format_decimal(value: f64, decimals: usize) -> String {
-    format!("{value:.decimals$}").replace('.', ",")
+    let formatted = format!("{value:.decimals$}").replace('.', ",");
+    if formatted.starts_with('-') {
+        formatted.replacen('-', "−", 1)
+    } else {
+        formatted
+    }
 }
 
 pub fn format_dbfs(value: f32) -> String {
     format!("{} dBFS", format_decimal(f64::from(value), 1))
+}
+
+pub fn format_meter_dbfs(value: f32) -> String {
+    if value <= crate::design::widgets::METER_FLOOR_DBFS {
+        "−∞".to_owned()
+    } else {
+        format_decimal(f64::from(value), 0)
+    }
+}
+
+pub fn format_milliseconds(value: f64) -> String {
+    format!("{} ms", format_decimal(value, 2))
+}
+
+pub fn format_meters(value: f64) -> String {
+    format!("{} m", format_decimal(value, 2))
+}
+
+pub fn format_samples(value: f64) -> String {
+    format!("{} éch.", format_decimal(value, 0))
+}
+
+pub fn format_frequency(frequency_hz: f64) -> String {
+    if frequency_hz >= 1000.0 {
+        let kilohertz = frequency_hz / 1000.0;
+        let decimals = if kilohertz >= 10.0 { 1 } else { 2 };
+        format!("{} kHz", format_decimal(kilohertz, decimals))
+    } else {
+        format!(
+            "{} Hz",
+            format_decimal(frequency_hz, if frequency_hz < 100.0 { 1 } else { 0 })
+        )
+    }
+}
+
+pub fn format_axis_frequency(frequency_hz: f64) -> String {
+    if frequency_hz >= 1000.0 {
+        format!("{}k", format_decimal(frequency_hz / 1000.0, 0))
+    } else {
+        format_decimal(frequency_hz, 0)
+    }
+}
+
+pub fn format_db(value: f64) -> String {
+    let sign = if value > 0.0 { "+" } else { "" };
+    format!("{sign}{} dB", format_decimal(value, 1))
+}
+
+pub fn format_axis_db(value: f64) -> String {
+    let sign = if value > 0.0 { "+" } else { "" };
+    format!("{sign}{}", format_decimal(value, 0))
+}
+
+pub fn format_fft_length(length: usize) -> String {
+    format!("{}k", length / 1024)
+}
+
+pub fn format_seconds(value: f64) -> String {
+    format!(
+        "{} s",
+        format_decimal(value, if value.fract() == 0.0 { 0 } else { 1 })
+    )
+}
+
+pub fn format_smoothing(fraction: u32) -> String {
+    if fraction == 0 {
+        SMOOTHING_NONE.to_owned()
+    } else {
+        format!("1/{fraction}")
+    }
+}
+
+pub fn format_input_channel(index: usize) -> String {
+    format!("entrée {}", index + 1)
 }
 
 pub fn device_line(
@@ -67,6 +369,10 @@ pub fn device_line(
     )
 }
 
+pub fn device_channels(input_channels: usize, output_channels: usize) -> String {
+    format!("{input_channels} entrées · {output_channels} sorties")
+}
+
 pub fn record_started(seconds: f64, path: &str) -> String {
     format!(
         "Enregistrement de {} s vers {path}…",
@@ -87,7 +393,14 @@ pub fn record_incomplete(frame_count: usize, expected: usize) -> String {
 
 pub fn source_label(name: &str, sample_rate_hz: u32) -> String {
     format!(
-        "{name} — {} kHz",
+        "{name} · {} kHz",
+        format_decimal(f64::from(sample_rate_hz) / 1000.0, 1)
+    )
+}
+
+pub fn file_source_label(file_name: &str, sample_rate_hz: u32) -> String {
+    format!(
+        "Fichier {file_name} · {} kHz",
         format_decimal(f64::from(sample_rate_hz) / 1000.0, 1)
     )
 }
@@ -96,18 +409,84 @@ pub fn audio_error(error: &str) -> String {
     format!("Erreur audio : {error}")
 }
 
+pub fn delay_found(milliseconds: f64) -> String {
+    format!(
+        "{NOTIFY_DELAY_FOUND} : {}",
+        format_milliseconds(milliseconds)
+    )
+}
+
+pub fn delay_details(distance_m: f64, samples: f64, approximate: bool) -> String {
+    let prefix = if approximate { "≈ " } else { "" };
+    format!(
+        "{prefix}{} · {}",
+        format_meters(distance_m),
+        format_samples(samples)
+    )
+}
+
+pub fn start_failed(error: &str) -> String {
+    format!("{BANNER_START_FAILED} : {error}")
+}
+
+pub fn delay_applied(milliseconds: f64) -> String {
+    format!(
+        "{NOTIFY_DELAY_APPLIED} : {}",
+        format_milliseconds(milliseconds)
+    )
+}
+
+pub fn latency_calibrated(milliseconds: f64) -> String {
+    format!(
+        "{NOTIFY_LATENCY_CALIBRATED} : {}",
+        format_milliseconds(milliseconds)
+    )
+}
+
+pub fn wizard_step(index: usize, total: usize) -> String {
+    format!("Étape {index} sur {total}")
+}
+
+pub fn crosshair_readout(frequency_hz: f64, level_db: f64) -> String {
+    format!(
+        "{} · {}",
+        format_frequency(frequency_hz),
+        format_db(level_db)
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn decimals_use_french_comma() {
+    fn decimals_use_french_comma_and_true_minus() {
         assert_eq!(format_decimal(12.4321, 2), "12,43");
-        assert_eq!(format_dbfs(-3.0), "-3,0 dBFS");
+        assert_eq!(format_dbfs(-3.0), "−3,0 dBFS");
+        assert_eq!(format_db(6.0), "+6,0 dB");
     }
 
     #[test]
     fn source_label_shows_khz() {
-        assert_eq!(source_label("UAX 2-2", 48_000), "UAX 2-2 — 48,0 kHz");
+        assert_eq!(source_label("UAX 2-2", 48_000), "UAX 2-2 · 48,0 kHz");
+    }
+
+    #[test]
+    fn frequencies_are_human_readable() {
+        assert_eq!(format_frequency(63.0), "63,0 Hz");
+        assert_eq!(format_frequency(250.0), "250 Hz");
+        assert_eq!(format_frequency(1250.0), "1,25 kHz");
+        assert_eq!(format_frequency(12_500.0), "12,5 kHz");
+        assert_eq!(format_axis_frequency(2000.0), "2k");
+        assert_eq!(format_axis_frequency(50.0), "50");
+    }
+
+    #[test]
+    fn settings_values_are_compact() {
+        assert_eq!(format_fft_length(32_768), "32k");
+        assert_eq!(format_seconds(0.5), "0,5 s");
+        assert_eq!(format_seconds(2.0), "2 s");
+        assert_eq!(format_smoothing(0), SMOOTHING_NONE);
+        assert_eq!(format_smoothing(48), "1/48");
     }
 }

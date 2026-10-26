@@ -12,13 +12,29 @@ path = "src/main.rs"
 name = "soundtuning"
 path = "src/lib.rs"
 
+[features]
+asio = ["audio-io/asio"]
+
 [dependencies]
 anyhow = "1.0.104"
 audio-io = { version = "0.1.0", path = "../audio-io" }
+chrono = { version = "0.4.45", default-features = false, features = ["clock", "std"] }
 clap = { version = "4.6.7", features = ["derive"] }
+dsp-core = { version = "0.1.0", path = "../dsp-core" }
 eframe = "0.37.0"
+engine = { version = "0.1.0", path = "../engine" }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
 tracing = "0.1.44"
 tracing-subscriber = "0.3.23"
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+criterion = "0.8.2"
+egui_kittest = { version = "0.37.0", features = ["eframe", "snapshot", "wgpu"] }
+
+[[bench]]
+name = "plot_budget"
+harness = false

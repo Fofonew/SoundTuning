@@ -1,0 +1,150 @@
+use eframe::egui::{self, Align, Layout, RichText, vec2};
+
+use crate::actions::Action;
+use crate::design::Palette;
+use crate::design::fonts;
+use crate::design::tokens::{size, spacing, text_size};
+use crate::design::widgets::{
+    Emphasis, MeterReading, Tone, action_button, confidence_segments, level_meter, status_pill,
+};
+use crate::text;
+
+const DELAY_BLOCK_WIDTH: f32 = 232.0;
+const BUTTON_GROUP_WIDTH: f32 = 236.0;
+const METER_GROUP_WIDTH: f32 = 2.0 * size::METER_WIDTH + spacing::LG;
+const METER_BLOCK_HEIGHT: f32 = 30.0;
+
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct DelayReadout {
+    pub milliseconds: Option<f64>,
+    pub distance_m: Option<f64>,
+    pub samples: Option<f64>,
+    pub confidence_db: Option<f64>,
+    pub approximate: bool,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct TopBarModel {
+    pub status_tone: Tone,
+    pub status_text: &'static str,
+    pub source_label: Option<String>,
+    pub reference_meter: MeterReading,
+    pub measurement_meter: MeterReading,
+    pub delay: DelayReadout,
+    pub can_apply_delay: bool,
+    pub running: bool,
+}
+
+pub fn show(
+    ui: &mut egui::Ui,
+    palette: &Palette,
+    model: &TopBarModel,
+    is_mac: bool,
+    actions: &mut Vec<Action>,
+) {
+    let total_width = ui.available_width();
+    let right_width =
+        BUTTON_GROUP_WIDTH + DELAY_BLOCK_WIDTH + METER_GROUP_WIDTH + 3.0 * spacing::XL;
+    let left_width = (total_width - right_width).max(160.0);
+    let height = ui.available_height();
+    ui.horizontal(|ui| {
+        ui.allocate_ui_with_layout(
+            vec2(left_width, height),
+            Layout::left_to_right(Align::Center),
+            |ui| {
+                ui.spacing_mut().item_spacing.x = spacing::MD;
+                status_pill(ui, palette, model.status_tone, model.status_text);
+                ui.label(
+                    RichText::new(text::APP_NAME)
+                        .font(fonts::ui_semibold(text_size::TITLE))
+                        .color(palette.text_primary),
+                );
+                if let Some(source) = &model.source_label {
+                    ui.add(
+                        egui::Label::new(
+                            RichText::new(source)
+                                .font(fonts::ui(text_size::LABEL))
+                                .color(palette.text_muted),
+                        )
+                        .truncate(),
+                    );
+                }
+            },
+        );
+        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            ui.spacing_mut().item_spacing.x = spacing::SM;
+            if action_button(
+                ui,
+                palette,
+                text::BUTTON_APPLY_DELAY,
+                Action::ApplyDelay.shortcut_text(is_mac).as_deref(),
+                Emphasis::Secondary,
+                model.can_apply_delay,
+            )
+            .clicked()
+            {
+                actions.push(Action::ApplyDelay);
+            }
+            if action_button(
+                ui,
+                palette,
+                text::BUTTON_FIND_DELAY,
+                Action::FindDelay.shortcut_text(is_mac).as_deref(),
+                Emphasis::Secondary,
+                model.running,
+            )
+            .clicked()
+            {
+                actions.push(Action::FindDelay);
+            }
+            ui.add_space(spacing::LG);
+            ui.allocate_ui_with_layout(
+                vec2(DELAY_BLOCK_WIDTH, height),
+                Layout::top_down(Align::Max),
+                |ui| delay_block(ui, palette, &model.delay),
+            );
+            ui.add_space(spacing::XL);
+            ui.allocate_ui_with_layout(
+                vec2(METER_GROUP_WIDTH, METER_BLOCK_HEIGHT),
+                Layout::left_to_right(Align::Center),
+                |ui| {
+                    ui.spacing_mut().item_spacing.x = spacing::LG;
+                    level_meter(ui, palette, text::METER_REFERENCE, model.reference_meter);
+                    level_meter(
+                        ui,
+                        palette,
+                        text::METER_MEASUREMENT,
+                        model.measurement_meter,
+                    );
+                },
+            );
+        });
+    });
+}
+
+fn delay_block(ui: &mut egui::Ui, palette: &Palette, delay: &DelayReadout) {
+    ui.spacing_mut().item_spacing.y = 0.0;
+    let main = delay
+        .milliseconds
+        .map_or_else(|| text::DELAY_NONE.to_owned(), text::format_milliseconds);
+    ui.label(
+        RichText::new(main)
+            .font(fonts::value_semibold(text_size::DISPLAY))
+            .color(palette.text_primary),
+    );
+    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+        ui.spacing_mut().item_spacing.x = spacing::SM;
+        confidence_segments(ui, palette, delay.confidence_db, text::DELAY_CONFIDENCE);
+        let details = match (delay.distance_m, delay.samples) {
+            (Some(distance), Some(samples)) => {
+                text::delay_details(distance, samples, delay.approximate)
+            }
+            _ => text::DELAY_TITLE.to_owned(),
+        };
+        ui.label(
+            RichText::new(details)
+                .font(fonts::value(text_size::CAPTION))
+                .color(palette.text_muted),
+        );
+    });
+}

@@ -81,6 +81,6 @@ Questions à l'utilisateur uniquement si : critère impossible, décision irrév
 
 ## État
 
-- Phase en cours : 3 (fondations de l'interface).
-- Phases terminées : setup ; 0 (workspace, CI, `audio-io`, CLI, fenêtre minimale) ; 1 (`dsp-core` et critères « Mesure ») ; 2 (`engine` : cœur synchrone, thread de mesure, délai sur thread dédié, compensation, calibrage de latence, instantanés `triple_buffer`, benchs dans les budgets — voir `docs/BENCHMARKS.md`).
-- Prochaine étape : phase 3 (direction visuelle `docs/DESIGN.md`, système de design, tracé, cohérence, vu-mètres, états, assistant, palette, `egui_kittest`, revue visuelle).
+- Phase en cours : 4 (traces et sessions). Modèle déjà écrit et testé : `crates/app/src/session.rs` (Trace, Session, UndoHistory, CSV, SessionStore), `alignment_state.rs`, `eq_state.rs` ; à câbler dans `app.rs` (S = capture, Cmd+Z/Maj+Cmd+Z, liste des traces dans le panneau, couleurs, renommage double-clic, offset, moyenne, autosauvegarde `session.json` ≤ 10 s, reprise, export CSV).
+- Phases terminées : setup ; 0 ; 1 (`dsp-core`) ; 2 (`engine`) ; 3 (interface : `docs/DESIGN.md`, système de design, tracé, assistant, palette, bandeaux d'état, 14 tests d'interaction kittest + 3 captures, revue visuelle `docs/UI_REVIEW.md`).
+- Suite : 5 (délais, notifications de dérive, alignement), 6 (EQ), 7 (finition), 8 (Windows : `docs/WINDOWS.md` amorcé, feature `asio` câblée).

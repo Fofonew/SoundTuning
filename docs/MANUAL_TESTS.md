@@ -29,6 +29,11 @@ Cocher, dater et noter les observations. Matériel de référence : UAX 2-2, mic
 
 ## Visuel
 
+- [ ] Première ouverture : l'assistant s'affiche (carte son → référence et canaux avec vu-mètres → test), puis ne réapparaît plus au lancement suivant.
+- [ ] Tracé : zoom molette (fréquence), Alt + molette (dB), pincement sur le pavé tactile, glisser pour déplacer, double-clic pour réinitialiser ; aucune saccade.
+- [ ] Cmd + / Cmd − : l'interface s'agrandit / se réduit proprement.
+- [ ] Navigation au clavier (Tab) : chaque bouton reçoit un contour de focus visible ; VoiceOver annonce les boutons et vu-mètres.
+
 - [ ] Thème Nuit lisible à 1 m en régie sombre, sans éblouissement.
 - [ ] Thème Plein jour lisible en extérieur au soleil.
 - [ ] Délai en gros chiffres lisible à 2 m.

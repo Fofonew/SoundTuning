@@ -154,3 +154,31 @@ Non corrigé, justifié :
 - Pas de commande « pause / figer » côté moteur : figer est une fonction d'affichage (l'UI garde une copie de l'instantané) ; la mesure continue, conformément au workflow.
 - Fichier en boucle plus court que 2,7 s : aucune estimation de délai (fenêtre de 131072 échantillons contigus). Limite documentée ; les fichiers de test font ≥ 3 s.
 - Changement de source ou de fréquence : on recrée un `EngineHandle` (même grille partagée).
+
+### D-026 — Interface : architecture (phase 3)
+- `crates/app` : `design/` (jetons, polices, thèmes, widgets), `plot/` (vue log, graduations, polylignes, préparation d'image), `ui/` (barres, panneau, tracé, bandeaux, notifications, palette, assistant), `actions.rs` (catalogue unique : libellé + raccourci pour boutons, clavier et palette), `measurement.rs` (contrôleur : source live / fichier, moteur, vu-mètres avec balistique), `config.rs` (configuration persistante JSON).
+- Direction visuelle : `docs/DESIGN.md` (instrument de mesure, chrome effacé, trace live neutre très contrastée avec halo, palette Okabe–Ito pour les traces mémorisées).
+- Polices embarquées : **Inter 4.1** (rsms/inter, release v4.1) et **JetBrains Mono 2.304** (JetBrains/JetBrainsMono, release v2.304), toutes deux sous **SIL Open Font License 1.1** ; fichiers de licence dans `crates/app/assets/fonts/*-OFL.txt`. Les chiffres sont toujours en JetBrains Mono (chasse fixe = chiffres tabulaires, egui ne gérant pas `tnum`).
+- Figer = copie de l'instantané côté UI ; la mesure continue.
+- Raccourcis désactivés quand un champ texte a le focus (palette, renommage) ; Espace est consommé avant les widgets (Entrée active le bouton focalisé).
+- Aucune fenêtre modale : palette = zone flottante non bloquante (Échap, clic extérieur), notifications en bas à droite, bandeaux d'état dans la zone centrale ; testé (`no_modal_window_opens_while_measuring`).
+- Configuration : `~/Library/Application Support/SoundTuning/config.json` (macOS), `%APPDATA%\SoundTuning` (Windows) ; écriture atomique (fichier temporaire + renommage), débounce 0,8 s ; latence calibrée mémorisée par (entrée, sortie, fs, tampon).
+- Tests UI : `egui_kittest` (rendu wgpu hors écran), source fichier non cadencée (`FilePacing::AsFastAsPossible`), périphériques factices pour l'assistant ; captures PNG dans `crates/app/tests/snapshots/` (macOS uniquement), sans comparaison pixel (le contenu dépend du moteur en temps réel).
+- Plages 1–4 : plein spectre 20 Hz–20 kHz, sub 20–200 Hz, médium 150 Hz–4 kHz, aigu 2–20 kHz. Échelle dB par défaut −24…+18 dB.
+
+### D-027 — Suites de la revue `ecc:rust-reviewer` de la phase 3
+Corrigé :
+- « Reprendre » / « Réessayer » (bandeaux carte déconnectée, micro refusé, échec de démarrage) relancent la mesure (`Action::RestartMeasurement`) au lieu de l'arrêter.
+- Démarrage et arrêt de la mesure hors du thread UI : ouverture des flux, lecture du WAV et lancement du moteur sur un thread dédié (état « démarrage »), libération (jointure des threads moteur et délai) sur un thread d'arrêt. L'UI ne bloque plus.
+- L'affichage (instantané, vu-mètres, figé) est remis à zéro à chaque démarrage et arrêt : plus de bandeau ni de délai d'une session précédente ; la latence calibrée n'est enregistrée que si elle vient du moteur courant (évite de l'attribuer à une autre carte).
+- Raccourcis à touche seule : répétition de touche ignorée (Espace maintenu ne relance plus les flux en boucle), désactivés quand un widget a le focus (Espace active alors le bouton focalisé) ; modificateurs comparés exactement (Cmd+Z ≠ Maj+Cmd+Z).
+- Assistant : erreur d'ouverture affichée, bouton « Actualiser » ; aperçu des canaux sans générateur, le bruit rose ne démarre qu'à l'étape « Test » ; canaux de mesure et de référence différents ; sorties ramenées à « Gauche » sur une carte mono.
+- Barre inférieure : pastilles réglables au clavier (flèches) et annoncées comme `SpinButton` ; pastille « Réf. » non interactive ; niveau du générateur plafonné à −6 dBFS ; bouton « Panneau » (P) pour replier le panneau latéral.
+- Tracé : identifiant stable (`magnitude-plot`), libellé AccessKit correct, taille minimale ; bandeaux d'état superposés en haut du tracé (le tracé ne saute plus quand un bandeau apparaît).
+- Notifications : fermées au clic, expiration suspendue au survol.
+- Configuration : fichier invalide conservé en `config.json.bak` ; valeurs bornées au chargement (fréquence, niveau du générateur, température, FFT, latences).
+- Tests d'interaction sans GPU (rendu wgpu réservé aux captures, macOS) ; nouveaux tests : répétition de touche, Espace sur bouton focalisé, palette + Entrée, relance, arrêt qui efface l'affichage.
+Non corrigé, justifié :
+- Énumération des périphériques (`list_devices`) synchrone à l'ouverture de l'assistant et sur « Actualiser » : quelques millisecondes, action explicite.
+- Captures sans comparaison pixel (contenu temps réel) : elles servent à la revue visuelle.
+- Allocations résiduelles par image (segments de courbe pour `Shape::line`, textes des bandeaux) : mesurées négligeables (`plot_frame_prep` 0,05 ms) ; la médiane de cohérence n'est plus recalculée qu'à chaque nouvel instantané.

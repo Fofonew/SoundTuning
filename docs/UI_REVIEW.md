@@ -15,3 +15,26 @@ Critères : hiérarchie visuelle, lisibilité à 1 m, alignements, espacements, 
 - Captures après : `docs/ui-review/phase-N/…`
 
 ---
+
+### Phase 3 — tour 1 (2026-10-26)
+- Écrans : premier lancement (assistant), mesure Nuit, mesure Plein jour (1440×900, mode fichier, affichage figé, réticule actif).
+- Critiques :
+  - barre supérieure : vu-mètres « Réf. »/« Mic » empilés l'un sur l'autre et recouverts par l'afficheur de délai ; nom du fichier source coupé sous les vu-mètres ;
+  - axe dB : l'unité « dB » chevauche « +18 » ; l'étiquette « 20k » est coupée au bord droit ;
+  - bande de cohérence : aplat bleu saturé qui écrase le tracé, étiquette « Cohérence » illisible sur le bleu ;
+  - assistant : carte collée en haut de la fenêtre, grand vide en dessous, hiérarchie faible.
+- Corrections (`ecc:make-interfaces-feel-better`, principes transposés à egui) :
+  - barre supérieure réécrite en blocs de largeur fixe (groupe gauche tronqué, vu-mètres 2 × 120 px, afficheur de délai 232 px, boutons) ;
+  - unité « dB » au-dessus de l'axe, marge haute de 24 px ; étiquettes de fréquence alignées à gauche/droite près des bords ;
+  - bande de cohérence : remplissage à 38 % d'opacité + contour de la courbe γ², étiquette sur pastille `surface` ;
+  - assistant centré verticalement (hauteur max 520 px).
+- Captures avant : `docs/ui-review/phase-3/*-tour1-avant.png` ; après : `docs/ui-review/phase-3/*-tour1-apres.png`.
+
+### Phase 3 — tour 2 (2026-10-26)
+- Écrans : les trois mêmes.
+- Critiques :
+  - surface : la zone centrale (tracé + cohérence) ne couvre que ≈ 66 % de la fenêtre avec le panneau ouvert (spec : ≥ 70 %) ;
+  - afficheur de délai à 34 pt : la ligne « m · éch. » déborde du bas de la barre supérieure ;
+  - Plein jour : bon contraste du tracé (noir sur blanc), halo discret ; vu-mètre de référence en orange (crête > −6 dBFS) cohérent.
+- Corrections : barre supérieure 68 px, panneau latéral 272 px → zone centrale 70,7 % à 1440×900 et 72 % à 1920×1080 (testé par `central_zone_covers_at_least_seventy_percent_with_the_panel_open`) ; délai en 30 pt (≥ 28 pt exigés).
+- Captures après : `docs/ui-review/phase-3/*-tour2-apres.png` puis `*-tour2-final.png`.
