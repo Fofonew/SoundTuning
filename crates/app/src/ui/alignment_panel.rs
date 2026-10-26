@@ -6,7 +6,9 @@ use crate::alignment_state::{
 use crate::design::Palette;
 use crate::design::fonts;
 use crate::design::tokens::{size, spacing, text_size};
-use crate::design::widgets::{Emphasis, action_button, muted, section_title};
+use crate::design::widgets::{
+    Emphasis, action_button, combo_label, muted, section_title, spin_label,
+};
 use crate::session::Session;
 use crate::text;
 
@@ -42,7 +44,7 @@ pub fn show(ui: &mut egui::Ui, palette: &Palette, session: &Session) -> Vec<Alig
             let selected_name = slot
                 .and_then(|id| session.trace(id))
                 .map_or(text::ALIGNMENT_CHOOSE_TRACE, |trace| trace.name.as_str());
-            egui::ComboBox::from_id_salt(id_salt)
+            let combo = egui::ComboBox::from_id_salt(id_salt)
                 .width(ui.available_width() - spacing::SM)
                 .truncate()
                 .selected_text(selected_name)
@@ -51,6 +53,7 @@ pub fn show(ui: &mut egui::Ui, palette: &Palette, session: &Session) -> Vec<Alig
                         ui.selectable_value(slot, Some(trace.id), &trace.name);
                     }
                 });
+            combo_label(&combo.response, label);
         });
         ui.add_space(spacing::XS);
     }
@@ -79,19 +82,21 @@ pub fn show(ui: &mut egui::Ui, palette: &Palette, session: &Session) -> Vec<Alig
     ui.add_space(spacing::SM);
     ui.horizontal(|ui| {
         ui.label(RichText::new(text::ALIGNMENT_BAND).color(palette.text_muted));
-        ui.add(
+        let response = ui.add(
             egui::DragValue::new(&mut state.band_low_hz)
                 .range(BAND_LIMIT_LOW_HZ..=state.band_high_hz)
                 .speed(1.0)
                 .custom_formatter(|value, _| text::format_frequency(value)),
         );
+        spin_label(&response, text::ALIGNMENT_BAND_LOW);
         ui.label(RichText::new(text::RANGE_SEPARATOR).color(palette.text_muted));
-        ui.add(
+        let response = ui.add(
             egui::DragValue::new(&mut state.band_high_hz)
                 .range(state.band_low_hz..=BAND_LIMIT_HIGH_HZ)
                 .speed(1.0)
                 .custom_formatter(|value, _| text::format_frequency(value)),
         );
+        spin_label(&response, text::ALIGNMENT_BAND_HIGH);
     });
     muted(ui, palette, text::ALIGNMENT_BAND_HINT);
 
@@ -139,13 +144,14 @@ pub fn show(ui: &mut egui::Ui, palette: &Palette, session: &Session) -> Vec<Alig
         ui.add_space(spacing::SM);
         ui.horizontal(|ui| {
             ui.label(RichText::new(text::ALIGNMENT_DELTA).color(palette.text_muted));
-            ui.add(
+            let response = ui.add(
                 egui::DragValue::new(&mut state.delay_ms)
                     .speed(DELAY_STEP_MS)
                     .range(-DELAY_LIMIT_MS..=DELAY_LIMIT_MS)
                     .fixed_decimals(2)
                     .custom_formatter(|value, _| text::format_signed_milliseconds(value)),
             );
+            spin_label(&response, text::ALIGNMENT_DELTA_LABEL);
         });
         ui.checkbox(&mut state.inverted, text::ALIGNMENT_INVERT_B);
         muted(ui, palette, text::ALIGNMENT_SIGN_HINT);

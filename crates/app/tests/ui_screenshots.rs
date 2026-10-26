@@ -70,9 +70,18 @@ fn screenshot_traces() {
 
 #[test]
 fn screenshot_alignment() {
+    alignment_screenshot(Theme::Night, "alignment");
+}
+
+#[test]
+fn screenshot_alignment_daylight() {
+    alignment_screenshot(Theme::Daylight, "alignment_daylight");
+}
+
+fn alignment_screenshot(theme: Theme, name: &str) {
     use soundtuning::ui::alignment_panel::AlignmentCommand;
     use soundtuning::ui::side_panel::SideTab;
-    let mut harness = rendering_harness(file_options(Theme::Night, true));
+    let mut harness = rendering_harness(file_options(theme, true));
     wait_for_stable_measurement(&mut harness);
     harness.key_press(Key::S);
     harness.step();
@@ -119,15 +128,24 @@ fn screenshot_alignment() {
         .proposal_delay_ms
         .unwrap();
     assert!((proposal.abs() - 1.2).abs() < 0.05, "{proposal}");
-    assert!(save_screenshot(&mut harness, "alignment").exists());
+    assert!(save_screenshot(&mut harness, name).exists());
 }
 
 #[test]
 fn screenshot_eq() {
+    eq_screenshot(Theme::Night, "eq");
+}
+
+#[test]
+fn screenshot_eq_daylight() {
+    eq_screenshot(Theme::Daylight, "eq_daylight");
+}
+
+fn eq_screenshot(theme: Theme, name: &str) {
     use soundtuning::eq_state::{StoredFilter, StoredFilterKind, StoredSlope};
     use soundtuning::ui::eq_panel::EqCommand;
     use soundtuning::ui::side_panel::SideTab;
-    let mut harness = rendering_harness(file_options(Theme::Night, true));
+    let mut harness = rendering_harness(file_options(theme, true));
     wait_for_stable_measurement(&mut harness);
     harness.key_press(Key::F);
     harness.step();
@@ -149,5 +167,5 @@ fn screenshot_eq() {
     harness.state_mut().apply_test_eq(EqCommand::Update(state));
     harness.step();
     harness.step();
-    assert!(save_screenshot(&mut harness, "eq").exists());
+    assert!(save_screenshot(&mut harness, name).exists());
 }

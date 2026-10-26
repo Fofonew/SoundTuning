@@ -165,6 +165,8 @@ pub const ACTION_TOGGLE_DELAY_TRACKING: &str = "Suivi du délai";
 pub const ACTION_NUDGE_DELAY_DOWN: &str = "Délai −0,01 ms";
 pub const ACTION_NUDGE_DELAY_UP: &str = "Délai +0,01 ms";
 pub const BUTTON_TRACKING: &str = "Suivi";
+pub const TRACKING_ON_GLYPH: &str = "●";
+pub const TRACKING_OFF_GLYPH: &str = "○";
 pub const BUTTON_NUDGE_DOWN: &str = "−";
 pub const BUTTON_NUDGE_UP: &str = "+";
 pub const KEY_ARROW_LEFT: &str = "←";
@@ -221,6 +223,15 @@ pub const ALIGNMENT_INVERT_B: &str = "Inverser la polarité de B";
 pub const ALIGNMENT_SIGN_HINT: &str = "Δ > 0 : retarder B\nΔ < 0 : retarder A";
 pub const ALIGNMENT_NO_DELAY: &str = "Aucun délai";
 pub const ALIGNMENT_DELTA: &str = "Δ";
+pub const ALIGNMENT_DELTA_LABEL: &str = "Délai Δ entre A et B";
+pub const ALIGNMENT_BAND_LOW: &str = "Bande : fréquence basse";
+pub const ALIGNMENT_BAND_HIGH: &str = "Bande : fréquence haute";
+pub const EQ_FREQUENCY: &str = "Fréquence";
+pub const EQ_GAIN: &str = "Gain";
+pub const EQ_Q: &str = "Q";
+pub const EQ_KIND: &str = "Type";
+pub const EQ_SLOPE: &str = "Pente";
+pub const EQ_TARGET_LABEL: &str = "Trace égalisée";
 pub const ALIGNMENT_NO_PROPOSAL: &str = "Pas de proposition : il faut la phase des deux traces dans la bande (une moyenne de traces n'en a pas).";
 pub const PREDICTED_SUM_LABEL: &str = "Somme prédite";
 pub const ALIGNMENT_POLARITY_SUFFIX: &str = " · B inversée";
@@ -285,6 +296,19 @@ pub fn trace_name(number: u64, clock: &str) -> String {
 
 pub fn average_trace_name(number: u64, clock: &str, member_count: usize) -> String {
     format!("Moyenne {number} ({member_count} traces) — {clock}")
+}
+
+pub fn eq_control_label(control: &str, filter_number: usize) -> String {
+    format!("{control} du filtre {filter_number}")
+}
+
+pub fn tracking_label(active: bool) -> String {
+    let glyph = if active {
+        TRACKING_ON_GLYPH
+    } else {
+        TRACKING_OFF_GLYPH
+    };
+    format!("{glyph} {BUTTON_TRACKING}")
 }
 
 pub fn band_label(low_hz: f64, high_hz: f64) -> String {

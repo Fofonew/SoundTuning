@@ -8,7 +8,9 @@ use crate::config::AppConfig;
 use crate::design::Palette;
 use crate::design::fonts;
 use crate::design::tokens::{radius, size, spacing, stroke, text_size};
-use crate::design::widgets::{Emphasis, MeterReading, action_button, level_meter, muted};
+use crate::design::widgets::{
+    Emphasis, MeterReading, action_button, combo_label, level_meter, muted,
+};
 use crate::text;
 
 const WIZARD_WIDTH: f32 = 640.0;
@@ -300,7 +302,7 @@ impl Wizard {
                 ui.label(RichText::new(text::WIZARD_MEASUREMENT_CHANNEL).color(palette.text_muted));
                 changed |= channel_combo(
                     ui,
-                    "measurement-channel",
+                    ("measurement-channel", text::WIZARD_MEASUREMENT_CHANNEL),
                     &mut config.stream.measurement_channel_index,
                     input_count,
                 );
@@ -314,7 +316,7 @@ impl Wizard {
                         );
                         changed |= channel_combo(
                             ui,
-                            "reference-channel",
+                            ("reference-channel", text::WIZARD_LOOPBACK_CHANNEL),
                             reference_channel_index,
                             input_count,
                         );
@@ -522,12 +524,12 @@ fn option_card(
 
 fn channel_combo(
     ui: &mut egui::Ui,
-    id: &str,
+    (id, label): (&str, &str),
     channel_index: &mut usize,
     channel_count: usize,
 ) -> bool {
     let before = *channel_index;
-    egui::ComboBox::from_id_salt(id)
+    let combo = egui::ComboBox::from_id_salt(id)
         .selected_text(text::format_input_channel(*channel_index))
         .height(size::BUTTON_HEIGHT * 8.0)
         .show_ui(ui, |ui| {
@@ -535,6 +537,7 @@ fn channel_combo(
                 ui.selectable_value(channel_index, index, text::format_input_channel(index));
             }
         });
+    combo_label(&combo.response, label);
     before != *channel_index
 }
 

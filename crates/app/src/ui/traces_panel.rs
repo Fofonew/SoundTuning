@@ -5,7 +5,7 @@ use eframe::egui::{
 use crate::design::Palette;
 use crate::design::fonts;
 use crate::design::tokens::{STORED_TRACE_COLOR_COUNT, radius, size, spacing, stroke, text_size};
-use crate::design::widgets::{Emphasis, action_button};
+use crate::design::widgets::{Emphasis, action_button, spin_label};
 use crate::session::{Session, Trace};
 use crate::text;
 
@@ -293,15 +293,20 @@ fn trace_row(
     let offset_changed = row
         .with_layout(Layout::right_to_left(Align::Center), |row| {
             row.add_space(spacing::XS);
-            row.add(
-                egui::DragValue::new(&mut offset)
-                    .speed(OFFSET_SPEED_DB)
-                    .range(-OFFSET_LIMIT_DB..=OFFSET_LIMIT_DB)
-                    .max_decimals(1)
-                    .custom_formatter(|value, _| text::format_db(value)),
-            )
-            .on_hover_text(text::TRACE_OFFSET)
-            .changed()
+            let response = row
+                .add(
+                    egui::DragValue::new(&mut offset)
+                        .speed(OFFSET_SPEED_DB)
+                        .range(-OFFSET_LIMIT_DB..=OFFSET_LIMIT_DB)
+                        .max_decimals(1)
+                        .custom_formatter(|value, _| text::format_db(value)),
+                )
+                .on_hover_text(text::TRACE_OFFSET);
+            spin_label(
+                &response,
+                text::trace_control_label(text::TRACE_OFFSET, &trace.name),
+            );
+            response.changed()
         })
         .inner;
     if offset_changed {

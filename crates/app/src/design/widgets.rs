@@ -438,3 +438,11 @@ pub fn muted(ui: &mut Ui, palette: &Palette, text: &str) -> Response {
             .color(palette.text_muted),
     )
 }
+
+pub fn spin_label(response: &Response, label: impl Into<String>) {
+    let _ = response.clone().accessible_name(label);
+}
+
+pub fn combo_label(response: &Response, label: impl Into<String>) {
+    let _ = response.clone().accessible_name(label);
+}

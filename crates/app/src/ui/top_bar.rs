@@ -3,7 +3,7 @@ use eframe::egui::{self, Align, Layout, RichText, vec2};
 use crate::actions::Action;
 use crate::design::Palette;
 use crate::design::fonts;
-use crate::design::tokens::{size, spacing, text_size};
+use crate::design::tokens::{size, spacing, stroke, text_size};
 use crate::design::widgets::{
     Emphasis, MeterReading, Tone, action_button, confidence_segments, level_meter, status_pill,
 };
@@ -12,7 +12,7 @@ use crate::text;
 const DELAY_BLOCK_WIDTH: f32 = 232.0;
 const BUTTON_GROUP_WIDTH: f32 = 236.0;
 const FINE_GROUP_WIDTH: f32 = 2.0 * size::MIN_CLICK_HEIGHT + TRACKING_WIDTH + 2.0 * spacing::XS;
-const TRACKING_WIDTH: f32 = 64.0;
+const TRACKING_WIDTH: f32 = 76.0;
 const METER_GROUP_WIDTH: f32 = 2.0 * size::METER_WIDTH + spacing::LG;
 const METER_BLOCK_HEIGHT: f32 = 30.0;
 
@@ -168,10 +168,24 @@ fn fine_controls(
     let tracking = ui
         .add_sized(
             vec2(TRACKING_WIDTH, size::MIN_CLICK_HEIGHT),
-            egui::Button::selectable(
-                model.tracking,
-                RichText::new(text::BUTTON_TRACKING).font(fonts::ui_medium(text_size::LABEL)),
-            ),
+            egui::Button::new(
+                RichText::new(text::tracking_label(model.tracking))
+                    .font(fonts::ui_medium(text_size::LABEL))
+                    .color(if model.tracking {
+                        palette.accent
+                    } else {
+                        palette.text_muted
+                    }),
+            )
+            .selected(model.tracking)
+            .stroke(egui::Stroke::new(
+                stroke::BORDER,
+                if model.tracking {
+                    palette.accent
+                } else {
+                    palette.border
+                },
+            )),
         )
         .on_hover_text(hint(Action::ToggleDelayTracking, is_mac));
     tracking.widget_info(|| {
@@ -194,7 +208,7 @@ fn fine_controls(
                 model.running,
                 egui::Button::new(
                     RichText::new(glyph)
-                        .font(fonts::value_semibold(text_size::TITLE))
+                        .font(fonts::ui_semibold(text_size::HEADING))
                         .color(palette.text_primary),
                 )
                 .min_size(vec2(size::MIN_CLICK_HEIGHT, size::MIN_CLICK_HEIGHT)),

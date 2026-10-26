@@ -38,3 +38,7 @@ egui_kittest = { version = "0.37.0", features = ["eframe", "snapshot", "wgpu"] }
 [[bench]]
 name = "plot_budget"
 harness = false
+
+[[bench]]
+name = "ui_frame"
+harness = false

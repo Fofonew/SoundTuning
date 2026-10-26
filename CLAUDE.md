@@ -89,9 +89,9 @@ Règles complètes (enchaînement des phases, fin de phase `ecc:rust-reviewer` �
 
 ## État
 
-- **Phase en cours : 7 (finition UX et performance).**
-- Phases terminées : setup ; 0 ; 1 (`dsp-core`) ; 2 (`engine`) ; 3 (interface) ; 4 (traces et sessions ; D-028, D-031) ; 5 (délais et alignement ; D-032) ; 6 (EQ virtuel : panneau câblé, poignées glisser/molette/double-clic, vues Prédit / EQ seul / Inversée, cible live ou trace, exports, annulation ; D-033).
-- Dernier `verify` complet (fin de phase 6) : au vert, 250 tests ; benchs `engine_update` 0,62 ms, `delay_search` 1,78 ms, `plot_frame_prep` 0,053 ms, `optimal_alignment` 2,96 ms. Aucun échec en cours.
+- **Phase en cours : 8 (préparation Windows, CI, packaging, rapport final).**
+- Phases terminées : setup ; 0 ; 1 (`dsp-core`) ; 2 (`engine`) ; 3 (interface) ; 4 (traces et sessions ; D-028, D-031) ; 5 (délais et alignement ; D-032) ; 6 (EQ virtuel ; D-033) ; 7 (finition : revue des 8 écrans dans les deux thèmes, accessibilité testée, bench `ui_frame`, profil ≈ 3,5 % d'un cœur hors GPU ; D-034).
+- Dernier `verify` complet (fin de phase 7) : au vert, 253 tests ; benchs `engine_update` 0,62 ms, `delay_search` 1,76 ms, `plot_frame_prep` 0,053 ms, `optimal_alignment` 2,95 ms ; `ui_frame_cpu_frozen` 0,15–0,26 ms. Aucun échec en cours.
 - Attention : la sortie de `cargo test` filtrée par rtk n'affiche que la dernière suite ; pour un total fiable : `rtk proxy cargo test --workspace`.
-- **Prochaine action** : phase 7 — `audio-performance-debug` + `ecc:benchmark-optimization-loop` (profil rendu + moteur, bench du mode EQ/alignement), revue complète des écrans dans les deux thèmes (captures Plein jour de l'alignement et de l'EQ), états vides, accessibilité (libellés AccessKit de tous les boutons, test), critères UX/Rapidité (≥ 20 mises à jour/s), `MANUAL_TESTS.md`, revue visuelle 2 tours.
-- Suite : 8 (CI complète, packaging `cargo-packager`, `docs/WINDOWS.md`, rapport final).
+- `cargo-packager` installé localement dans `target/tools/bin` (rien hors du dépôt).
+- **Prochaine action** : phase 8 — `[package.metadata.packager]` (.app avec `NSMicrophoneUsageDescription`, NSIS), vérification locale du .app, CI macOS + Windows complète (fmt, clippy, tests, benches compilés, packaging en artefacts), `docs/WINDOWS.md`, D-035, `verify`, commit « phase 8 », rapport final.

@@ -4,7 +4,9 @@ use eframe::egui::{self, RichText};
 use crate::design::Palette;
 use crate::design::fonts;
 use crate::design::tokens::{radius, spacing, stroke, text_size};
-use crate::design::widgets::{Emphasis, action_button, muted};
+use crate::design::widgets::{
+    Emphasis, action_button, combo_label, muted, section_title, spin_label,
+};
 use crate::eq_state::{
     EqState, EqTarget, EqView, GAIN_LIMIT_DB, MAX_FREQUENCY_HZ, MAX_Q, MIN_FREQUENCY_HZ, MIN_Q,
     StoredFilter, StoredFilterKind, StoredSlope,
@@ -79,7 +81,7 @@ pub fn show(ui: &mut egui::Ui, palette: &Palette, session: &Session) -> Vec<EqCo
             |trace| trace.name.clone(),
         ),
     };
-    egui::ComboBox::from_id_salt("eq-target")
+    let combo = egui::ComboBox::from_id_salt("eq-target")
         .width(ui.available_width() - spacing::SM)
         .truncate()
         .selected_text(target_name)
@@ -89,10 +91,12 @@ pub fn show(ui: &mut egui::Ui, palette: &Palette, session: &Session) -> Vec<EqCo
                 ui.selectable_value(&mut state.target, EqTarget::Trace(trace.id), &trace.name);
             }
         });
+    combo_label(&combo.response, text::EQ_TARGET_LABEL);
 
     ui.add_space(spacing::MD);
     let filter_count = state.filters().len();
     if filter_count == 0 {
+        section_title(ui, palette, text::EMPTY_EQ_TITLE);
         muted(ui, palette, text::EMPTY_EQ_BODY);
     }
     let mut remove = None;
@@ -199,7 +203,7 @@ fn filter_editor(
                         .font(fonts::value_medium(text_size::LABEL))
                         .color(palette.text_muted),
                 );
-                egui::ComboBox::from_id_salt(("filter-kind", index))
+                let combo = egui::ComboBox::from_id_salt(("filter-kind", index))
                     .width(KIND_COMBO_WIDTH)
                     .truncate()
                     .selected_text(filter.kind.label())
@@ -230,6 +234,10 @@ fn filter_editor(
                             }
                         }
                     });
+                combo_label(
+                    &combo.response,
+                    text::eq_control_label(text::EQ_KIND, index + 1),
+                );
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     remove = ui
                         .add(egui::Button::new(text::TRACE_DELETE_GLYPH).frame(false))
@@ -238,25 +246,30 @@ fn filter_editor(
                 });
             });
             ui.horizontal_wrapped(|ui| {
-                ui.add(
+                let response = ui.add(
                     egui::DragValue::new(&mut filter.frequency_hz)
                         .range(MIN_FREQUENCY_HZ..=MAX_FREQUENCY_HZ)
                         .speed(1.0)
                         .custom_formatter(|value, _| text::format_frequency(value)),
                 );
+                spin_label(
+                    &response,
+                    text::eq_control_label(text::EQ_FREQUENCY, index + 1),
+                );
                 if filter.kind.to_dsp().uses_gain() {
-                    ui.add(
+                    let response = ui.add(
                         egui::DragValue::new(&mut filter.gain_db)
                             .range(-GAIN_LIMIT_DB..=GAIN_LIMIT_DB)
                             .speed(0.1)
                             .custom_formatter(|value, _| text::format_db(value)),
                     );
+                    spin_label(&response, text::eq_control_label(text::EQ_GAIN, index + 1));
                 }
             });
             if let StoredFilterKind::LowCut(slope) | StoredFilterKind::HighCut(slope) =
                 &mut filter.kind
             {
-                egui::ComboBox::from_id_salt(("filter-slope", index))
+                let combo = egui::ComboBox::from_id_salt(("filter-slope", index))
                     .width(SLOPE_COMBO_WIDTH)
                     .truncate()
                     .selected_text(slope.label())
@@ -265,15 +278,20 @@ fn filter_editor(
                             ui.selectable_value(slope, option, option.label());
                         }
                     });
+                combo_label(
+                    &combo.response,
+                    text::eq_control_label(text::EQ_SLOPE, index + 1),
+                );
             }
             ui.horizontal_wrapped(|ui| {
                 if filter.kind.to_dsp().uses_q() {
-                    ui.add(
+                    let response = ui.add(
                         egui::DragValue::new(&mut filter.q)
                             .range(MIN_Q..=MAX_Q)
                             .speed(0.01)
                             .custom_formatter(|value, _| text::format_q(value)),
                     );
+                    spin_label(&response, text::eq_control_label(text::EQ_Q, index + 1));
                 }
                 if let Some(octaves) = filter.bandwidth_octaves() {
                     ui.label(

@@ -714,3 +714,35 @@ fn double_click_on_the_plot_adds_an_eq_filter_in_the_eq_tab() {
     assert_eq!(harness.state().session().eq.filters().len(), 1);
     assert_eq!(harness.state().session().eq.selected_filter, Some(0));
 }
+
+#[test]
+fn every_control_has_an_accessible_label_in_every_tab() {
+    use egui_kittest::kittest::NodeT;
+    use soundtuning::ui::side_panel::SideTab;
+    let mut harness = harness(file_options(Theme::Night, true));
+    capture_two_traces(&mut harness);
+    harness.key_press(Key::E);
+    harness.run_steps(3);
+    for tab in [SideTab::Traces, SideTab::Alignment, SideTab::Eq] {
+        harness.state_mut().set_side_tab(tab);
+        harness.run_steps(3);
+        let mut checked = 0;
+        for role in [
+            Role::Button,
+            Role::CheckBox,
+            Role::SpinButton,
+            Role::ComboBox,
+        ] {
+            for node in harness.query_all_by_role(role) {
+                let label = node.accesskit_node().label().unwrap_or_default();
+                assert!(
+                    !label.trim().is_empty(),
+                    "{tab:?}: unlabeled {role:?} value={:?}",
+                    node.accesskit_node().value()
+                );
+                checked += 1;
+            }
+        }
+        assert!(checked > 20, "{tab:?}: only {checked} controls");
+    }
+}

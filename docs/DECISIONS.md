@@ -236,3 +236,21 @@ Non corrigé, justifié :
 - Tests : critère « EQ » de la spec côté app (cloche +6 dB + EQ −6 dB → plat ±0,1 dB), glisser, molette, double-clic, exports, annulations.
 - Revue `ecc:rust-reviewer` de la phase 6. Corrigé : sélection jamais posée sur un indice hors limites (glisser périmé après changement de banque, suppression ou annulation) et glisser annulé si la poignée disparaît ; chaque nouveau glisser de poignée ouvre une nouvelle étape d'annulation ; double-clic sur une poignée n'ajoute plus de filtre ; clic dans le vide désélectionne ; la poignée garde le décalage de prise (ne saute plus sous le curseur) ; annuler/rétablir conserve la vue d'EQ courante ; trace inversée : repli sur la moyenne globale si la bande 200 Hz–5 kHz est vide.
 - Non corrigé, justifié : 4 à 5 vecteurs de 957 points alloués par image en mode EQ (≈ 40 Ko, mesuré négligeable devant le budget de 1 ms ; la courbe d'EQ elle-même est en cache) ; fs de repli 48 kHz tant qu'aucune mesure n'a donné la sienne (la courbe d'EQ seule reste utile) ; noms d'export déjà uniques (`create_new` + suffixe `-2`, `-3`…), contrairement à ce que suppose la revue.
+
+### D-034 — Finition et performance (phase 7, 2026-10-26)
+- Profil (`audio-performance-debug`, boucle `ecc:benchmark-optimization-loop`) : ligne de base mesurée, aucune variante nécessaire, tous les budgets tenus avec une large marge.
+
+| Mesure | Médiane | Budget | Charge estimée |
+|---|---|---|---|
+| `engine_update` (FFT 32k ×2, accumulateurs, cohérence, lissage) | 0,62 ms | 2 ms | 0,62 ms / 42,7 ms par pas ≈ 1,5 % d'un cœur |
+| `delay_search` (FFT 131072) | 1,78 ms | 15 ms | ≤ 2/s ≈ 0,4 % |
+| `optimal_alignment` | 2,96 ms | 50 ms | au relâchement de la bande / changement de trace |
+| `plot_frame_prep` | 0,053 ms | 1 ms | — |
+| `ui_frame_cpu_frozen/traces` (image complète egui hors GPU, 6 traces) | 0,19 ms | — | 60 i/s ≈ 1,2 % |
+| `ui_frame_cpu_frozen/alignment` | 0,15 ms | — | ≈ 0,9 % |
+| `ui_frame_cpu_frozen/eq` (8 filtres) | 0,25 ms | — | ≈ 1,5 % |
+
+- Total estimé hors rendu GPU ≈ 3,5 % d'un cœur (< 10 % exigés) ; la mesure réelle (Moniteur d'activité) et le démarrage < 1 s restent dans `docs/MANUAL_TESTS.md`. Cadence ≥ 20 instantanés/s couverte par `snapshots_update_more_than_twenty_times_per_second_at_48_khz` et `threaded_engine_publishes_at_least_twenty_snapshots_per_second_in_real_time`.
+- Nouveau bench `crates/app/benches/ui_frame.rs`, groupe `ui_frame_cpu_frozen` (informatif, sans budget dans la spec ; repère : < 4 ms pour garder 60 i/s avec marge) : affichage figé (le chemin de mise à jour des courbes est couvert par `plot_frame_prep`), coût CPU egui complet **y compris** la construction de l'arbre AccessKit, hors GPU.
+- Revue `ecc:rust-reviewer` de la phase 7 : libellés posés par `Response::accessible_name` (plus de second événement AccessKit), glyphes de la bascule « Suivi » en constantes, nom du groupe de bench explicite. Non corrigé : les groupes du bench partagent un même harnais dans un ordre fixe (Traces → Alignement → EQ), assumé.
+- Accessibilité : libellés AccessKit obligatoires sur boutons, cases, champs numériques et listes (utilitaires `spin_label`, `combo_label`), vérifiés par test dans les trois onglets.

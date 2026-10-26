@@ -77,3 +77,13 @@ Critères : hiérarchie visuelle, lisibilité à 1 m, alignements, espacements, 
 - Critiques : carte de filtre sur quatre lignes (Q seul sur une ligne), « Trace inversée » renvoyée à la ligne dans le sélecteur de vue.
 - Corrections : carte en trois lignes (type + × ; fréquence + gain ; Q + largeur en octaves + Bypass à droite) ; bouton de vue « Inversée » (le libellé complet reste celui de la courbe). Vérifié : résultat prédit (rose, épais) plat à −6 dB entre 60 Hz et 10 kHz, courbe d'EQ (accent, fine) distincte, poignées numérotées, filtre sélectionné en accent dans le tracé et dans le panneau.
 - Captures : après `docs/ui-review/phase-6/eq-tour2-apres.png`.
+
+### Phase 7 — tour 1 (2026-10-26, revue complète, deux thèmes)
+- Écrans : premier lancement, mesure Nuit, mesure Plein jour, traces, alignement (Nuit + Plein jour), EQ (Nuit + Plein jour).
+- Critiques : bouton « Suivi » éteint indiscernable d'un texte (aucun cadre, aucun état) ; glyphes − / + en police à chasse fixe, « − » lu comme un tiret court ; état vide de l'EQ sans titre (incohérent avec Traces et Alignement) ; aucun libellé d'accessibilité sur les champs numériques (bande, Δ, fréquence, gain, Q, décalage) ni sur les listes (traces A/B, cible, type, pente, canaux de l'assistant). Points vérifiés sans défaut : contraste Plein jour (texte #0A0C0F sur blanc, somme prédite magenta #A3007D), poignées d'EQ lisibles dans les deux thèmes, notifications hors du panneau.
+- Corrections : bascule « ○ Suivi » / « ● Suivi » encadrée, accent quand active ; − / + en Inter demi-gras 20 pt ; titre « EQ virtuel » dans l'état vide ; libellés AccessKit sur tous les champs et listes (« Fréquence du filtre 2 », « Décalage — Trace 1 — 21:42 »…), test `every_control_has_an_accessible_label_in_every_tab`.
+- Captures avant : `docs/ui-review/phase-7/*-tour1-avant.png`.
+
+### Phase 7 — tour 2 (2026-10-26)
+- Critiques : aucune régression ; barre supérieure équilibrée (délai 30 pt, réglage fin et suivi groupés à sa droite, actions principales à droite) ; écart proposition 1,21 ms / dérive 1,20 ms cohérent (mesure).
+- Captures après : `docs/ui-review/phase-7/*-tour2-apres.png` (8 écrans).
