@@ -746,3 +746,48 @@ fn every_control_has_an_accessible_label_in_every_tab() {
         assert!(checked > 20, "{tab:?}: only {checked} controls");
     }
 }
+
+#[test]
+fn command_comma_opens_audio_settings_and_apply_saves_the_devices() {
+    use soundtuning::ui::audio_panel::AudioCommand;
+    let mut harness = harness(file_options(Theme::Night, false));
+    harness.step();
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Comma);
+    harness.run_steps(2);
+    assert!(harness.state().is_audio_settings_open());
+    harness.get_by_role_and_label(Role::ComboBox, soundtuning::text::AUDIO_INPUT_DEVICE);
+    harness.get_by_role_and_label(Role::ComboBox, soundtuning::text::AUDIO_OUTPUT_DEVICE);
+    harness.get_by_role_and_label(Role::ComboBox, soundtuning::text::AUDIO_SAMPLE_RATE);
+
+    let draft = {
+        let panel = harness.state_mut().audio_settings_mut().unwrap();
+        panel.select_input("coreaudio:UAX22");
+        panel.draft.measurement_channel_index = 0;
+        panel.draft.generator.output_channel_indices = vec![1];
+        panel.draft.clone()
+    };
+    harness.run_steps(2);
+    harness.get_by_label(soundtuning::text::AUDIO_APPLY).click();
+    harness.run_steps(2);
+    let stream = &harness.state().config().stream;
+    assert_eq!(stream.input_device_id.as_deref(), Some("coreaudio:UAX22"));
+    assert_eq!(stream.output_device_id.as_deref(), Some("coreaudio:UAX22"));
+    assert_eq!(stream.generator.output_channel_indices, vec![1]);
+    assert_eq!(*stream, draft);
+    assert!(
+        harness
+            .state()
+            .notification_texts()
+            .iter()
+            .any(|text| text == soundtuning::text::NOTIFY_AUDIO_APPLIED)
+    );
+
+    harness.state_mut().apply_test_audio(AudioCommand::Close);
+    harness.run_steps(2);
+    assert!(!harness.state().is_audio_settings_open());
+    harness
+        .get_by_label(soundtuning::text::BUTTON_AUDIO_SETTINGS)
+        .click();
+    harness.run_steps(2);
+    assert!(harness.state().is_audio_settings_open());
+}

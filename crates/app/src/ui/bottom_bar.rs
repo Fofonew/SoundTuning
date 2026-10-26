@@ -262,6 +262,18 @@ pub fn show(
             if action_button(
                 ui,
                 palette,
+                text::BUTTON_AUDIO_SETTINGS,
+                Action::OpenAudioSettings.shortcut_text(is_mac).as_deref(),
+                Emphasis::Quiet,
+                true,
+            )
+            .clicked()
+            {
+                actions.push(Action::OpenAudioSettings);
+            }
+            if action_button(
+                ui,
+                palette,
                 text::BUTTON_PALETTE,
                 Action::OpenPalette.shortcut_text(is_mac).as_deref(),
                 Emphasis::Quiet,

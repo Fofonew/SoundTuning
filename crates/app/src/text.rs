@@ -56,6 +56,26 @@ pub const BUTTON_UNFREEZE: &str = "Libérer";
 pub const BUTTON_FIND_DELAY: &str = "Trouver";
 pub const BUTTON_APPLY_DELAY: &str = "Appliquer";
 pub const BUTTON_PALETTE: &str = "Commandes";
+pub const BUTTON_AUDIO_SETTINGS: &str = "Audio";
+pub const ACTION_OPEN_AUDIO_SETTINGS: &str = "Réglages audio (entrée, sortie, canaux)";
+pub const AUDIO_SETTINGS_TITLE: &str = "Réglages audio";
+pub const AUDIO_SETTINGS_CLOSE: &str = "Fermer les réglages audio";
+pub const AUDIO_INPUT_DEVICE: &str = "Entrée (micro et référence)";
+pub const AUDIO_OUTPUT_DEVICE: &str = "Sortie (bruit rose)";
+pub const AUDIO_SAMPLE_RATE: &str = "Fréquence d'échantillonnage";
+pub const AUDIO_BUFFER: &str = "Taille de tampon";
+pub const AUDIO_BUFFER_AUTO: &str = "Automatique";
+pub const AUDIO_REFERENCE_MODE: &str = "Référence";
+pub const AUDIO_REFERENCE_INTERNAL: &str = "Interne";
+pub const AUDIO_REFERENCE_LOOPBACK: &str = "Rebouclée";
+pub const AUDIO_NONE: &str = "Aucune";
+pub const AUDIO_NO_OUTPUT: &str = "Choisissez une sortie pour envoyer le bruit rose.";
+pub const AUDIO_APPLY: &str = "Appliquer les réglages";
+pub const AUDIO_APPLY_HINT: &str =
+    "Appliquer enregistre les réglages et relance la mesure si elle tourne.";
+pub const AUDIO_FILE_MODE_NOTE: &str =
+    "Mode fichier : ces réglages serviront au prochain lancement sur la carte son.";
+pub const NOTIFY_AUDIO_APPLIED: &str = "Réglages audio appliqués";
 pub const BUTTON_RETRY: &str = "Réessayer";
 pub const BUTTON_RESUME: &str = "Reprendre";
 pub const BUTTON_CALIBRATE: &str = "Calibrer";
@@ -256,7 +276,7 @@ pub fn alignment_instruction(delay_ms: f64, inverted: bool) -> String {
     }
 }
 
-pub const EQ_GLOBAL_BYPASS: &str = "Bypass global";
+pub const EQ_GLOBAL_BYPASS: &str = "Global bypass";
 pub const EQ_VIEW_PREDICTED: &str = "Prédit";
 pub const EQ_VIEW_ONLY: &str = "EQ seul";
 pub const EQ_VIEW_INVERTED: &str = "Trace inversée";
@@ -279,11 +299,11 @@ pub fn filter_number(number: usize) -> String {
     format!("F{number}")
 }
 
-pub const FILTER_BELL: &str = "Cloche";
-pub const FILTER_LOW_SHELF: &str = "Plateau grave";
-pub const FILTER_HIGH_SHELF: &str = "Plateau aigu";
-pub const FILTER_LOW_CUT: &str = "Coupe-bas";
-pub const FILTER_HIGH_CUT: &str = "Coupe-haut";
+pub const FILTER_BELL: &str = "PEQ";
+pub const FILTER_LOW_SHELF: &str = "Low shelf";
+pub const FILTER_HIGH_SHELF: &str = "High shelf";
+pub const FILTER_LOW_CUT: &str = "Low cut";
+pub const FILTER_HIGH_CUT: &str = "High cut";
 pub const FILTER_NOTCH: &str = "Notch";
 pub const SLOPE_BW12: &str = "Butterworth 12 dB/oct";
 pub const SLOPE_BW24: &str = "Butterworth 24 dB/oct";
@@ -300,6 +320,20 @@ pub fn average_trace_name(number: u64, clock: &str, member_count: usize) -> Stri
 
 pub fn eq_control_label(control: &str, filter_number: usize) -> String {
     format!("{control} du filtre {filter_number}")
+}
+
+pub fn format_sample_rate(sample_rate_hz: u32) -> String {
+    format!(
+        "{} kHz",
+        format_decimal(f64::from(sample_rate_hz) / 1000.0, 1)
+    )
+}
+
+pub fn format_buffer(frames: Option<u32>) -> String {
+    frames.map_or_else(
+        || AUDIO_BUFFER_AUTO.to_owned(),
+        |frames| format!("{frames} éch."),
+    )
 }
 
 pub fn tracking_label(active: bool) -> String {

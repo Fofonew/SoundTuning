@@ -20,6 +20,7 @@ use crate::session::{
 };
 use crate::text;
 use crate::ui::alignment_panel::{self, AlignmentCommand};
+use crate::ui::audio_panel::{self, AudioCommand, AudioSettingsPanel};
 use crate::ui::banners::{BannerInputs, collect_banners, show_banners};
 use crate::ui::bottom_bar::{self, BottomBarModel};
 use crate::ui::eq_panel::{self, EqCommand};
@@ -137,6 +138,7 @@ pub struct SoundTuningApp {
     alignment_sum: Option<CachedSum>,
     eq_curve: Option<CachedEqCurve>,
     last_plot_rect: Option<egui::Rect>,
+    audio_settings: Option<AudioSettingsPanel>,
     export_directory: std::path::PathBuf,
 }
 
@@ -179,6 +181,7 @@ impl SoundTuningApp {
             alignment_sum: None,
             eq_curve: None,
             last_plot_rect: None,
+            audio_settings: None,
             export_directory: options.export_directory.clone(),
         };
         app.apply_theme(context);
@@ -236,6 +239,40 @@ impl SoundTuningApp {
 
     pub fn set_side_tab(&mut self, tab: SideTab) {
         self.side_tab = tab;
+    }
+
+    pub fn is_audio_settings_open(&self) -> bool {
+        self.audio_settings.is_some()
+    }
+
+    pub fn audio_settings_mut(&mut self) -> Option<&mut AudioSettingsPanel> {
+        self.audio_settings.as_mut()
+    }
+
+    pub fn apply_test_audio(&mut self, command: AudioCommand) {
+        self.apply_audio_command(command);
+    }
+
+    fn apply_audio_command(&mut self, command: AudioCommand) {
+        match command {
+            AudioCommand::Apply(stream) => {
+                self.config.stream = stream;
+                self.mark_config_dirty();
+                if self.measurement.is_running() {
+                    self.stop_measurement();
+                    self.start_measurement();
+                }
+                self.notifications
+                    .push(text::NOTIFY_AUDIO_APPLIED, Tone::Success, None);
+            }
+            AudioCommand::RefreshDevices => {
+                let devices = self.device_catalog.devices();
+                if let Some(panel) = self.audio_settings.as_mut() {
+                    panel.replace_devices(devices);
+                }
+            }
+            AudioCommand::Close => self.audio_settings = None,
+        }
     }
 
     pub fn last_plot_rect(&self) -> Option<egui::Rect> {
@@ -787,9 +824,22 @@ impl SoundTuningApp {
             }
             Action::ExportSession => self.export_csv(),
             Action::AddEqFilter => {
+                self.audio_settings = None;
                 self.config.side_panel_open = true;
                 self.side_tab = SideTab::Eq;
                 self.add_eq_filter(eq_panel::default_new_filter());
+            }
+            Action::OpenAudioSettings => {
+                if self.audio_settings.is_some() && self.config.side_panel_open {
+                    self.audio_settings = None;
+                } else {
+                    self.config.side_panel_open = true;
+                    self.audio_settings = Some(AudioSettingsPanel::new(
+                        self.device_catalog.devices(),
+                        &self.config.stream,
+                    ));
+                }
+                self.mark_config_dirty();
             }
             Action::ToggleDelayTracking => {
                 self.config.delay_tracking = !self.config.delay_tracking;
@@ -1170,6 +1220,8 @@ impl SoundTuningApp {
         let mut trace_commands = Vec::new();
         let mut alignment_commands = Vec::new();
         let mut eq_commands = Vec::new();
+        let mut audio_commands = Vec::new();
+        let file_mode = self.measurement.is_file_mode();
         if self.config.side_panel_open {
             Panel::right("side-panel")
                 .exact_size(size::SIDE_PANEL_WIDTH)
@@ -1180,6 +1232,11 @@ impl SoundTuningApp {
                         .stroke(Stroke::new(stroke::BORDER, palette.border)),
                 )
                 .show(ui, |ui| {
+                    if let Some(panel) = self.audio_settings.as_mut() {
+                        audio_commands =
+                            audio_panel::show(ui, palette, panel, &self.config.stream, file_mode);
+                        return;
+                    }
                     side_panel::tab_bar(ui, palette, &mut self.side_tab);
                     match self.side_tab {
                         SideTab::Traces if !self.session.traces.is_empty() => {
@@ -1211,7 +1268,11 @@ impl SoundTuningApp {
         for command in eq_commands {
             self.apply_eq_command(command);
         }
-        let eq_mode = self.config.side_panel_open && self.side_tab == SideTab::Eq;
+        for command in audio_commands {
+            self.apply_audio_command(command);
+        }
+        let tabs_visible = self.config.side_panel_open && self.audio_settings.is_none();
+        let eq_mode = tabs_visible && self.side_tab == SideTab::Eq;
         let eq_curves = if eq_mode {
             self.eq_overlays(palette)
         } else {
@@ -1222,7 +1283,7 @@ impl SoundTuningApp {
         } else {
             Vec::new()
         };
-        let alignment_mode = self.config.side_panel_open
+        let alignment_mode = tabs_visible
             && self.side_tab == SideTab::Alignment
             && self.session.alignment.is_ready();
         if alignment_mode {

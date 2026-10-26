@@ -522,7 +522,7 @@ fn option_card(
     response
 }
 
-fn channel_combo(
+pub(crate) fn channel_combo(
     ui: &mut egui::Ui,
     (id, label): (&str, &str),
     channel_index: &mut usize,
@@ -541,7 +541,11 @@ fn channel_combo(
     before != *channel_index
 }
 
-fn output_selector(ui: &mut egui::Ui, outputs: &mut Vec<usize>, output_count: usize) -> bool {
+pub(crate) fn output_selector(
+    ui: &mut egui::Ui,
+    outputs: &mut Vec<usize>,
+    output_count: usize,
+) -> bool {
     let before = outputs.clone();
     ui.horizontal(|ui| {
         let options: [(&str, Vec<usize>); 3] = [

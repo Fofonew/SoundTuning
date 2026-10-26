@@ -169,3 +169,21 @@ fn eq_screenshot(theme: Theme, name: &str) {
     harness.step();
     assert!(save_screenshot(&mut harness, name).exists());
 }
+
+#[test]
+fn screenshot_audio_settings() {
+    let mut harness = rendering_harness(file_options(Theme::Night, true));
+    wait_for_stable_measurement(&mut harness);
+    harness.key_press(Key::F);
+    harness.step();
+    harness.key_press_modifiers(eframe::egui::Modifiers::COMMAND, Key::Comma);
+    harness.step();
+    harness
+        .state_mut()
+        .audio_settings_mut()
+        .unwrap()
+        .select_input("coreaudio:UAX22");
+    harness.step();
+    harness.step();
+    assert!(save_screenshot(&mut harness, "audio_settings").exists());
+}

@@ -27,10 +27,11 @@ pub enum Action {
     ToggleDelayTracking,
     NudgeDelayDown,
     NudgeDelayUp,
+    OpenAudioSettings,
 }
 
 impl Action {
-    pub const ALL: [Self; 23] = [
+    pub const ALL: [Self; 24] = [
         Self::ToggleMeasurement,
         Self::FindDelay,
         Self::ApplyDelay,
@@ -54,9 +55,10 @@ impl Action {
         Self::ToggleDelayTracking,
         Self::NudgeDelayDown,
         Self::NudgeDelayUp,
+        Self::OpenAudioSettings,
     ];
 
-    const SHORTCUT_PRIORITY: [Self; 19] = [
+    const SHORTCUT_PRIORITY: [Self; 20] = [
         Self::Redo,
         Self::Undo,
         Self::OpenPalette,
@@ -76,6 +78,7 @@ impl Action {
         Self::ToggleDelayTracking,
         Self::NudgeDelayDown,
         Self::NudgeDelayUp,
+        Self::OpenAudioSettings,
     ];
 
     pub fn label(self) -> &'static str {
@@ -103,6 +106,7 @@ impl Action {
             Self::ToggleDelayTracking => text::ACTION_TOGGLE_DELAY_TRACKING,
             Self::NudgeDelayDown => text::ACTION_NUDGE_DELAY_DOWN,
             Self::NudgeDelayUp => text::ACTION_NUDGE_DELAY_UP,
+            Self::OpenAudioSettings => text::ACTION_OPEN_AUDIO_SETTINGS,
         }
     }
 
@@ -126,6 +130,7 @@ impl Action {
             Self::NudgeDelayDown => Some(KeyboardShortcut::new(Modifiers::SHIFT, Key::ArrowLeft)),
             Self::NudgeDelayUp => Some(KeyboardShortcut::new(Modifiers::SHIFT, Key::ArrowRight)),
             Self::OpenPalette => Some(KeyboardShortcut::new(Modifiers::COMMAND, Key::K)),
+            Self::OpenAudioSettings => Some(KeyboardShortcut::new(Modifiers::COMMAND, Key::Comma)),
             Self::Undo => Some(KeyboardShortcut::new(Modifiers::COMMAND, Key::Z)),
             Self::Redo => Some(KeyboardShortcut::new(
                 Modifiers::COMMAND | Modifiers::SHIFT,

@@ -1,4 +1,5 @@
 pub mod alignment_panel;
+pub mod audio_panel;
 pub mod banners;
 pub mod bottom_bar;
 pub mod eq_panel;
