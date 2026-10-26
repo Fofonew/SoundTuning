@@ -81,6 +81,6 @@ Questions à l'utilisateur uniquement si : critère impossible, décision irrév
 
 ## État
 
-- Phase en cours : 1 (`dsp-core`).
-- Phases terminées : setup, 0 (workspace, CI GitHub Actions, `audio-io` : périphériques, flux entrée + générateur, référence interne alignée par index de trame, vu-mètres, mode fichier, WAV ; app : CLI `devices` / `record`, fenêtre egui minimale).
-- Prochaine étape : phase 1 (fenêtres, FFT, accumulateurs, H1, γ², grille, délai, lissage, biquads, sommation, délai optimal, moyenne de traces + critères « Mesure »).
+- Phase en cours : 2 (`engine`).
+- Phases terminées : setup ; 0 (workspace, CI, `audio-io`, CLI, fenêtre minimale) ; 1 (`dsp-core` : Hann, FFT, accumulateurs, H1, γ², grille 1/96 oct., lissage compensé, délai FFT 131072, biquads RBJ, sommation, délai optimal, moyenne de traces ; tous les critères « Mesure » testés sauf « référence interne », testé en phase 2).
+- Prochaine étape : phase 2 (threads, fenêtre glissante, alignement, compensation, délai à basse cadence, instantanés `triple_buffer`, mode fichier, benchs).

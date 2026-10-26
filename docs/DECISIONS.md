@@ -78,3 +78,50 @@ Non corrigé, justifié :
 - **Reprise après déconnexion / changement de réglages** : on reconstruit un `LiveSession` complet (nouvelle horloge, nouveaux anneaux). Plus simple et sans état résiduel ; la reprise « en un clic » de la phase 5 utilisera ce chemin.
 - **Base de temps `StreamInstant` entre deux périphériques distincts** : non vérifiable sans matériel. Le mode est déjà marqué « moins fiable » dans ce cas ; test ajouté dans `docs/MANUAL_TESTS.md`.
 - **RMS du dernier bloc** pour les vu-mètres : suffisant pour l'affichage (la crête est maintenue jusqu'à lecture) ; la balistique est faite côté UI.
+
+### D-015 — Représentation des points invalides (phase 1)
+- Par case FFT : `BinTransfer { response: Option<Complex64>, coherence: Option<f64> }`. Sur la grille : `Vec<Option<f64>>` / `Vec<Option<Complex64>>`. Jamais de NaN ni d'Inf : une valeur absente est `None`.
+- Seuil de validité **relatif** : Gxx ≤ max(Gxx)·10⁻¹² (−120 dB) ou ≤ 10⁻³⁰ → case invalide. Indépendant du niveau d'entrée.
+
+### D-016 — Projection sur la grille et lissage (phase 1)
+- |H|² (ou γ², ou Gxy et Gxx pour le complexe) est interpolé linéairement entre cases FFT ; pour chaque point de la grille, on prend la **moyenne de l'interpolant** sur la bande [f·2^(−1/2b), f·2^(1/2b)] (intégrale exacte par sommes préfixées en trapèzes). Sans lissage : simple interpolation à f.
+- Les cases invalides ont un poids nul ; un point de grille dont moins de 50 % de la bande est valide est invalide.
+- Une réponse plate reste exactement plate (testé pour tous les lissages).
+- Réponse complexe sur la grille (pour l'alignement et l'EQ) : rapport des moyennes de bande de Gxy et Gxx (lissage complexe), à appliquer après compensation du délai.
+
+### D-017 — Moyennage exponentiel : première mise à jour (phase 1)
+- La première mise à jour après un reset prend directement la valeur mesurée (poids 1), puis α = 1 − exp(−H/(τ·fs)). Évite une montée lente depuis zéro qui fausserait la cohérence au démarrage ; le τ mesuré sur un échelon reste exact (testé à 5 % pour H = 2048 et 4096).
+- Accumulateurs remis à zéro sous 10⁻²⁸⁰ (pas de dénormalisés après un long silence).
+
+### D-018 — Délai : détails (phase 1)
+- Corrélation circulaire IFFT(X*·Y) sans fenêtre sur 131072 points ; pic de |r| ; interpolation parabolique sur |r| bornée à ±0,5 éch. ; index > N/2 = délai négatif. Polarité inversée signalée (`inverted_polarity`) quand le pic est négatif.
+- Confiance = 20·log10(pic / RMS de |r| hors ±1 % de N autour du pic), plafonnée à 200 dB.
+- `estimate_from_cross_spectrum` permet au moteur de moyenner Gxy dans le temps avant l'IFFT (définition « pic de |IFFT(Gxy)| »).
+
+### D-019 — Délai optimal : critère « réponse la plus plate » (phase 1)
+- Sans garde-fou, une annulation totale (polarité inversée, Δ = −décalage) donne une somme plate au plancher de −300 dB et gagnerait. Le critère « plus plate » ne retient donc que les combinaisons dont le niveau sommé moyen est au moins celui de la plus forte des deux traces seules ; les autres sont classées après, par niveau. Ce n'est pas un assouplissement du critère d'acceptation (testé : Δ = −1,5 ms ± 0,02, polarité normale, pour les deux critères).
+- Recherche : pas grossier 0,1 ms sur ±50 ms pour p = ±1, puis affinage au pas de 0,01 ms autour du meilleur de chaque polarité. Δ calculé en pas entiers (pas d'accumulation d'erreur).
+- Sommation : niveau plancher 10⁻³⁰ (−300 dB) au lieu d'invalider, pour afficher les creux profonds.
+
+### D-020 — Filtres d'EQ (phase 1)
+- Q utilisé pour cloche, plateaux (pente du plateau) et notch ; coupe-bas/haut à Q fixés : Butterworth 12 (Q 0,7071), Butterworth 24 (0,5412 et 1,3066), Linkwitz-Riley 24 (2 × 0,7071), Linkwitz-Riley 48 (2 × BW24). Fréquence bornée à [1 Hz ; 0,999·Nyquist], Q à [0,05 ; 100], entrées non finies neutralisées.
+- Largeur de bande en octaves : BW = 2/ln2 · asinh(1/(2Q)).
+
+### D-021 — Profil d'optimisation des tests (phase 1)
+- `[profile.test] opt-level = 2` et dépendances optimisées en dev : les tests d'acceptation traitent jusqu'à 60 s de signal synthétique (cohérence) en moins d'une seconde.
+
+### D-022 — Suites de la revue `ecc:rust-reviewer` de la phase 1
+Corrigé :
+- Échantillons spectraux non finis ignorés case par case dans l'accumulateur (un glitch ne bloque plus la mesure jusqu'au reset).
+- Sommes préfixées **compensées** (Neumaier, partie haute + basse) pour le lissage : plus de faux trous ni de valeurs négatives sur des réponses à très forte dynamique (testé : 10⁴ puis 10⁻¹² → erreur < 0,1 %).
+- Changer τ ne remet plus la mesure à zéro (seul le passage exponentiel ↔ cumul infini le fait) ; pas H ≥ 1 ; `set_hop_samples`.
+- Recherche de délai optimal : plage bornée à ±1 s, bornes de bande ordonnées, extrémités ±50 ms évaluées (testé).
+- Points de grille au-dessus de Nyquist invalides (fs < 40 kHz).
+- EQ : cascades de sections en tableau fixe (`SectionCascade`), z⁻¹ calculé une fois par fréquence, aucune allocation dans `eq_response`.
+- `rotate_phase_for_delay` vérifie les longueurs ; `DisplayGrid::new` et `GridProjector::new` bornent les paramètres invalides.
+- Tests ajoutés : bornes de bande du lissage pour chaque fraction, dynamique extrême, Nyquist, délai sous-échantillon (±0,1 éch.), phase plate après compensation, comportement temporel de chaque type de filtre.
+Non corrigé, justifié :
+- Le délai s'estime sur 131072 échantillons bruts (x, y) et non sur le Gxy de l'analyse principale : c'est la FFT longue dédiée de la spec ; le moteur conserve 2,7 s d'historique.
+- Cohérence triviale (= 1) après une seule moyenne : le moteur expose le nombre de moyennes et l'état « préchauffage » ; l'UI masque la cohérence tant que la fenêtre n'est pas pleine.
+- Critère « niveau maximal » en moyenne de dB (et non de puissance) : favorise une sommation régulière sur toute la bande plutôt qu'un pic.
+- Pas de documentation `///` : règle du projet « pas de commentaires d'explication », noms explicites.
