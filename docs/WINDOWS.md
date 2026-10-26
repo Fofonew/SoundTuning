@@ -62,11 +62,19 @@ La feature `asio` du crate `app` active `audio-io/asio`, qui active `cpal/asio`.
 
 ## Packaging
 
-Voir `docs/DECISIONS.md` (outil de packaging) et `Cargo.toml` du crate `app` (`[package.metadata.packager]`).
+Outil : `cargo-packager` 0.11.8 (choix et justification : `docs/DECISIONS.md`, D-030 et D-035), configuré dans `crates/app/Cargo.toml` (`[package.metadata.packager]`). La CI GitHub Actions (job `package`) produit l'installeur à chaque push et le publie en artefact `soundtuning-windows-latest`.
+
+Sur le PC de test, depuis la racine du dépôt :
 
 ```powershell
 cargo install cargo-packager --locked
+cd crates\app
 cargo packager --release --formats nsis
 ```
+
+L'installeur est écrit dans `target\packages\soundtuning_0.1.0_x64-setup.exe`.
+
+- [ ] L'installeur s'exécute, installe SoundTuning dans le menu Démarrer et le désinstalle proprement.
+- [ ] L'application installée démarre, retrouve sa configuration dans `%APPDATA%\SoundTuning\`.
 
 Le binaire et l'installeur ne sont pas signés : Windows SmartScreen affichera un avertissement à la première exécution (« Informations complémentaires » → « Exécuter quand même »).

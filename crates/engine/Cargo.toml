@@ -22,3 +22,6 @@ rtrb = "0.4.1"
 [[bench]]
 name = "realtime_budgets"
 harness = false
+
+[lib]
+bench = false

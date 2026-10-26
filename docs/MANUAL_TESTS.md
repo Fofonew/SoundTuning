@@ -44,6 +44,11 @@ Cocher, dater et noter les observations. Matériel de référence : UAX 2-2, mic
 - [ ] Recopier les filtres exportés (texte) dans un processeur réel : la mesure après correction suit le « Résultat prédit » (±1 dB hors zones de faible cohérence).
 - [ ] Banques A/B, bypass global et par filtre : bascule instantanée de la courbe prédite.
 
+## Packaging
+
+- [ ] Télécharger l'artefact CI `soundtuning-macos-latest` (`SoundTuning-macos.zip`), décompresser : l'application n'est pas signée, macOS la met en quarantaine (« endommagée ») ; l'ouvrir par clic droit → Ouvrir, ou `xattr -cr SoundTuning.app`. Au premier démarrage de la mesure, macOS demande l'accès au micro avec le texte de `NSMicrophoneUsageDescription`.
+- [ ] Windows : installeur `soundtuning_0.1.0_x64-setup.exe` (artefact `soundtuning-windows-latest`), voir `docs/WINDOWS.md`.
+
 ## Performance
 
 - [ ] Démarrage jusqu'à la première image utilisable < 1 s (release, Apple Silicon).

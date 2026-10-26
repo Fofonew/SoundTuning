@@ -89,9 +89,9 @@ Règles complètes (enchaînement des phases, fin de phase `ecc:rust-reviewer` �
 
 ## État
 
-- **Phase en cours : 8 (préparation Windows, CI, packaging, rapport final).**
-- Phases terminées : setup ; 0 ; 1 (`dsp-core`) ; 2 (`engine`) ; 3 (interface) ; 4 (traces et sessions ; D-028, D-031) ; 5 (délais et alignement ; D-032) ; 6 (EQ virtuel ; D-033) ; 7 (finition : revue des 8 écrans dans les deux thèmes, accessibilité testée, bench `ui_frame`, profil ≈ 3,5 % d'un cœur hors GPU ; D-034).
-- Dernier `verify` complet (fin de phase 7) : au vert, 253 tests ; benchs `engine_update` 0,62 ms, `delay_search` 1,76 ms, `plot_frame_prep` 0,053 ms, `optimal_alignment` 2,95 ms ; `ui_frame_cpu_frozen` 0,15–0,26 ms. Aucun échec en cours.
+- **Construction terminée : phases 0 à 8 toutes terminées** (setup ; 0 ; 1 `dsp-core` ; 2 `engine` ; 3 interface ; 4 traces et sessions ; 5 délais et alignement ; 6 EQ virtuel ; 7 finition UX et performance ; 8 préparation Windows, CI, packaging). Rapport final : `docs/RAPPORT_FINAL.md`.
+- Dernier `verify` complet (fin de phase 8, état final) : au vert, 254 tests ; benchs `engine_update` 0,62 ms, `delay_search` 1,78 ms, `plot_frame_prep` 0,053 ms, `optimal_alignment` 2,95 ms ; `ui_frame_cpu_frozen` 0,15–0,26 ms. Aucun échec en cours.
+- Décisions D-001 à D-035 dans `docs/DECISIONS.md` ; revues visuelles des phases 3 à 7 dans `docs/UI_REVIEW.md`.
 - Attention : la sortie de `cargo test` filtrée par rtk n'affiche que la dernière suite ; pour un total fiable : `rtk proxy cargo test --workspace`.
-- `cargo-packager` installé localement dans `target/tools/bin` (rien hors du dépôt).
-- **Prochaine action** : phase 8 — `[package.metadata.packager]` (.app avec `NSMicrophoneUsageDescription`, NSIS), vérification locale du .app, CI macOS + Windows complète (fmt, clippy, tests, benches compilés, packaging en artefacts), `docs/WINDOWS.md`, D-035, `verify`, commit « phase 8 », rapport final.
+- `cargo-packager` 0.11.8 installé localement dans `target/tools/bin` ; `.app` : `cd crates/app && ../../target/tools/bin/cargo-packager --release --formats app`.
+- Reste à faire par l'utilisateur : tests matériels et visuels de `docs/MANUAL_TESTS.md`, procédure Windows de `docs/WINDOWS.md`, premier push pour lancer la CI (aucun remote configuré).

@@ -7,10 +7,12 @@ publish.workspace = true
 [[bin]]
 name = "soundtuning"
 path = "src/main.rs"
+bench = false
 
 [lib]
 name = "soundtuning"
 path = "src/lib.rs"
+bench = false
 
 [features]
 asio = ["audio-io/asio"]
@@ -42,3 +44,17 @@ harness = false
 [[bench]]
 name = "ui_frame"
 harness = false
+
+[package.metadata.packager]
+product-name = "SoundTuning"
+identifier = "app.soundtuning.desktop"
+description = "Mesure acoustique double FFT pour le calage de systèmes de sonorisation"
+authors = ["Dimitri"]
+before-packaging-command = "cargo build --release -p app"
+out-dir = "../../target/packages"
+binaries-dir = "../../target/release"
+binaries = [{ path = "soundtuning", main = true }]
+
+[package.metadata.packager.macos]
+info-plist-path = "packaging/macos/Info.plist"
+minimum-system-version = "11.0"

@@ -17,3 +17,6 @@ tracing = "0.1.44"
 
 [lints]
 workspace = true
+
+[lib]
+bench = false
