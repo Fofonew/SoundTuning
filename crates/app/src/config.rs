@@ -8,6 +8,7 @@ use engine::{AnalysisSettings, DelayPolicy, EngineConfig};
 use serde::{Deserialize, Serialize};
 
 use crate::design::Theme;
+use crate::plot::PlotLayout;
 
 const CONFIG_FILE_NAME: &str = "config.json";
 const APP_DIRECTORY_NAME: &str = "SoundTuning";
@@ -80,6 +81,7 @@ pub struct AppConfig {
     pub system_latency_ms: BTreeMap<String, f64>,
     pub air_temperature_celsius: f64,
     pub side_panel_open: bool,
+    pub plot_layout: PlotLayout,
 }
 
 impl Default for AppConfig {
@@ -96,6 +98,7 @@ impl Default for AppConfig {
             system_latency_ms: BTreeMap::new(),
             air_temperature_celsius: DEFAULT_AIR_TEMPERATURE_CELSIUS,
             side_panel_open: true,
+            plot_layout: PlotLayout::default(),
         }
     }
 }

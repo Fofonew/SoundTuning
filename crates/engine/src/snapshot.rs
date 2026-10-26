@@ -1,6 +1,8 @@
-use dsp_core::Complex64;
+use dsp_core::{CapturedSpectrum, Complex64};
 
 use crate::settings::AnalysisSettings;
+
+const MILLISECONDS_PER_SECOND: f64 = 1000.0;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct DelayMeasurement {
@@ -48,6 +50,9 @@ pub struct MeasurementSnapshot {
     pub magnitude_db: Vec<Option<f64>>,
     pub coherence: Vec<Option<f64>>,
     pub response: Vec<Option<Complex64>>,
+    pub spectrum: CapturedSpectrum,
+    pub impulse: Vec<f32>,
+    pub impulse_zero_index: usize,
     pub delay: DelayStatus,
 }
 
@@ -64,8 +69,16 @@ impl MeasurementSnapshot {
             magnitude_db: vec![None; grid_len],
             coherence: vec![None; grid_len],
             response: vec![None; grid_len],
+            spectrum: CapturedSpectrum::default(),
+            impulse: Vec::new(),
+            impulse_zero_index: 0,
             delay: DelayStatus::default(),
         }
+    }
+
+    pub fn impulse_time_ms(&self, index: usize) -> f64 {
+        (index as f64 - self.impulse_zero_index as f64) * MILLISECONDS_PER_SECOND
+            / f64::from(self.sample_rate_hz)
     }
 
     pub fn is_coherent(&self, index: usize) -> bool {

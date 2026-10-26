@@ -576,3 +576,69 @@ fn threaded_engine_publishes_at_least_twenty_snapshots_per_second_in_real_time()
     let per_second = (last_sequence - first_sequence) as f64 / measured_window.as_secs_f64();
     assert!(per_second >= 20.0, "{per_second} snapshots/s");
 }
+
+#[test]
+fn impulse_response_peaks_at_the_compensated_arrival_with_the_system_gain() {
+    let delay_samples = 1500.0;
+    let gain = 0.5;
+    let length = 48_000 * 8;
+    let mut noise = NoiseSource::new(47);
+    let reference = noise.pink_signal(length);
+    let measurement: Vec<f64> = circular_fractional_delay(&reference, delay_samples)
+        .iter()
+        .map(|sample| sample * gain)
+        .collect();
+    let frames = stereo_frames(&reference, &measurement);
+    let (mut core, mut estimator) = new_core();
+    let (snapshot, _) = feed_frames(&mut core, &mut estimator, &frames);
+
+    assert_eq!(snapshot.impulse.len(), snapshot.settings.fft_length);
+    let (peak_index, peak_value) = snapshot
+        .impulse
+        .iter()
+        .copied()
+        .enumerate()
+        .max_by(|left, right| left.1.abs().total_cmp(&right.1.abs()))
+        .unwrap();
+    let peak_ms = snapshot.impulse_time_ms(peak_index);
+    assert!(peak_ms.abs() < 0.05, "peak at {peak_ms} ms");
+    assert!(
+        (f64::from(peak_value) - gain).abs() < 0.02,
+        "peak value {peak_value}"
+    );
+    assert!(snapshot.impulse.iter().all(|sample| sample.is_finite()));
+}
+
+#[test]
+fn captured_spectrum_reproduces_the_live_curve_at_the_live_smoothing() {
+    let length = 48_000 * 6;
+    let mut noise = NoiseSource::new(53);
+    let reference = noise.pink_signal(length);
+    let measurement = circular_fractional_delay(&reference, 240.0);
+    let frames = stereo_frames(&reference, &measurement);
+    let (mut core, mut estimator) = new_core();
+    let (snapshot, _) = feed_frames(&mut core, &mut estimator, &frames);
+
+    assert!(snapshot.spectrum.is_consistent());
+    let reprojected = snapshot
+        .spectrum
+        .project(snapshot.settings.smoothing)
+        .unwrap();
+    for (index, live_db) in snapshot.magnitude_db.iter().enumerate() {
+        let stored_db = reprojected.power[index].and_then(dsp_core::power_to_db);
+        match (live_db, stored_db) {
+            (Some(live), Some(stored)) => {
+                assert!(
+                    (live - stored).abs() < 1.0e-9,
+                    "{index}: {live} vs {stored}"
+                );
+            }
+            (None, None) => {}
+            other => panic!("{index}: {other:?}"),
+        }
+        assert_eq!(
+            snapshot.coherence[index].is_some(),
+            reprojected.coherence[index].is_some()
+        );
+    }
+}

@@ -207,3 +207,57 @@ fn screenshot_auto_eq() {
     harness.step();
     assert!(save_screenshot(&mut harness, "auto_eq").exists());
 }
+
+fn captured_traces_harness(
+    theme: Theme,
+) -> egui_kittest::Harness<'static, soundtuning::app::SoundTuningApp> {
+    let mut harness = rendering_harness(file_options(theme, true));
+    wait_for_stable_measurement(&mut harness);
+    harness.key_press(Key::S);
+    harness.step();
+    let id = harness.state().session().traces[0].id;
+    harness.state_mut().apply_test_offset(id, -3.0);
+    harness
+}
+
+#[test]
+fn screenshot_phase_stacked() {
+    let mut harness = captured_traces_harness(Theme::Night);
+    harness.key_press(Key::V);
+    harness.step();
+    harness.key_press(Key::F);
+    harness.step();
+    harness.hover_at(pos2(700.0, 260.0));
+    harness.step();
+    harness.step();
+    assert!(save_screenshot(&mut harness, "phase_stacked").exists());
+}
+
+#[test]
+fn screenshot_impulse() {
+    let mut harness = captured_traces_harness(Theme::Night);
+    harness.key_press(Key::I);
+    harness.step();
+    harness.key_press(Key::F);
+    harness.step();
+    harness.hover_at(pos2(560.0, 420.0));
+    harness.step();
+    harness.step();
+    assert!(save_screenshot(&mut harness, "impulse").exists());
+}
+
+#[test]
+fn screenshot_impulse_stacked_fullscreen_daylight() {
+    let mut harness = captured_traces_harness(Theme::Daylight);
+    harness.key_press(Key::V);
+    harness.step();
+    harness.key_press(Key::I);
+    harness.step();
+    harness.key_press(Key::F);
+    harness.step();
+    harness.key_press_modifiers(eframe::egui::Modifiers::SHIFT, Key::F);
+    harness.step();
+    harness.step();
+    assert!(harness.state().is_plot_fullscreen());
+    assert!(save_screenshot(&mut harness, "impulse_stacked_fullscreen_daylight").exists());
+}

@@ -51,6 +51,16 @@ Cocher, dater et noter les observations. Matériel de référence : UAX 2-2, mic
 - [ ] Auto EQ sur une trace réelle (salle) : les PEQ proposés respectent max boost / max cut / max filtres ; recopiés dans le processeur, la mesure suit le résultat prédit ; comparer avec l'auto EQ de REW sur la même mesure.
 - [ ] Saisie au clavier dans les champs (ex. « 1,2k », « -4,5 ») : la valeur est prise en compte.
 
+## Vues Phase, IR et définition des traces
+
+- [ ] H : vue Phase ; avec le délai appliqué, la phase d'une enceinte seule reste proche de 0° dans le médium et sans traits verticaux aux repliements ±180°.
+- [ ] I : vue IR ; pic à 0 ms après « Appliquer » (A) ; en déplaçant le micro de 1 m, le pic se décale d'environ 2,9 ms (lecture du réticule : temps et distance) si le délai n'est pas ré-appliqué.
+- [ ] Échelle « dB » de l'IR : décroissance lisible jusqu'à −60 dB dans une salle.
+- [ ] V : Phase au-dessus de la magnitude ; zoom ou plage (1–4) dans un tracé → l'autre suit.
+- [ ] Maj+F : plein écran, panneau et barre inférieure masqués ; Échap ou le bouton vert de macOS en sortent et tout réapparaît.
+- [ ] Capturer une trace en 1/48, la passer en 1/6 (ligne « Définition ») : identique à une mesure live en 1/6 sur le même signal (comparer avec le lissage de la barre inférieure en 1/6) ; Cmd+Z revient à 1/48.
+- [ ] Session de 20 traces : la sauvegarde automatique reste invisible (pas d'à-coup du tracé).
+
 ## Packaging
 
 - [ ] Télécharger l'artefact CI `soundtuning-macos-latest` (`SoundTuning-macos.zip`), décompresser : l'application n'est pas signée, macOS la met en quarantaine (« endommagée ») ; l'ouvrir par clic droit → Ouvrir, ou `xattr -cr SoundTuning.app`. Au premier démarrage de la mesure, macOS demande l'accès au micro avec le texte de `NSMicrophoneUsageDescription`.

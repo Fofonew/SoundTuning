@@ -1,7 +1,9 @@
 use eframe::egui::{Color32, Rect};
 use engine::MeasurementSnapshot;
 
-use crate::plot::polyline::{Polyline, build_polyline};
+use crate::plot::polyline::{Polyline, build_polyline, build_polyline_with_breaks};
+
+const PHASE_WRAP_BREAK_DEG: f64 = 180.0;
 use crate::plot::view::PlotView;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -63,6 +65,24 @@ impl PlotFrame {
         self.prepare_coherence(view, plot_rect, frequencies_hz, &snapshot.coherence);
     }
 
+    pub fn prepare_live_phase(
+        &mut self,
+        view: &PlotView,
+        plot_rect: Rect,
+        frequencies_hz: &[f64],
+        snapshot: &MeasurementSnapshot,
+    ) {
+        build_polyline_with_breaks(
+            view,
+            plot_rect,
+            frequencies_hz,
+            |index| live_phase_deg(snapshot, index),
+            PHASE_WRAP_BREAK_DEG,
+            &mut self.live,
+        );
+        self.coherence_columns.clear();
+    }
+
     fn prepare_coherence(
         &mut self,
         view: &PlotView,
@@ -90,6 +110,16 @@ impl PlotFrame {
             });
         }
     }
+}
+
+pub fn live_phase_deg(snapshot: &MeasurementSnapshot, index: usize) -> Option<f64> {
+    snapshot
+        .response
+        .get(index)
+        .copied()
+        .flatten()
+        .filter(|_| snapshot.is_coherent(index))
+        .map(|response| response.arg().to_degrees())
 }
 
 #[cfg(test)]

@@ -14,6 +14,7 @@ use engine::EngineCommand;
 use soundtuning::design::Theme;
 
 const SHORT_TIMEOUT: Duration = Duration::from_secs(20);
+const MAX_TRACE_JSON_BYTES: usize = 400_000;
 
 #[test]
 fn space_starts_and_stops_the_measurement() {
@@ -830,4 +831,114 @@ fn auto_eq_fills_the_bank_within_the_limits_and_is_undoable() {
     harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
     harness.run_steps(2);
     assert!(harness.state().session().eq.filters().is_empty());
+}
+
+#[test]
+fn view_shortcuts_switch_and_stack_the_plots() {
+    use soundtuning::plot::ViewKind;
+    let mut harness = harness(file_options(Theme::Night, false));
+    harness.step();
+    assert_eq!(harness.state().plot_layout().main, ViewKind::Magnitude);
+    harness.key_press(Key::H);
+    harness.step();
+    assert_eq!(harness.state().plot_layout().main, ViewKind::Phase);
+    harness.get_by_role_and_label(Role::Figure, soundtuning::text::PHASE_PLOT_ACCESSIBLE_LABEL);
+    harness.key_press(Key::I);
+    harness.step();
+    assert_eq!(harness.state().plot_layout().main, ViewKind::Impulse);
+    harness.get_by_role_and_label(
+        Role::Figure,
+        soundtuning::text::IMPULSE_PLOT_ACCESSIBLE_LABEL,
+    );
+    harness.key_press(Key::V);
+    harness.step();
+    let layout = harness.state().plot_layout();
+    assert_eq!(layout.upper, Some(ViewKind::Magnitude));
+    harness.get_by_role_and_label(Role::Figure, soundtuning::text::PLOT_ACCESSIBLE_LABEL);
+    harness.get_by_role_and_label(
+        Role::Figure,
+        soundtuning::text::IMPULSE_PLOT_ACCESSIBLE_LABEL,
+    );
+    harness.key_press(Key::M);
+    harness.step();
+    let layout = harness.state().plot_layout();
+    assert_eq!(layout.main, ViewKind::Magnitude);
+    assert_eq!(layout.upper, Some(ViewKind::Impulse));
+    harness
+        .get_by_label(soundtuning::text::VIEW_STACKED)
+        .click();
+    harness.step();
+    assert_eq!(harness.state().plot_layout().upper, None);
+    harness.get_by_label(soundtuning::text::VIEW_PHASE).click();
+    harness.step();
+    assert_eq!(harness.state().plot_layout().main, ViewKind::Phase);
+    assert_eq!(harness.state().config().plot_layout.main, ViewKind::Phase);
+}
+
+#[test]
+fn fullscreen_hides_the_side_panel_and_the_bottom_bar() {
+    let mut harness = harness(file_options(Theme::Night, false));
+    harness.step();
+    assert!(
+        harness
+            .query_by_label(soundtuning::text::BUTTON_AUDIO_SETTINGS)
+            .is_some()
+    );
+    harness.key_press_modifiers(Modifiers::SHIFT, Key::F);
+    harness.run_steps(2);
+    assert!(harness.state().is_plot_fullscreen());
+    assert!(
+        harness
+            .query_by_label(soundtuning::text::BUTTON_AUDIO_SETTINGS)
+            .is_none()
+    );
+    harness
+        .get_by_label(soundtuning::text::VIEW_EXIT_FULLSCREEN)
+        .click();
+    harness.run_steps(2);
+    assert!(!harness.state().is_plot_fullscreen());
+    assert!(
+        harness
+            .query_by_label(soundtuning::text::BUTTON_AUDIO_SETTINGS)
+            .is_some()
+    );
+    harness.key_press_modifiers(Modifiers::SHIFT, Key::F);
+    harness.run_steps(2);
+    assert!(harness.state().is_plot_fullscreen());
+    harness.key_press(Key::Escape);
+    harness.run_steps(2);
+    assert!(!harness.state().is_plot_fullscreen());
+}
+
+#[test]
+fn a_captured_trace_changes_definition_and_the_change_is_undoable() {
+    use soundtuning::ui::traces_panel::TraceCommand;
+    let mut harness = harness(file_options(Theme::Night, true));
+    wait_for_stable_measurement(&mut harness);
+    harness.key_press(Key::S);
+    harness.step();
+    let trace = harness.state().session().traces[0].clone();
+    assert!(trace.can_change_smoothing());
+    assert!(trace.impulse.is_some());
+    let stored_bytes = serde_json::to_string(&trace).unwrap().len();
+    println!("trace JSON: {stored_bytes} bytes");
+    assert!(stored_bytes < MAX_TRACE_JSON_BYTES, "{stored_bytes}");
+    let captured_fraction = trace.metadata.smoothing_fraction;
+    let target_fraction = if captured_fraction == 3 { 12 } else { 3 };
+    harness
+        .state_mut()
+        .apply_test_trace_command(TraceCommand::SetSmoothing(trace.id, target_fraction));
+    harness.step();
+    let changed = harness.state().session().traces[0].clone();
+    assert_eq!(changed.metadata.smoothing_fraction, target_fraction);
+    assert_ne!(changed.magnitude_db, trace.magnitude_db);
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+    harness.step();
+    let restored = &harness.state().session().traces[0];
+    assert_eq!(restored.metadata.smoothing_fraction, captured_fraction);
+    assert_eq!(restored.magnitude_db, trace.magnitude_db);
+    harness.get_by_role_and_label(
+        Role::ComboBox,
+        &soundtuning::text::trace_control_label(soundtuning::text::TRACE_SMOOTHING, &trace.name),
+    );
 }

@@ -5,7 +5,10 @@ use std::sync::mpsc::{self, Receiver, SyncSender, TrySendError};
 use std::thread::JoinHandle;
 
 use anyhow::Context;
-use dsp_core::{Complex64, find_optimal_alignment, power_average_db, summed_response_db};
+use dsp_core::{
+    CapturedSpectrum, Complex64, Smoothing, find_optimal_alignment, power_average_db, power_to_db,
+    summed_response_db,
+};
 use engine::MeasurementSnapshot;
 use serde::{Deserialize, Serialize};
 
@@ -18,6 +21,40 @@ const MAX_TRACES: usize = 64;
 const WRITE_QUEUE_DEPTH: usize = 1;
 const BACKUP_EXTENSION: &str = "json.bak";
 const CORRUPT_FILE_PREFIX: &str = "session.corrupt-";
+const IMPULSE_KEPT_BEFORE_MS: f64 = 10.0;
+const IMPULSE_KEPT_AFTER_MS: f64 = 100.0;
+const MILLISECONDS_PER_SECOND: f64 = 1000.0;
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct TraceImpulse {
+    pub sample_rate_hz: u32,
+    pub start_ms: f64,
+    pub samples: Vec<f32>,
+}
+
+impl TraceImpulse {
+    fn from_snapshot(snapshot: &MeasurementSnapshot) -> Option<Self> {
+        if snapshot.impulse.is_empty() || snapshot.sample_rate_hz == 0 {
+            return None;
+        }
+        let samples_per_ms = f64::from(snapshot.sample_rate_hz) / MILLISECONDS_PER_SECOND;
+        let before = (IMPULSE_KEPT_BEFORE_MS * samples_per_ms).round() as usize;
+        let after = (IMPULSE_KEPT_AFTER_MS * samples_per_ms).round() as usize;
+        let start = snapshot.impulse_zero_index.saturating_sub(before);
+        let end = (snapshot.impulse_zero_index + after).min(snapshot.impulse.len());
+        let samples = snapshot.impulse.get(start..end)?.to_vec();
+        Some(Self {
+            sample_rate_hz: snapshot.sample_rate_hz,
+            start_ms: snapshot.impulse_time_ms(start),
+            samples,
+        })
+    }
+
+    pub fn time_ms(&self, index: usize) -> f64 {
+        self.start_ms
+            + index as f64 * MILLISECONDS_PER_SECOND / f64::from(self.sample_rate_hz.max(1))
+    }
+}
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct TraceMetadata {
@@ -49,9 +86,56 @@ pub struct Trace {
     pub coherence: Vec<Option<f64>>,
     pub response: Vec<Option<[f64; 2]>>,
     pub metadata: TraceMetadata,
+    #[serde(default)]
+    pub spectrum: Option<CapturedSpectrum>,
+    #[serde(default)]
+    pub impulse: Option<TraceImpulse>,
 }
 
 impl Trace {
+    pub fn can_change_smoothing(&self) -> bool {
+        self.spectrum.as_ref().is_some_and(|spectrum| {
+            spectrum.grid_len() == self.magnitude_db.len() && spectrum.is_consistent()
+        })
+    }
+
+    pub fn set_smoothing(&mut self, smoothing_fraction: u32) -> bool {
+        if !self.can_change_smoothing() || smoothing_fraction == self.metadata.smoothing_fraction {
+            return false;
+        }
+        let smoothing = match smoothing_fraction {
+            0 => Smoothing::None,
+            fraction => Smoothing::OctaveFraction(fraction),
+        };
+        let Some(values) = self
+            .spectrum
+            .as_ref()
+            .and_then(|spectrum| spectrum.project(smoothing))
+        else {
+            return false;
+        };
+        self.magnitude_db = values
+            .power
+            .iter()
+            .map(|power| power.and_then(power_to_db))
+            .collect();
+        self.coherence = values.coherence;
+        self.response = values
+            .response
+            .iter()
+            .map(|value| value.map(|value| [value.re, value.im]))
+            .collect();
+        self.metadata.smoothing_fraction = smoothing_fraction;
+        true
+    }
+
+    pub fn phase_deg(&self) -> Vec<Option<f64>> {
+        self.response
+            .iter()
+            .map(|value| value.map(|[real, imaginary]| imaginary.atan2(real).to_degrees()))
+            .collect()
+    }
+
     pub fn displayed_db(&self) -> Vec<Option<f64>> {
         self.magnitude_db
             .iter()
@@ -74,6 +158,7 @@ type ComplexResponse = Vec<Option<Complex64>>;
 pub struct AlignmentSumKey {
     traces: [*const Trace; 2],
     offsets_db_bits: [u64; 2],
+    smoothing_fractions: [u32; 2],
     delay_ms_bits: u64,
     inverted: bool,
 }
@@ -140,6 +225,11 @@ impl Session {
                 applied_compensation_ms: snapshot.delay.applied_ms,
                 system_latency_ms: snapshot.delay.system_latency_ms,
             },
+            spectrum: snapshot
+                .spectrum
+                .is_consistent()
+                .then(|| snapshot.spectrum.clone()),
+            impulse: TraceImpulse::from_snapshot(snapshot),
         }));
         Ok(id)
     }
@@ -231,6 +321,8 @@ impl Session {
             coherence,
             response: vec![None; grid_len],
             metadata,
+            spectrum: None,
+            impulse: None,
         }));
         Ok(id)
     }
@@ -254,6 +346,7 @@ impl Session {
         Some(AlignmentSumKey {
             traces: [Arc::as_ptr(a), Arc::as_ptr(b)],
             offsets_db_bits: [a.offset_db.to_bits(), b.offset_db.to_bits()],
+            smoothing_fractions: [a.metadata.smoothing_fraction, b.metadata.smoothing_fraction],
             delay_ms_bits: self.alignment.delay_ms.to_bits(),
             inverted: self.alignment.inverted,
         })
@@ -587,6 +680,36 @@ mod tests {
         let second = session.capture(&snapshot(1.0), 48, 0, "21:43").unwrap();
         assert_eq!(session.trace(first).unwrap().name, "Trace 1 — 21:42");
         assert_eq!(session.trace(second).unwrap().color_index, 1);
+    }
+
+    #[test]
+    fn traces_without_a_stored_spectrum_keep_their_definition() {
+        let mut session = Session::default();
+        let id = session.capture(&snapshot(0.0), 48, 0, "21:42").unwrap();
+        let trace = session.trace_mut(id).unwrap();
+        assert!(trace.spectrum.is_none());
+        assert!(trace.impulse.is_none());
+        assert!(!trace.can_change_smoothing());
+        assert!(!trace.set_smoothing(6));
+        assert_eq!(trace.metadata.smoothing_fraction, 48);
+        let legacy = serde_json::to_string(&**session.traces.first().unwrap())
+            .unwrap()
+            .replace(r#","spectrum":null,"impulse":null"#, "");
+        let restored: Trace = serde_json::from_str(&legacy).unwrap();
+        assert!(restored.spectrum.is_none());
+    }
+
+    #[test]
+    fn captured_impulse_keeps_a_window_around_the_arrival() {
+        let mut live = snapshot(0.0);
+        live.impulse = vec![0.0; 48_000];
+        live.impulse_zero_index = 24_000;
+        live.impulse[24_000] = 1.0;
+        let impulse = TraceImpulse::from_snapshot(&live).unwrap();
+        assert!((impulse.start_ms + IMPULSE_KEPT_BEFORE_MS).abs() < 1.0e-9);
+        assert_eq!(impulse.samples.len(), 480 + 4_800);
+        assert_eq!(impulse.samples[480], 1.0);
+        assert!(impulse.time_ms(480).abs() < 1.0e-9);
     }
 
     #[test]

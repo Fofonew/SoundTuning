@@ -10,8 +10,9 @@ use crate::design::fonts;
 use crate::design::tokens::{radius, size, spacing, stroke, text_size};
 use crate::design::widgets::{Emphasis, action_button};
 use crate::eq_state::EqHandle;
-use crate::plot::axis::{db_ticks, frequency_ticks};
-use crate::plot::{PlotFrame, PlotView, Polyline, TraceStyle, build_polyline};
+use crate::plot::axis::{db_ticks, degree_ticks, frequency_ticks};
+use crate::plot::frame::live_phase_deg;
+use crate::plot::{PlotFrame, PlotView, Polyline, TraceStyle, build_polyline_with_breaks};
 use crate::text;
 
 const LEFT_AXIS_WIDTH: f32 = 40.0;
@@ -34,6 +35,32 @@ const HANDLE_HIT_RADIUS: f32 = 16.0;
 const HANDLE_BYPASSED_ALPHA: f32 = 0.45;
 const Q_SCROLL_SENSITIVITY: f64 = 0.004;
 const BAND_EDGE_ALPHA: f32 = 0.6;
+const PHASE_LIMIT_DEG: f64 = 180.0;
+const PHASE_WRAP_BREAK_DEG: f64 = 180.0;
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum PlotQuantity {
+    #[default]
+    Magnitude,
+    Phase,
+}
+
+impl PlotQuantity {
+    fn max_step(self) -> f64 {
+        match self {
+            Self::Magnitude => f64::INFINITY,
+            Self::Phase => PHASE_WRAP_BREAK_DEG,
+        }
+    }
+}
+
+pub fn default_phase_view() -> PlotView {
+    PlotView {
+        low_db: -PHASE_LIMIT_DEG,
+        high_db: PHASE_LIMIT_DEG,
+        ..PlotView::default()
+    }
+}
 
 pub struct OverlayTrace<'a> {
     pub label: &'a str,
@@ -50,6 +77,7 @@ pub struct PlotInputs<'a> {
     pub overlays: &'a [OverlayTrace<'a>],
     pub band_hz: Option<(f64, f64)>,
     pub eq_handles: &'a [EqHandle],
+    pub show_empty_state: bool,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -81,6 +109,7 @@ pub struct BandSelection {
 #[derive(Debug, Default)]
 pub struct PlotPanel {
     pub view: PlotView,
+    pub quantity: PlotQuantity,
     frame: PlotFrame,
     overlay_polylines: Vec<Polyline>,
     band_drag_start_hz: Option<f64>,
@@ -92,6 +121,7 @@ impl PlotPanel {
     pub fn new(view: PlotView) -> Self {
         Self {
             view,
+            quantity: PlotQuantity::Magnitude,
             frame: PlotFrame::with_capacity(1024),
             overlay_polylines: Vec::new(),
             band_drag_start_hz: None,
@@ -100,22 +130,38 @@ impl PlotPanel {
         }
     }
 
+    pub fn phase() -> Self {
+        Self {
+            quantity: PlotQuantity::Phase,
+            ..Self::new(default_phase_view())
+        }
+    }
+
     pub fn prepare(&mut self, plot_rect: Rect, inputs: &PlotInputs<'_>) {
         if inputs.show_live {
-            self.frame.prepare_live(
-                &self.view,
-                plot_rect,
-                inputs.frequencies_hz,
-                inputs.snapshot,
-            );
+            match self.quantity {
+                PlotQuantity::Magnitude => self.frame.prepare_live(
+                    &self.view,
+                    plot_rect,
+                    inputs.frequencies_hz,
+                    inputs.snapshot,
+                ),
+                PlotQuantity::Phase => self.frame.prepare_live_phase(
+                    &self.view,
+                    plot_rect,
+                    inputs.frequencies_hz,
+                    inputs.snapshot,
+                ),
+            }
         } else {
             self.frame.live.clear();
             self.frame.coherence_columns.clear();
         }
         self.overlay_polylines
             .resize_with(inputs.overlays.len(), || Polyline::with_capacity(1024));
+        let max_step = self.quantity.max_step();
         for (polyline, overlay) in self.overlay_polylines.iter_mut().zip(inputs.overlays) {
-            build_polyline(
+            build_polyline_with_breaks(
                 &self.view,
                 plot_rect,
                 inputs.frequencies_hz,
@@ -127,6 +173,7 @@ impl PlotPanel {
                         .flatten()
                         .map(|value| value + overlay.offset_db)
                 },
+                max_step,
                 polyline,
             );
         }
@@ -141,7 +188,12 @@ impl PlotPanel {
         actions: &mut Vec<Action>,
     ) -> PlotEvents {
         let outer = ui.available_rect_before_wrap();
-        let band_height = size::COHERENCE_BAND_HEIGHT;
+        let is_magnitude = self.quantity == PlotQuantity::Magnitude;
+        let band_height = if is_magnitude {
+            size::COHERENCE_BAND_HEIGHT
+        } else {
+            0.0
+        };
         let plot_left = outer.left() + LEFT_AXIS_WIDTH;
         let plot_top = outer.top() + PLOT_TOP_PADDING;
         let plot_rect = Rect::from_min_max(
@@ -157,13 +209,16 @@ impl PlotPanel {
             pos2(plot_rect.right(), outer.bottom()),
         );
         ui.allocate_rect(outer, Sense::hover());
+        let (plot_id, accessible_label) = match self.quantity {
+            PlotQuantity::Magnitude => ("magnitude-plot", text::PLOT_ACCESSIBLE_LABEL),
+            PlotQuantity::Phase => ("phase-plot", text::PHASE_PLOT_ACCESSIBLE_LABEL),
+        };
         let response = ui.interact(
             plot_rect,
-            ui.make_persistent_id("magnitude-plot"),
+            ui.make_persistent_id(plot_id),
             Sense::click_and_drag(),
         );
-        response
-            .widget_info(|| WidgetInfo::labeled(Role::Figure, true, text::PLOT_ACCESSIBLE_LABEL));
+        response.widget_info(|| WidgetInfo::labeled(Role::Figure, true, accessible_label));
         let mut events = PlotEvents {
             plot_rect: Some(plot_rect),
             ..PlotEvents::default()
@@ -202,14 +257,16 @@ impl PlotPanel {
             Stroke::new(stroke::BORDER, palette.border),
             StrokeKind::Inside,
         );
-        self.paint_coherence_band(&painter, palette, band_rect, inputs);
+        if is_magnitude {
+            self.paint_coherence_band(&painter, palette, band_rect, inputs);
+        }
         self.paint_eq_handles(&painter_handles, palette, plot_rect, inputs.eq_handles);
 
         if let Some(hover) = response.hover_pos() {
             self.paint_crosshair(&painter, palette, plot_rect, hover, inputs);
         }
         let has_data = inputs.snapshot.averages > 0 || !inputs.overlays.is_empty();
-        if !inputs.running && !has_data {
+        if !inputs.running && !has_data && inputs.show_empty_state {
             paint_empty_state(ui, palette, plot_rect, is_mac, actions);
         } else if inputs.running && inputs.snapshot.warming_up {
             painter.text(
@@ -474,7 +531,16 @@ impl PlotPanel {
                 );
             }
         }
-        for level_db in db_ticks(self.view.low_db, self.view.high_db) {
+        let (ticks, axis_label) = match self.quantity {
+            PlotQuantity::Magnitude => {
+                (db_ticks(self.view.low_db, self.view.high_db), text::AXIS_DB)
+            }
+            PlotQuantity::Phase => (
+                degree_ticks(self.view.low_db, self.view.high_db),
+                text::AXIS_DEGREES,
+            ),
+        };
+        for level_db in ticks {
             let y = self.view.db_to_y(plot_rect, level_db);
             let is_zero = level_db.abs() < f64::EPSILON;
             painter.line_segment(
@@ -495,7 +561,10 @@ impl PlotPanel {
             painter.text(
                 pos2(plot_rect.left() - spacing::SM, y),
                 Align2::RIGHT_CENTER,
-                text::format_axis_db(level_db),
+                match self.quantity {
+                    PlotQuantity::Magnitude => text::format_axis_db(level_db),
+                    PlotQuantity::Phase => text::format_axis_degrees(level_db),
+                },
                 fonts::value(text_size::CAPTION),
                 palette.text_muted,
             );
@@ -506,7 +575,7 @@ impl PlotPanel {
                 plot_rect.top() - spacing::LG,
             ),
             Align2::RIGHT_CENTER,
-            text::AXIS_DB,
+            axis_label,
             fonts::caption(),
             palette.text_muted,
         );
@@ -637,11 +706,18 @@ impl PlotPanel {
         );
         let frequency_hz = self.view.x_to_frequency(plot_rect, hover.x);
         let level_db = self.view.y_to_db(plot_rect, hover.y);
-        let mut lines = vec![text::crosshair_readout(frequency_hz, level_db)];
+        let format_value = |value: f64| match self.quantity {
+            PlotQuantity::Magnitude => text::format_db(value),
+            PlotQuantity::Phase => text::format_degrees(value),
+        };
+        let mut lines = vec![match self.quantity {
+            PlotQuantity::Magnitude => text::crosshair_readout(frequency_hz, level_db),
+            PlotQuantity::Phase => text::crosshair_phase_readout(frequency_hz, level_db),
+        }];
         if let Some((label, value, color)) =
-            nearest_trace_value(frequency_hz, level_db, inputs, palette)
+            nearest_trace_value(self.quantity, frequency_hz, level_db, inputs, palette)
         {
-            lines.push(format!("{label} : {}", text::format_db(value)));
+            lines.push(format!("{label} : {}", format_value(value)));
             painter.circle_filled(
                 self.view.to_screen(plot_rect, frequency_hz, value),
                 4.0,
@@ -687,6 +763,7 @@ fn grid_index(frequency_hz: f64, length: usize) -> Option<usize> {
 }
 
 fn nearest_trace_value(
+    quantity: PlotQuantity,
     frequency_hz: f64,
     cursor_db: f64,
     inputs: &PlotInputs<'_>,
@@ -696,14 +773,17 @@ fn nearest_trace_value(
     let live = inputs
         .show_live
         .then(|| {
-            inputs
-                .snapshot
-                .magnitude_db
-                .get(index)
-                .copied()
-                .flatten()
-                .filter(|_| inputs.snapshot.is_coherent(index))
-                .map(|value| (text::LIVE_TRACE_LABEL.to_owned(), value, palette.trace_live))
+            match quantity {
+                PlotQuantity::Magnitude => inputs
+                    .snapshot
+                    .magnitude_db
+                    .get(index)
+                    .copied()
+                    .flatten()
+                    .filter(|_| inputs.snapshot.is_coherent(index)),
+                PlotQuantity::Phase => live_phase_deg(inputs.snapshot, index),
+            }
+            .map(|value| (text::LIVE_TRACE_LABEL.to_owned(), value, palette.trace_live))
         })
         .flatten();
     live.into_iter()

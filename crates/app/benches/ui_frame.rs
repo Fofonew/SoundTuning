@@ -6,6 +6,7 @@ use audio_io::{StereoFrame, write_stereo_wav};
 use criterion::{Criterion, criterion_group, criterion_main};
 use eframe::egui;
 use egui_kittest::Harness;
+use soundtuning::actions::Action;
 use soundtuning::app::{AppOptions, DeviceCatalog, SoundTuningApp};
 use soundtuning::config::{AppConfig, ConfigStore};
 use soundtuning::eq_state::{StoredFilter, StoredFilterKind};
@@ -115,6 +116,18 @@ fn ui_frame(criterion: &mut Criterion) {
     }
     harness.state_mut().apply_test_eq(EqCommand::Update(eq));
     group.bench_function("eq", |bencher| bencher.iter(|| harness.step()));
+
+    harness.state_mut().set_side_tab(SideTab::Traces);
+    harness
+        .state_mut()
+        .handle_action(Action::ToggleStackedViews);
+    group.bench_function("phase_over_magnitude", |bencher| {
+        bencher.iter(|| harness.step())
+    });
+    harness.state_mut().handle_action(Action::ViewImpulse);
+    group.bench_function("magnitude_over_impulse", |bencher| {
+        bencher.iter(|| harness.step())
+    });
     group.finish();
     drop(harness);
     let _ = std::fs::remove_file(path);

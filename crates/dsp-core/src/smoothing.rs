@@ -1,7 +1,12 @@
+use serde::{Deserialize, Serialize};
+
 use crate::Complex64;
 use crate::error::{DspError, check_length};
-use crate::grid::DisplayGrid;
+use crate::grid::{DISPLAY_GRID_POINTS_PER_OCTAVE, DisplayGrid};
 use crate::transfer::BinTransfer;
+
+pub const MAX_CAPTURE_HALF_BAND_STEPS: usize = 16;
+const POINTS_PER_OCTAVE_SNAP: f64 = 1.0e-6;
 
 const MIN_VALID_FRACTION: f64 = 0.5;
 const MIN_BAND_WIDTH_BINS: f64 = 1.0e-9;
@@ -52,6 +57,10 @@ pub struct GridProjector {
     weight_prefix: CompensatedPrefix,
     imaginary_values: Vec<f64>,
     imaginary_prefix: CompensatedPrefix,
+    grid_low_hz: f64,
+    points_per_octave: f64,
+    cell_edges_bins: Vec<f64>,
+    point_bins: Vec<Option<f64>>,
 }
 
 impl GridProjector {
@@ -80,9 +89,206 @@ impl GridProjector {
             weight_prefix: CompensatedPrefix::new(bin_count),
             imaginary_values: vec![0.0; bin_count],
             imaginary_prefix: CompensatedPrefix::new(bin_count),
+            grid_low_hz: grid.frequencies_hz().first().copied().unwrap_or(1.0),
+            points_per_octave: grid_points_per_octave(grid.frequencies_hz()),
+            cell_edges_bins: Vec::new(),
+            point_bins: Vec::new(),
         };
         projector.rebuild_bands();
+        projector.rebuild_cells();
         projector
+    }
+
+    fn to_bin(&self, frequency_hz: f64) -> f64 {
+        let last_bin = self.bin_count.saturating_sub(1) as f64;
+        (frequency_hz / self.bin_spacing_hz).clamp(0.0, last_bin)
+    }
+
+    fn nyquist_hz(&self) -> f64 {
+        self.bin_count.saturating_sub(1) as f64 * self.bin_spacing_hz
+    }
+
+    fn rebuild_cells(&mut self) {
+        let grid_len = self.grid_frequencies_hz.len();
+        let edge_count = grid_len + 2 * MAX_CAPTURE_HALF_BAND_STEPS;
+        self.cell_edges_bins = (0..edge_count)
+            .map(|edge| {
+                let grid_index = edge as f64 - MAX_CAPTURE_HALF_BAND_STEPS as f64;
+                self.to_bin(self.grid_low_hz * (grid_index / self.points_per_octave).exp2())
+            })
+            .collect();
+        let nyquist_hz = self.nyquist_hz();
+        self.point_bins = self
+            .grid_frequencies_hz
+            .iter()
+            .map(|frequency_hz| {
+                (frequency_hz.is_finite() && *frequency_hz <= nyquist_hz)
+                    .then(|| self.to_bin(*frequency_hz))
+            })
+            .collect();
+    }
+
+    pub fn capture(
+        &mut self,
+        bins: &[BinTransfer],
+        cross_spectrum: &[Complex64],
+        reference_power: &[f64],
+        min_reference_power: f64,
+        output: &mut CapturedSpectrum,
+    ) -> Result<(), DspError> {
+        check_length("bins", self.bin_count, bins.len())?;
+        check_length("cross spectrum", self.bin_count, cross_spectrum.len())?;
+        check_length("reference power", self.bin_count, reference_power.len())?;
+        let grid_len = self.grid_len();
+        let cell_count = self.cell_edges_bins.len().saturating_sub(1);
+        output.grid_low_hz = self.grid_low_hz;
+        output.points_per_octave = self.points_per_octave;
+        output.nyquist_hz = self.nyquist_hz();
+        output.min_reference_power = min_reference_power;
+        output.cell_width_bins.clear();
+        output.cell_width_bins.extend(
+            self.cell_edges_bins
+                .windows(2)
+                .map(|edges| edges[1] - edges[0]),
+        );
+
+        self.load_real(
+            bins.iter()
+                .map(|bin| bin.response.map(|value| value.norm_sqr())),
+        );
+        self.cell_integrals(&mut output.cell_power, &mut output.cell_power_weight);
+        output.point_power.resize(grid_len, None);
+        self.point_ratios(&mut output.point_power);
+
+        self.load_real(bins.iter().map(|bin| bin.coherence));
+        self.cell_integrals(
+            &mut output.cell_coherence,
+            &mut output.cell_coherence_weight,
+        );
+        output.point_coherence.resize(grid_len, None);
+        self.point_ratios(&mut output.point_coherence);
+
+        self.load_complex(cross_spectrum, reference_power);
+        output.cell_cross_re.resize(cell_count, 0.0);
+        output.cell_cross_im.resize(cell_count, 0.0);
+        output.cell_reference_power.resize(cell_count, 0.0);
+        for (cell, edges) in self.cell_edges_bins.windows(2).enumerate() {
+            let (low, high) = (edges[0], edges[1]);
+            if let (Some(re), Some(im), Some(power)) = (
+                output.cell_cross_re.get_mut(cell),
+                output.cell_cross_im.get_mut(cell),
+                output.cell_reference_power.get_mut(cell),
+            ) {
+                *re = band_integral(&self.weighted_values, &self.weighted_prefix, low, high);
+                *im = band_integral(&self.imaginary_values, &self.imaginary_prefix, low, high);
+                *power = band_integral(&self.weights, &self.weight_prefix, low, high);
+            }
+        }
+        output.point_response.resize(grid_len, None);
+        for (slot, position) in output.point_response.iter_mut().zip(&self.point_bins) {
+            *slot = position.and_then(|position| {
+                let divisor = interpolate(&self.weights, position);
+                (divisor > min_reference_power)
+                    .then(|| {
+                        [
+                            interpolate(&self.weighted_values, position) / divisor,
+                            interpolate(&self.imaginary_values, position) / divisor,
+                        ]
+                    })
+                    .filter(|[re, im]| re.is_finite() && im.is_finite())
+            });
+        }
+        for cells in [
+            &mut output.cell_width_bins,
+            &mut output.cell_power,
+            &mut output.cell_power_weight,
+            &mut output.cell_coherence,
+            &mut output.cell_coherence_weight,
+            &mut output.cell_cross_re,
+            &mut output.cell_cross_im,
+            &mut output.cell_reference_power,
+        ] {
+            for value in cells.iter_mut().filter(|value| !value.is_finite()) {
+                *value = 0.0;
+            }
+        }
+        if !output.min_reference_power.is_finite() {
+            output.min_reference_power = 0.0;
+        }
+        Ok(())
+    }
+
+    fn load_real(&mut self, values: impl Iterator<Item = Option<f64>>) {
+        for ((value, weight), source) in self
+            .weighted_values
+            .iter_mut()
+            .zip(self.weights.iter_mut())
+            .zip(values)
+        {
+            match source {
+                Some(source) => {
+                    *value = source;
+                    *weight = 1.0;
+                }
+                None => {
+                    *value = 0.0;
+                    *weight = 0.0;
+                }
+            }
+        }
+        for (value, weight) in self.weighted_values.iter_mut().zip(self.weights.iter()) {
+            *value *= weight;
+        }
+        self.weighted_prefix.fill(&self.weighted_values);
+        self.weight_prefix.fill(&self.weights);
+    }
+
+    fn load_complex(&mut self, numerator: &[Complex64], denominator: &[f64]) {
+        for (((real, imaginary), weight), (value, divisor)) in self
+            .weighted_values
+            .iter_mut()
+            .zip(self.imaginary_values.iter_mut())
+            .zip(self.weights.iter_mut())
+            .zip(numerator.iter().zip(denominator))
+        {
+            let usable = divisor.is_finite() && value.re.is_finite() && value.im.is_finite();
+            *real = if usable { value.re } else { 0.0 };
+            *imaginary = if usable { value.im } else { 0.0 };
+            *weight = if usable { *divisor } else { 0.0 };
+        }
+        self.weighted_prefix.fill(&self.weighted_values);
+        self.imaginary_prefix.fill(&self.imaginary_values);
+        self.weight_prefix.fill(&self.weights);
+    }
+
+    fn cell_integrals(&self, weighted: &mut Vec<f64>, weights: &mut Vec<f64>) {
+        weighted.clear();
+        weights.clear();
+        for edges in self.cell_edges_bins.windows(2) {
+            weighted.push(band_integral(
+                &self.weighted_values,
+                &self.weighted_prefix,
+                edges[0],
+                edges[1],
+            ));
+            weights.push(band_integral(
+                &self.weights,
+                &self.weight_prefix,
+                edges[0],
+                edges[1],
+            ));
+        }
+    }
+
+    fn point_ratios(&self, output: &mut [Option<f64>]) {
+        for (slot, position) in output.iter_mut().zip(&self.point_bins) {
+            *slot = position.and_then(|position| {
+                let weight = interpolate(&self.weights, position);
+                (weight >= MIN_VALID_FRACTION)
+                    .then(|| (interpolate(&self.weighted_values, position) / weight).max(0.0))
+                    .filter(|value| value.is_finite())
+            });
+        }
     }
 
     pub fn smoothing(&self) -> Smoothing {
@@ -320,17 +526,211 @@ fn interpolate(values: &[f64], position_bins: f64) -> f64 {
     }
 }
 
+fn band_integral(values: &[f64], prefix: &CompensatedPrefix, low_bin: f64, high_bin: f64) -> f64 {
+    let (low_segment, low_fraction) = segment_and_fraction(values, low_bin);
+    let (high_segment, high_fraction) = segment_and_fraction(values, high_bin);
+    prefix.between(high_segment, low_segment)
+        + partial_segment_integral(values, high_segment, high_fraction)
+        - partial_segment_integral(values, low_segment, low_fraction)
+}
+
 fn band_mean(values: &[f64], prefix: &CompensatedPrefix, band: BandEdges) -> f64 {
     let width = band.high_bin - band.low_bin;
     if width < MIN_BAND_WIDTH_BINS {
         return interpolate(values, band.low_bin);
     }
-    let (low_segment, low_fraction) = segment_and_fraction(values, band.low_bin);
-    let (high_segment, high_fraction) = segment_and_fraction(values, band.high_bin);
-    let integral = prefix.between(high_segment, low_segment)
-        + partial_segment_integral(values, high_segment, high_fraction)
-        - partial_segment_integral(values, low_segment, low_fraction);
-    integral / width
+    band_integral(values, prefix, band.low_bin, band.high_bin) / width
+}
+
+fn grid_points_per_octave(frequencies_hz: &[f64]) -> f64 {
+    let derived = match frequencies_hz {
+        [first, second, ..] if *first > 0.0 && second > first => 1.0 / (second / first).log2(),
+        _ => DISPLAY_GRID_POINTS_PER_OCTAVE,
+    };
+    if (derived - derived.round()).abs() < POINTS_PER_OCTAVE_SNAP {
+        derived.round()
+    } else {
+        derived
+    }
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct CapturedSpectrum {
+    pub grid_low_hz: f64,
+    pub points_per_octave: f64,
+    pub nyquist_hz: f64,
+    pub min_reference_power: f64,
+    pub cell_width_bins: Vec<f64>,
+    pub cell_power: Vec<f64>,
+    pub cell_power_weight: Vec<f64>,
+    pub cell_coherence: Vec<f64>,
+    pub cell_coherence_weight: Vec<f64>,
+    pub cell_cross_re: Vec<f64>,
+    pub cell_cross_im: Vec<f64>,
+    pub cell_reference_power: Vec<f64>,
+    pub point_power: Vec<Option<f64>>,
+    pub point_coherence: Vec<Option<f64>>,
+    pub point_response: Vec<Option<[f64; 2]>>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct GridValues {
+    pub power: Vec<Option<f64>>,
+    pub coherence: Vec<Option<f64>>,
+    pub response: Vec<Option<Complex64>>,
+}
+
+#[derive(Clone, Copy, Default)]
+struct CellSums {
+    width: f64,
+    power: f64,
+    power_weight: f64,
+    coherence: f64,
+    coherence_weight: f64,
+    cross_re: f64,
+    cross_im: f64,
+    reference_power: f64,
+}
+
+impl CapturedSpectrum {
+    pub fn grid_len(&self) -> usize {
+        self.point_power.len()
+    }
+
+    pub fn is_consistent(&self) -> bool {
+        let grid_len = self.grid_len();
+        let cell_count = grid_len + 2 * MAX_CAPTURE_HALF_BAND_STEPS - 1;
+        grid_len > 0
+            && self.point_coherence.len() == grid_len
+            && self.point_response.len() == grid_len
+            && [
+                &self.cell_width_bins,
+                &self.cell_power,
+                &self.cell_power_weight,
+                &self.cell_coherence,
+                &self.cell_coherence_weight,
+                &self.cell_cross_re,
+                &self.cell_cross_im,
+                &self.cell_reference_power,
+            ]
+            .iter()
+            .all(|cells| cells.len() == cell_count)
+    }
+
+    fn half_band_steps(&self, smoothing: Smoothing) -> Option<usize> {
+        match smoothing {
+            Smoothing::None | Smoothing::OctaveFraction(0) => Some(0),
+            Smoothing::OctaveFraction(fraction) => {
+                let steps = self.points_per_octave / (2.0 * f64::from(fraction));
+                let whole = steps.round();
+                (steps.is_finite()
+                    && (steps - whole).abs() < POINTS_PER_OCTAVE_SNAP
+                    && whole >= 1.0
+                    && whole <= MAX_CAPTURE_HALF_BAND_STEPS as f64)
+                    .then_some(whole as usize)
+            }
+        }
+    }
+
+    pub fn supports(&self, smoothing: Smoothing) -> bool {
+        self.is_consistent() && self.half_band_steps(smoothing).is_some()
+    }
+
+    fn cell(&self, index: usize) -> CellSums {
+        let at = |values: &Vec<f64>| values.get(index).copied().unwrap_or(0.0);
+        CellSums {
+            width: at(&self.cell_width_bins),
+            power: at(&self.cell_power),
+            power_weight: at(&self.cell_power_weight),
+            coherence: at(&self.cell_coherence),
+            coherence_weight: at(&self.cell_coherence_weight),
+            cross_re: at(&self.cell_cross_re),
+            cross_im: at(&self.cell_cross_im),
+            reference_power: at(&self.cell_reference_power),
+        }
+    }
+
+    fn band_sums(&self, grid_index: usize, steps: usize) -> CellSums {
+        let first = grid_index + MAX_CAPTURE_HALF_BAND_STEPS - steps;
+        (first..first + 2 * steps).fold(CellSums::default(), |sums, index| {
+            let cell = self.cell(index);
+            CellSums {
+                width: sums.width + cell.width,
+                power: sums.power + cell.power,
+                power_weight: sums.power_weight + cell.power_weight,
+                coherence: sums.coherence + cell.coherence,
+                coherence_weight: sums.coherence_weight + cell.coherence_weight,
+                cross_re: sums.cross_re + cell.cross_re,
+                cross_im: sums.cross_im + cell.cross_im,
+                reference_power: sums.reference_power + cell.reference_power,
+            }
+        })
+    }
+
+    fn point(&self, grid_index: usize) -> (Option<f64>, Option<f64>, Option<Complex64>) {
+        (
+            self.point_power.get(grid_index).copied().flatten(),
+            self.point_coherence
+                .get(grid_index)
+                .copied()
+                .flatten()
+                .map(|value| value.clamp(0.0, 1.0)),
+            self.point_response
+                .get(grid_index)
+                .copied()
+                .flatten()
+                .map(|[re, im]| Complex64::new(re, im)),
+        )
+    }
+
+    pub fn project(&self, smoothing: Smoothing) -> Option<GridValues> {
+        let grid_len = self.grid_len();
+        let steps = self.half_band_steps(smoothing)?;
+        let mut values = GridValues {
+            power: Vec::with_capacity(grid_len),
+            coherence: Vec::with_capacity(grid_len),
+            response: Vec::with_capacity(grid_len),
+        };
+        for grid_index in 0..grid_len {
+            let frequency_hz =
+                self.grid_low_hz * (grid_index as f64 / self.points_per_octave).exp2();
+            let below_nyquist = frequency_hz <= self.nyquist_hz;
+            let (power, coherence, response) = if !below_nyquist {
+                (None, None, None)
+            } else if steps == 0 {
+                self.point(grid_index)
+            } else {
+                let sums = self.band_sums(grid_index, steps);
+                if sums.width < MIN_BAND_WIDTH_BINS {
+                    self.point(grid_index)
+                } else {
+                    let ratio = |weighted: f64, weight: f64| {
+                        (weight / sums.width >= MIN_VALID_FRACTION)
+                            .then(|| (weighted / weight).max(0.0))
+                            .filter(|value| value.is_finite())
+                    };
+                    let response = (sums.reference_power / sums.width > self.min_reference_power)
+                        .then(|| {
+                            Complex64::new(
+                                sums.cross_re / sums.reference_power,
+                                sums.cross_im / sums.reference_power,
+                            )
+                        })
+                        .filter(|value| value.re.is_finite() && value.im.is_finite());
+                    (
+                        ratio(sums.power, sums.power_weight),
+                        ratio(sums.coherence, sums.coherence_weight)
+                            .map(|value| value.clamp(0.0, 1.0)),
+                        response,
+                    )
+                }
+            };
+            values.power.push(power);
+            values.coherence.push(coherence);
+            values.response.push(response);
+        }
+        Some(values)
+    }
 }
 
 #[cfg(test)]
@@ -530,5 +930,156 @@ mod tests {
         let mut projector = GridProjector::new(&grid, FFT_LENGTH, SAMPLE_RATE_HZ, Smoothing::None);
         let mut output = vec![None; grid.len()];
         assert!(projector.project_power(&[], &mut output).is_err());
+    }
+
+    fn assert_close(left: Option<f64>, right: Option<f64>, context: &str) {
+        match (left, right) {
+            (Some(left), Some(right)) => assert!(
+                (left - right).abs() <= 1.0e-9 * left.abs().max(right.abs()).max(1.0e-12),
+                "{context}: {left} vs {right}"
+            ),
+            (None, None) => {}
+            _ => panic!("{context}: {left:?} vs {right:?}"),
+        }
+    }
+
+    fn uneven_spectrum(bin_count: usize) -> (Vec<BinTransfer>, Vec<Complex64>, Vec<f64>) {
+        let mut bins = Vec::with_capacity(bin_count);
+        let mut cross = Vec::with_capacity(bin_count);
+        let mut reference_power = Vec::with_capacity(bin_count);
+        for index in 0..bin_count {
+            let phase = index as f64 * 0.37;
+            let gain = 1.0 + 0.6 * (index as f64 * 0.011).sin() + 0.3 * phase.cos();
+            let silent = index % 211 < 3;
+            let response = Complex64::from_polar(gain, phase);
+            bins.push(BinTransfer {
+                response: (!silent).then_some(response),
+                coherence: (!silent).then_some(0.5 + 0.45 * (index as f64 * 0.07).sin()),
+            });
+            let power = if silent {
+                0.0
+            } else {
+                1.0 + 0.5 * (index as f64 * 0.003).cos()
+            };
+            reference_power.push(power);
+            cross.push(response * power);
+        }
+        (bins, cross, reference_power)
+    }
+
+    #[test]
+    fn a_captured_spectrum_reprojects_exactly_like_the_live_projector() {
+        let grid = DisplayGrid::default();
+        for (fft_length, sample_rate_hz) in [
+            (8_192, SAMPLE_RATE_HZ),
+            (FFT_LENGTH, SAMPLE_RATE_HZ),
+            (FFT_LENGTH, 32_000.0),
+            (8_192, 44_100.0),
+        ] {
+            let bin_count = fft_length / 2 + 1;
+            let (bins, cross, reference_power) = uneven_spectrum(bin_count);
+            let min_power = crate::transfer::min_valid_auto_spectrum_power(&reference_power);
+            let mut projector =
+                GridProjector::new(&grid, fft_length, sample_rate_hz, Smoothing::None);
+            let mut captured = CapturedSpectrum::default();
+            projector
+                .capture(&bins, &cross, &reference_power, min_power, &mut captured)
+                .unwrap();
+            assert!(captured.is_consistent());
+            let mut power = vec![None; grid.len()];
+            let mut coherence = vec![None; grid.len()];
+            let mut response = vec![None; grid.len()];
+            for smoothing in Smoothing::CHOICES {
+                projector.set_smoothing(smoothing);
+                projector.project_power(&bins, &mut power).unwrap();
+                projector.project_coherence(&bins, &mut coherence).unwrap();
+                projector
+                    .project_complex_ratio(&cross, &reference_power, min_power, &mut response)
+                    .unwrap();
+                let reprojected = captured.project(smoothing).unwrap();
+                for index in 0..grid.len() {
+                    let context =
+                        format!("{fft_length} {sample_rate_hz} {smoothing:?} point {index}");
+                    assert_close(power[index], reprojected.power[index], &context);
+                    assert_close(coherence[index], reprojected.coherence[index], &context);
+                    match (response[index], reprojected.response[index]) {
+                        (Some(live), Some(stored)) => assert!(
+                            (live - stored).norm() <= 1.0e-9 * live.norm().max(stored.norm()),
+                            "{context}: {live} vs {stored}"
+                        ),
+                        (None, None) => {}
+                        (live, stored) => panic!("{context}: {live:?} vs {stored:?}"),
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn grid_points_above_nyquist_stay_invalid_after_reprojection() {
+        let grid = DisplayGrid::default();
+        let low_rate_hz = 32_000.0;
+        let bin_count = FFT_LENGTH / 2 + 1;
+        let (bins, cross, reference_power) = uneven_spectrum(bin_count);
+        let mut projector =
+            GridProjector::new(&grid, FFT_LENGTH, low_rate_hz, Smoothing::OctaveFraction(6));
+        let mut captured = CapturedSpectrum::default();
+        projector
+            .capture(&bins, &cross, &reference_power, 0.0, &mut captured)
+            .unwrap();
+        let reprojected = captured.project(Smoothing::OctaveFraction(3)).unwrap();
+        let frequencies = grid.frequencies_hz();
+        for (index, frequency_hz) in frequencies.iter().enumerate() {
+            if *frequency_hz > low_rate_hz / 2.0 {
+                assert_eq!(reprojected.power[index], None);
+                assert_eq!(reprojected.response[index], None);
+            }
+        }
+        assert!(
+            reprojected
+                .power
+                .iter()
+                .all(|value| value.is_none_or(f64::is_finite))
+        );
+    }
+
+    #[test]
+    fn an_empty_capture_is_not_consistent() {
+        assert!(!CapturedSpectrum::default().is_consistent());
+        assert!(
+            CapturedSpectrum::default()
+                .project(Smoothing::None)
+                .unwrap()
+                .power
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn smoothings_that_do_not_fall_on_cell_edges_are_refused() {
+        let grid = DisplayGrid::default();
+        let bin_count = FFT_LENGTH / 2 + 1;
+        let (bins, cross, reference_power) = uneven_spectrum(bin_count);
+        let mut projector = GridProjector::new(&grid, FFT_LENGTH, SAMPLE_RATE_HZ, Smoothing::None);
+        let mut captured = CapturedSpectrum::default();
+        projector
+            .capture(&bins, &cross, &reference_power, 0.0, &mut captured)
+            .unwrap();
+        for smoothing in Smoothing::CHOICES {
+            assert!(captured.supports(smoothing), "{smoothing:?}");
+        }
+        for fraction in [1, 2, 5, 7, 96] {
+            let smoothing = Smoothing::OctaveFraction(fraction);
+            assert!(!captured.supports(smoothing), "{fraction}");
+            assert!(captured.project(smoothing).is_none());
+        }
+        let coarse_grid = DisplayGrid::new(20.0, 20_000.0, 30.0);
+        let mut coarse =
+            GridProjector::new(&coarse_grid, FFT_LENGTH, SAMPLE_RATE_HZ, Smoothing::None);
+        coarse
+            .capture(&bins, &cross, &reference_power, 0.0, &mut captured)
+            .unwrap();
+        assert!(captured.supports(Smoothing::OctaveFraction(3)));
+        assert!(!captured.supports(Smoothing::OctaveFraction(48)));
     }
 }

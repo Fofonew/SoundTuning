@@ -5,22 +5,25 @@ use eframe::egui::{
 use crate::design::Palette;
 use crate::design::fonts;
 use crate::design::tokens::{STORED_TRACE_COLOR_COUNT, radius, size, spacing, stroke, text_size};
-use crate::design::widgets::{Emphasis, action_button, spin_label};
+use crate::design::widgets::{Emphasis, action_button, combo_label, spin_label};
 use crate::session::{Session, Trace};
 use crate::text;
+use crate::ui::bottom_bar::SMOOTHING_CHOICES;
 
 const SWATCH_SIZE: f32 = 14.0;
-const ROW_HEIGHT: f32 = 64.0;
+const ROW_HEIGHT: f32 = 92.0;
 const LINE_HEIGHT: f32 = 28.0;
 const OFFSET_SPEED_DB: f64 = 0.1;
 const OFFSET_LIMIT_DB: f64 = 40.0;
 const ICON_BUTTON_SIZE: f32 = 28.0;
+const SMOOTHING_COMBO_WIDTH: f32 = 64.0;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum TraceCommand {
     ToggleVisible(u64),
     CycleColor(u64),
     SetOffset(u64, f64),
+    SetSmoothing(u64, u32),
     ToggleSelected(u64),
     Rename(u64, String),
     Delete(u64),
@@ -137,6 +140,10 @@ fn trace_row(
     let first_line = egui::Rect::from_min_size(inner.min, vec2(inner.width(), LINE_HEIGHT));
     let second_line = egui::Rect::from_min_size(
         inner.min + vec2(0.0, LINE_HEIGHT),
+        vec2(inner.width(), LINE_HEIGHT),
+    );
+    let third_line = egui::Rect::from_min_size(
+        inner.min + vec2(0.0, 2.0 * LINE_HEIGHT),
         vec2(inner.width(), LINE_HEIGHT),
     );
     let mut top = ui.new_child(
@@ -290,6 +297,7 @@ fn trace_row(
     }
 
     let mut offset = trace.offset_db;
+    let mut smoothing = trace.metadata.smoothing_fraction;
     let offset_changed = row
         .with_layout(Layout::right_to_left(Align::Center), |row| {
             row.add_space(spacing::XS);
@@ -310,7 +318,49 @@ fn trace_row(
             response.changed()
         })
         .inner;
+
+    let mut definition = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(third_line)
+            .layout(Layout::left_to_right(Align::Center)),
+    );
+    definition.spacing_mut().item_spacing.x = spacing::SM;
+    definition.add_space(spacing::XS);
+    definition.label(
+        RichText::new(text::TRACE_SMOOTHING_SHORT)
+            .font(fonts::ui_medium(text_size::CAPTION))
+            .color(palette.text_muted),
+    );
+    let can_change = trace.can_change_smoothing();
+    let combo = definition
+        .add_enabled_ui(can_change, |row| {
+            egui::ComboBox::from_id_salt(("trace-smoothing", trace.id))
+                .width(SMOOTHING_COMBO_WIDTH)
+                .selected_text(text::format_smoothing(smoothing))
+                .show_ui(row, |row| {
+                    for choice in SMOOTHING_CHOICES {
+                        row.selectable_value(
+                            &mut smoothing,
+                            choice,
+                            text::format_smoothing(choice),
+                        );
+                    }
+                })
+        })
+        .inner;
+    let combo_response = combo.response.on_hover_text(if can_change {
+        text::TRACE_SMOOTHING
+    } else {
+        text::TRACE_SMOOTHING_FIXED
+    });
+    combo_label(
+        &combo_response,
+        text::trace_control_label(text::TRACE_SMOOTHING, &trace.name),
+    );
     if offset_changed {
         commands.push(TraceCommand::SetOffset(trace.id, offset));
+    }
+    if smoothing != trace.metadata.smoothing_fraction {
+        commands.push(TraceCommand::SetSmoothing(trace.id, smoothing));
     }
 }

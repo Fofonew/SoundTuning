@@ -28,10 +28,15 @@ pub enum Action {
     NudgeDelayDown,
     NudgeDelayUp,
     OpenAudioSettings,
+    ViewMagnitude,
+    ViewPhase,
+    ViewImpulse,
+    ToggleStackedViews,
+    ToggleFullscreen,
 }
 
 impl Action {
-    pub const ALL: [Self; 24] = [
+    pub const ALL: [Self; 29] = [
         Self::ToggleMeasurement,
         Self::FindDelay,
         Self::ApplyDelay,
@@ -56,9 +61,14 @@ impl Action {
         Self::NudgeDelayDown,
         Self::NudgeDelayUp,
         Self::OpenAudioSettings,
+        Self::ViewMagnitude,
+        Self::ViewPhase,
+        Self::ViewImpulse,
+        Self::ToggleStackedViews,
+        Self::ToggleFullscreen,
     ];
 
-    const SHORTCUT_PRIORITY: [Self; 20] = [
+    const SHORTCUT_PRIORITY: [Self; 25] = [
         Self::Redo,
         Self::Undo,
         Self::OpenPalette,
@@ -79,6 +89,11 @@ impl Action {
         Self::NudgeDelayDown,
         Self::NudgeDelayUp,
         Self::OpenAudioSettings,
+        Self::ToggleFullscreen,
+        Self::ViewMagnitude,
+        Self::ViewPhase,
+        Self::ViewImpulse,
+        Self::ToggleStackedViews,
     ];
 
     pub fn label(self) -> &'static str {
@@ -107,6 +122,11 @@ impl Action {
             Self::NudgeDelayDown => text::ACTION_NUDGE_DELAY_DOWN,
             Self::NudgeDelayUp => text::ACTION_NUDGE_DELAY_UP,
             Self::OpenAudioSettings => text::ACTION_OPEN_AUDIO_SETTINGS,
+            Self::ViewMagnitude => text::ACTION_VIEW_MAGNITUDE,
+            Self::ViewPhase => text::ACTION_VIEW_PHASE,
+            Self::ViewImpulse => text::ACTION_VIEW_IMPULSE,
+            Self::ToggleStackedViews => text::ACTION_TOGGLE_STACKED_VIEWS,
+            Self::ToggleFullscreen => text::ACTION_TOGGLE_FULLSCREEN,
         }
     }
 
@@ -127,6 +147,11 @@ impl Action {
             Self::AddEqFilter => plain(Key::E),
             Self::ToggleSidePanel => plain(Key::P),
             Self::ToggleDelayTracking => plain(Key::T),
+            Self::ViewMagnitude => plain(Key::M),
+            Self::ViewPhase => plain(Key::H),
+            Self::ViewImpulse => plain(Key::I),
+            Self::ToggleStackedViews => plain(Key::V),
+            Self::ToggleFullscreen => Some(KeyboardShortcut::new(Modifiers::SHIFT, Key::F)),
             Self::NudgeDelayDown => Some(KeyboardShortcut::new(Modifiers::SHIFT, Key::ArrowLeft)),
             Self::NudgeDelayUp => Some(KeyboardShortcut::new(Modifiers::SHIFT, Key::ArrowRight)),
             Self::OpenPalette => Some(KeyboardShortcut::new(Modifiers::COMMAND, Key::K)),

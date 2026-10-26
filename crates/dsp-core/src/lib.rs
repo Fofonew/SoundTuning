@@ -7,6 +7,7 @@ mod decibel;
 mod delay;
 mod error;
 mod grid;
+mod impulse;
 mod smoothing;
 mod spectrum;
 mod trace_average;
@@ -30,7 +31,10 @@ pub use decibel::{MIN_POWER_FOR_DB, amplitude_to_db, power_to_db};
 pub use delay::{DEFAULT_DELAY_FFT_LENGTH, DelayEstimate, DelayFinder, rotate_phase_for_delay};
 pub use error::DspError;
 pub use grid::{DISPLAY_GRID_POINTS_PER_OCTAVE, DisplayGrid};
-pub use smoothing::{GridProjector, Smoothing};
+pub use impulse::ImpulseResponseBuilder;
+pub use smoothing::{
+    CapturedSpectrum, GridProjector, GridValues, MAX_CAPTURE_HALF_BAND_STEPS, Smoothing,
+};
 pub use spectrum::SpectrumAnalyzer;
 pub use trace_average::power_average_db;
 pub use transfer::{

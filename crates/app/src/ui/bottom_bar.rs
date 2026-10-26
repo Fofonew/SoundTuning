@@ -8,7 +8,7 @@ use crate::design::tokens::spacing;
 use crate::design::widgets::{Emphasis, action_button, chip};
 use crate::text;
 
-const SMOOTHING_CHOICES: [u32; 6] = [0, 48, 24, 12, 6, 3];
+pub(crate) const SMOOTHING_CHOICES: [u32; 6] = [0, 48, 24, 12, 6, 3];
 const COHERENCE_STEP: f64 = 0.05;
 const GENERATOR_STEP_DB: f32 = 1.0;
 const GENERATOR_MIN_DBFS: f32 = -60.0;

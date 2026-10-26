@@ -133,6 +133,29 @@ pub const COHERENCE_AXIS_MAX: &str = "1";
 pub const COHERENCE_AXIS_MIN: &str = "0";
 pub const LIVE_TRACE_LABEL: &str = "Mesure";
 pub const PLOT_ACCESSIBLE_LABEL: &str = "Réponse en fréquence (magnitude) et cohérence";
+pub const PHASE_PLOT_ACCESSIBLE_LABEL: &str = "Tracé de phase";
+pub const IMPULSE_PLOT_ACCESSIBLE_LABEL: &str = "Tracé de la réponse impulsionnelle";
+pub const AXIS_DEGREES: &str = "°";
+pub const AXIS_MILLISECONDS: &str = "ms · 0 = délai appliqué";
+pub const AXIS_AMPLITUDE: &str = "×";
+pub const IMPULSE_EMPTY: &str = "Lancez la mesure (Espace) pour afficher la réponse impulsionnelle";
+pub const VIEW_MAGNITUDE: &str = "Magnitude";
+pub const VIEW_PHASE: &str = "Phase";
+pub const VIEW_IMPULSE: &str = "IR";
+pub const VIEW_IMPULSE_HINT: &str = "Réponse impulsionnelle";
+pub const VIEW_MAIN_LABEL: &str = "Vue";
+pub const VIEW_UPPER_LABEL: &str = "Au-dessus";
+pub const VIEW_STACKED: &str = "Superposer";
+pub const VIEW_FULLSCREEN: &str = "Plein écran";
+pub const VIEW_EXIT_FULLSCREEN: &str = "Quitter le plein écran";
+pub const IMPULSE_SCALE_LINEAR: &str = "Lin";
+pub const IMPULSE_SCALE_DB: &str = "dB";
+pub const IMPULSE_SCALE_HINT: &str = "Échelle de la réponse impulsionnelle : linéaire ou en dB";
+pub const ACTION_VIEW_MAGNITUDE: &str = "Vue magnitude";
+pub const ACTION_VIEW_PHASE: &str = "Vue phase";
+pub const ACTION_VIEW_IMPULSE: &str = "Vue réponse impulsionnelle (IR)";
+pub const ACTION_TOGGLE_STACKED_VIEWS: &str = "Superposer deux vues";
+pub const ACTION_TOGGLE_FULLSCREEN: &str = "Plein écran (tracés seuls)";
 
 pub const BANNER_START_FAILED: &str = "Impossible de démarrer la mesure";
 pub const BANNER_DISCONNECTED: &str =
@@ -210,6 +233,10 @@ pub const TRACE_SELECT: &str = "Sélectionner pour la moyenne";
 pub const TRACE_SELECT_SHORT: &str = "Sél.";
 pub const TRACE_COLOR: &str = "Changer la couleur";
 pub const TRACE_OFFSET: &str = "Décalage";
+pub const TRACE_SMOOTHING: &str = "Définition (lissage) de la trace";
+pub const TRACE_SMOOTHING_SHORT: &str = "Définition";
+pub const TRACE_SMOOTHING_FIXED: &str =
+    "Trace capturée par une version précédente : définition fixe";
 pub const TRACE_RENAME_HINT: &str = "Double-clic ou F2 pour renommer, Échap pour annuler";
 pub const NOTIFY_NOTHING_TO_CAPTURE: &str = "Rien à capturer : démarrez la mesure d'abord.";
 pub const NOTIFY_UNDONE: &str = "Action annulée";
@@ -540,6 +567,67 @@ pub fn format_seconds(value: f64) -> String {
     format!(
         "{} s",
         format_decimal(value, if value.fract() == 0.0 { 0 } else { 1 })
+    )
+}
+
+pub fn labelled_value(label: &str, value: &str) -> String {
+    format!("{label} : {value}")
+}
+
+pub fn with_shortcut(label: &str, shortcut: Option<&str>) -> String {
+    match shortcut {
+        Some(shortcut) => format!("{label} ({shortcut})"),
+        None => label.to_owned(),
+    }
+}
+
+pub fn upper_view_label(view: &str) -> String {
+    format!("{view} ({})", VIEW_UPPER_LABEL.to_lowercase())
+}
+
+pub fn format_axis_milliseconds(value_ms: f64) -> String {
+    let decimals = if value_ms.fract().abs() > f64::EPSILON {
+        1
+    } else {
+        0
+    };
+    format_decimal(value_ms, decimals)
+}
+
+pub fn format_axis_amplitude(value: f64) -> String {
+    format_decimal(value, 1)
+}
+
+pub fn format_amplitude(value: f64) -> String {
+    format_decimal(value, 2)
+}
+
+pub fn impulse_peak(time_ms: f64) -> String {
+    format!("Pic : {}", format_milliseconds(time_ms))
+}
+
+pub fn impulse_readout(time_ms: f64, distance_m: f64) -> String {
+    format!(
+        "{} · {}",
+        format_milliseconds(time_ms),
+        format_meters(distance_m)
+    )
+}
+
+pub fn format_degrees(value_deg: f64) -> String {
+    let sign = if value_deg.round() > 0.0 { "+" } else { "" };
+    format!("{sign}{}°", format_decimal(value_deg, 0))
+}
+
+pub fn format_axis_degrees(value_deg: f64) -> String {
+    format!("{}°", format_decimal(value_deg, 0))
+}
+
+pub fn crosshair_phase_readout(frequency_hz: f64, phase_deg: f64) -> String {
+    format!(
+        "{} · {}",
+        format_frequency(frequency_hz),
+        format_degrees(phase_deg)
     )
 }
 

@@ -87,3 +87,12 @@ Critères : hiérarchie visuelle, lisibilité à 1 m, alignements, espacements, 
 ### Phase 7 — tour 2 (2026-10-26)
 - Critiques : aucune régression ; barre supérieure équilibrée (délai 30 pt, réglage fin et suivi groupés à sa droite, actions principales à droite) ; écart proposition 1,21 ms / dérive 1,20 ms cohérent (mesure).
 - Captures après : `docs/ui-review/phase-7/*-tour2-apres.png` (8 écrans).
+
+### Vues Phase, IR, superposition, plein écran et définition des traces — tour 1 (2026-10-26, demande de l'utilisateur)
+- Écrans : Phase au-dessus de Magnitude (Nuit), IR seule (Nuit), Phase au-dessus de l'IR en plein écran (Plein jour), EQ (contrôle de non-régression avec la nouvelle barre de vues).
+- Critiques : sur la ligne d'une trace, la liste « Définition » (1/48) écrasait la case « Visible » (libellé disparu) ; dans l'IR, l'étiquette « Pic : 0,00 ms » chevauchait le pic (à gauche de la vue par défaut) ; l'axe des temps ne disait pas que 0 ms = délai appliqué (le pic à 0 ms pouvait passer pour une erreur alors que le délai affiché est 2,02 ms) ; boutons de la vue du dessus homonymes de ceux de la vue principale (« Phase » deux fois pour l'accessibilité).
+- Corrections : ligne de trace sur trois lignes (nom ; Sél., Visible, décalage ; « Définition » + liste) ; étiquette du pic en haut à droite ; axe « ms · 0 = délai appliqué » ; boutons du dessus nommés « Phase (au-dessus) »… pour AccessKit.
+
+### Vues — tour 2 (2026-10-26)
+- Critiques : aucune régression sur EQ, alignement, traces, réglages audio (la barre de vues décale le tracé de 40 px, l'aire centrale reste > 70 %) ; phase repliée à ±180° sans trait vertical parasite ; IR normalisée au plus grand pic, enveloppe min/max par colonne ; plein écran : panneau latéral et barre inférieure masqués, délai toujours visible en haut. Défaut connu assumé : trace et mesure identiques se superposent exactement (la trace n'est visible qu'après un changement).
+- Captures après : `docs/ui-review/vues/phase_stacked-tour2-apres.png`, `impulse-tour2-apres.png`, `impulse_stacked_fullscreen_daylight-tour2-apres.png`, `eq-tour2-apres.png`.

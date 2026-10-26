@@ -39,7 +39,19 @@ pub fn build_polyline(
     level_at: impl Fn(usize) -> Option<f64>,
     output: &mut Polyline,
 ) {
+    build_polyline_with_breaks(view, rect, frequencies_hz, level_at, f64::INFINITY, output);
+}
+
+pub fn build_polyline_with_breaks(
+    view: &PlotView,
+    rect: Rect,
+    frequencies_hz: &[f64],
+    level_at: impl Fn(usize) -> Option<f64>,
+    max_step: f64,
+    output: &mut Polyline,
+) {
     output.clear();
+    let mut previous_level: Option<f64> = None;
     let visible_low = view.low_hz;
     let visible_high = view.high_hz;
     let mut segment_start: Option<usize> = None;
@@ -51,13 +63,22 @@ pub fn build_polyline(
                 || frequencies_hz
                     .get(index - 1)
                     .is_some_and(|previous| *previous <= visible_high));
-        let point = level_at(index)
-            .filter(|_| neighbours_visible || (visible_low..=visible_high).contains(frequency_hz))
+        let level = level_at(index)
+            .filter(|_| neighbours_visible || (visible_low..=visible_high).contains(frequency_hz));
+        let point = level
             .map(|level_db| view.to_screen(rect, *frequency_hz, level_db))
             .filter(|point| {
                 point.x.abs() < MAX_ABS_SCREEN_COORDINATE
                     && point.y.abs() < MAX_ABS_SCREEN_COORDINATE
             });
+        let jumps = matches!(
+            (previous_level, level),
+            (Some(previous), Some(current)) if (current - previous).abs() > max_step
+        );
+        if jumps && let Some(start) = segment_start.take() {
+            output.segments.push(start..output.points.len());
+        }
+        previous_level = point.and(level);
         match point {
             Some(point) => {
                 if segment_start.is_none() {
@@ -124,5 +145,27 @@ mod tests {
         build_polyline(&view, rect, &frequencies, |_| Some(1.0), &mut polyline);
         assert_eq!(polyline.points.capacity(), capacity);
         assert_eq!(polyline.points.len(), 957);
+    }
+
+    #[test]
+    fn large_jumps_split_the_curve_without_dropping_points() {
+        let view = PlotView {
+            low_db: -180.0,
+            high_db: 180.0,
+            ..PlotView::default()
+        };
+        let rect = Rect::from_min_size(pos2(0.0, 0.0), vec2(800.0, 400.0));
+        let frequencies = [100.0, 200.0, 300.0, 400.0];
+        let phases = [170.0, 179.0, -178.0, -170.0];
+        let mut polyline = Polyline::default();
+        build_polyline_with_breaks(
+            &view,
+            rect,
+            &frequencies,
+            |index| Some(phases[index]),
+            180.0,
+            &mut polyline,
+        );
+        assert_eq!(polyline.segments, vec![0..2, 2..4]);
     }
 }

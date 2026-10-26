@@ -4,6 +4,7 @@ const FIRST_DECADE_HZ: f64 = 10.0;
 const DECADE_COUNT: i32 = 4;
 const DB_STEP_CHOICES: [f64; 4] = [3.0, 6.0, 12.0, 24.0];
 const MAX_DB_LINES: f64 = 10.0;
+const DEGREE_STEP_CHOICES: [f64; 5] = [15.0, 30.0, 45.0, 90.0, 180.0];
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct FrequencyTick {
@@ -41,6 +42,18 @@ pub fn db_ticks(low_db: f64, high_db: f64) -> Vec<f64> {
     (first..=last).map(|index| index as f64 * step).collect()
 }
 
+pub fn degree_ticks(low_deg: f64, high_deg: f64) -> Vec<f64> {
+    let span = high_deg - low_deg;
+    let step = DEGREE_STEP_CHOICES
+        .iter()
+        .copied()
+        .find(|step| span / step <= MAX_DB_LINES)
+        .unwrap_or(DEGREE_STEP_CHOICES[DEGREE_STEP_CHOICES.len() - 1]);
+    let first = (low_deg / step).ceil() as i64;
+    let last = (high_deg / step).floor() as i64;
+    (first..=last).map(|index| index as f64 * step).collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -74,5 +87,17 @@ mod tests {
         );
         assert_eq!(db_step(30.0), 3.0);
         assert_eq!(db_step(200.0), 24.0);
+    }
+
+    #[test]
+    fn phase_ticks_fall_on_45_degrees_over_a_full_turn() {
+        assert_eq!(
+            degree_ticks(-180.0, 180.0),
+            vec![-180.0, -135.0, -90.0, -45.0, 0.0, 45.0, 90.0, 135.0, 180.0]
+        );
+        assert_eq!(
+            degree_ticks(-30.0, 30.0),
+            vec![-30.0, -15.0, 0.0, 15.0, 30.0]
+        );
     }
 }

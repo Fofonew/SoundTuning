@@ -3,8 +3,9 @@ use std::sync::Arc;
 
 use audio_io::StereoFrame;
 use dsp_core::{
-    BinTransfer, Complex64, CrossSpectrumAccumulator, DisplayGrid, GridProjector, SpectrumAnalyzer,
-    compute_transfer, min_valid_auto_spectrum_power, power_to_db,
+    BinTransfer, Complex64, CrossSpectrumAccumulator, DisplayGrid, GridProjector,
+    ImpulseResponseBuilder, SpectrumAnalyzer, compute_transfer, min_valid_auto_spectrum_power,
+    power_to_db,
 };
 
 use crate::delay_estimator::DelayEstimator;
@@ -44,6 +45,7 @@ struct AnalysisBuffers {
     bins: Vec<BinTransfer>,
     rotated_cross_spectrum: Vec<Complex64>,
     projector: GridProjector,
+    impulse: ImpulseResponseBuilder,
 }
 
 impl AnalysisBuffers {
@@ -73,6 +75,7 @@ impl AnalysisBuffers {
             bins: vec![BinTransfer::default(); bin_count],
             rotated_cross_spectrum: vec![Complex64::default(); bin_count],
             projector: GridProjector::new(grid, fft_length, sample_rate, settings.smoothing),
+            impulse: ImpulseResponseBuilder::new(fft_length)?,
         })
     }
 }
@@ -458,6 +461,21 @@ impl MeasurementCore {
             min_power,
             &mut snapshot.response,
         )?;
+        analysis.projector.capture(
+            &analysis.bins,
+            &analysis.rotated_cross_spectrum,
+            analysis.accumulator.gxx(),
+            min_power,
+            &mut snapshot.spectrum,
+        )?;
+        snapshot.impulse.resize(analysis.impulse.fft_length(), 0.0);
+        analysis.impulse.compute(
+            &analysis.rotated_cross_spectrum,
+            analysis.accumulator.gxx(),
+            min_power,
+            &mut snapshot.impulse,
+        )?;
+        snapshot.impulse_zero_index = analysis.impulse.zero_index();
 
         self.sequence += 1;
         snapshot.sequence = self.sequence;
