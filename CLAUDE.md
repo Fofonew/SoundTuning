@@ -89,20 +89,9 @@ Règles complètes (enchaînement des phases, fin de phase `ecc:rust-reviewer` �
 
 ## État
 
-- **Phase en cours : 4 (traces et sessions)** — fonctionnelle, pas encore committée comme « phase 4 ».
-- Fait dans la phase 4 : `session.rs` (Trace, Session, UndoHistory, moyenne, CSV, SessionStore), `ui/traces_panel.rs` (lignes à deux niveaux : couleur, nom, renommage double-clic, visible, décalage, suppression ; moyenne, export CSV), câblage `app.rs` (S capture, Cmd+Z / Maj+Cmd+Z, autosauvegarde `session.json` 2 s, reprise au lancement, export `~/Documents/SoundTuning`, traces superposées au tracé avec décalage), notifications regroupées par action ; tests : 17 interactions + 4 captures (dont `traces`) ; revue visuelle 2 tours consignée ; `cargo test -p app` : 85 réussis ; dernier `verify` complet (phase 3) au vert, aucun échec en cours.
-- **Reste pour clore la phase 4** — suites de la revue `ecc:rust-reviewer` (verdict BLOQUANT, non corrigées) :
-  1. HIGH : sérialisation + écriture de `session.json` sur le thread UI → thread d'écriture dédié (canal borné, coalescence, JSON compact, `sync_all` avant `rename`) ; synchrone seulement dans `on_exit`.
-  2. HIGH : `session.json` illisible → le renommer en `session.corrupt-<horodatage>.json`, notifier, garder un `.bak` de la dernière sauvegarde valide.
-  3. HIGH : échec d'autosauvegarde jamais retenté → ne remettre `session_dirty_since` à `None` qu'en cas de succès, notifier une fois.
-  4. HIGH : `Session::to_csv` en O(n²) (`displayed_db()` par point) → calculer une fois par trace.
-  5. MEDIUM : double-clic de renommage qui bascule la sélection (créer une case de sélection dédiée) ; Échap doit annuler le renommage ; F2 pour renommer ; libellés AccessKit incluant le nom de la trace.
-  6. MEDIUM : notification « Annuler » liée à son édition (jeton = profondeur d'historique) ; dédoublonnage par groupe plutôt que par action.
-  7. MEDIUM : historique mémoire (traces en `Arc<Trace>`), sélection/visibilité/couleur hors de l'historique ; fusion des glissés de décalage terminée au `drag_stopped`.
-  8. MEDIUM : capture refusée à 64 traces / moyenne impossible → erreurs typées et textes dédiés ; métadonnées divergentes dans la moyenne.
-  9. CSV : virgule décimale (locale française) ; nom de fichier unique même dans la même seconde ; tests manquants (suppression, renommage, moyenne, décalage, session corrompue, échec d'écriture, redo vidé après édition).
-  Puis : `verify`, mise à jour État, commit « phase 4 : … », `git log --oneline -5`.
-- Déjà amorcé pour les phases suivantes (compilé, non câblé) : `ui/alignment_panel.rs` (phase 5), `ui/eq_panel.rs` (phase 6), textes associés dans `text.rs`, `docs/WINDOWS.md` et feature `asio` (phase 8).
-- Phases terminées : setup ; 0 ; 1 (`dsp-core`) ; 2 (`engine`) ; 3 (interface).
-- **Prochaine action** : corriger les points HIGH 1 à 4 ci-dessus avec un test chacun.
-- Suite : 5 (délai : suivi, notification de dérive, ajustement fin, calibrage ; panneau Alignement + bande à la souris + somme prédite ; capture `alignment`), 6 (EQ : câblage panneau, édition sur le tracé, résultat prédit, trace inversée, exports ; capture `eq`), 7 (finition, profilage, critères UX/Rapidité, `MANUAL_TESTS.md`), 8 (CI complète, packaging `cargo-packager`, rapport final).
+- **Phase en cours : 5 (délais et alignement).**
+- Phases terminées : setup ; 0 ; 1 (`dsp-core`) ; 2 (`engine`) ; 3 (interface) ; 4 (traces et sessions : capture, liste, sélection, renommage F2/double-clic, moyenne, annuler/rétablir, autosauvegarde sur thread dédié + `.bak` + session illisible mise de côté, export CSV ; D-028, D-031).
+- Dernier `verify` complet (fin de phase 4) : au vert, 236 tests ; benchs `engine_update` 0,61 ms, `delay_search` 1,77 ms, `plot_frame_prep` 0,053 ms, `optimal_alignment` 2,94 ms. Aucun échec en cours.
+- Déjà amorcé (compilé, non câblé) : `ui/alignment_panel.rs`, `ui/eq_panel.rs`, `alignment_state.rs`, `eq_state.rs`, textes ; `docs/WINDOWS.md`, feature `asio`.
+- **Prochaine action** : phase 5 — câbler le panneau Alignement (proposition par `find_optimal_alignment`, somme prédite tracée, bande Maj+glisser), suivi du délai + notification de dérive, ajustement fin ±0,01 ms, capture `alignment`, revue visuelle 2 tours.
+- Suite : 6 (EQ : câblage panneau, édition sur le tracé, résultat prédit, trace inversée, exports ; capture `eq`), 7 (finition, profilage, critères UX/Rapidité, `MANUAL_TESTS.md`), 8 (CI complète, packaging `cargo-packager`, rapport final).

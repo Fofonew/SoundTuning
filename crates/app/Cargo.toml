@@ -23,7 +23,7 @@ clap = { version = "4.6.7", features = ["derive"] }
 dsp-core = { version = "0.1.0", path = "../dsp-core" }
 eframe = "0.37.0"
 engine = { version = "0.1.0", path = "../engine" }
-serde = { version = "1.0.229", features = ["derive"] }
+serde = { version = "1.0.229", features = ["derive", "rc"] }
 serde_json = "1.0.154"
 tracing = "0.1.44"
 tracing-subscriber = "0.3.23"

@@ -216,13 +216,24 @@ fn read_config(path: &Path) -> anyhow::Result<AppConfig> {
 }
 
 pub fn write_json_atomically<T: serde::Serialize>(path: &Path, value: &T) -> anyhow::Result<()> {
+    let text = serde_json::to_vec_pretty(value).context("serializing")?;
+    write_bytes_atomically(path, &text)
+}
+
+pub fn write_bytes_atomically(path: &Path, bytes: &[u8]) -> anyhow::Result<()> {
+    use std::io::Write;
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)
             .with_context(|| format!("creating {}", parent.display()))?;
     }
-    let text = serde_json::to_string_pretty(value).context("serializing")?;
     let temporary = path.with_extension("json.tmp");
-    std::fs::write(&temporary, text).with_context(|| format!("writing {}", temporary.display()))?;
+    let mut file = std::fs::File::create(&temporary)
+        .with_context(|| format!("creating {}", temporary.display()))?;
+    file.write_all(bytes)
+        .with_context(|| format!("writing {}", temporary.display()))?;
+    file.sync_all()
+        .with_context(|| format!("syncing {}", temporary.display()))?;
+    drop(file);
     std::fs::rename(&temporary, path).with_context(|| format!("replacing {}", path.display()))
 }
 

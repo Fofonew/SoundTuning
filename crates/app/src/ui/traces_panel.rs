@@ -31,6 +31,19 @@ pub enum TraceCommand {
 #[derive(Debug, Default)]
 pub struct RenameState {
     editing: Option<(u64, String)>,
+    focused: bool,
+}
+
+impl RenameState {
+    fn start(&mut self, trace: &Trace) {
+        self.editing = Some((trace.id, trace.name.clone()));
+        self.focused = false;
+    }
+
+    fn stop(&mut self) {
+        self.editing = None;
+        self.focused = false;
+    }
 }
 
 pub fn show(
@@ -40,6 +53,17 @@ pub fn show(
     rename: &mut RenameState,
 ) -> Vec<TraceCommand> {
     let mut commands = Vec::new();
+    if rename.editing.is_none()
+        && ui.input(|input| input.key_pressed(egui::Key::F2))
+        && let [only] = session
+            .traces
+            .iter()
+            .filter(|trace| trace.selected)
+            .collect::<Vec<_>>()
+            .as_slice()
+    {
+        rename.start(only);
+    }
     ui.add_space(spacing::MD);
     egui::ScrollArea::vertical()
         .max_height(ui.available_height() - 2.0 * size::BUTTON_HEIGHT - 3.0 * spacing::MD)
@@ -124,7 +148,13 @@ fn trace_row(
 
     let (swatch_rect, swatch) =
         top.allocate_exact_size(vec2(ICON_BUTTON_SIZE, ICON_BUTTON_SIZE), Sense::click());
-    swatch.widget_info(|| WidgetInfo::labeled(Role::Button, true, text::TRACE_COLOR));
+    swatch.widget_info(|| {
+        WidgetInfo::labeled(
+            Role::Button,
+            true,
+            text::trace_control_label(text::TRACE_COLOR, &trace.name),
+        )
+    });
     top.painter().rect_filled(
         egui::Rect::from_center_size(swatch_rect.center(), vec2(SWATCH_SIZE, SWATCH_SIZE)),
         CornerRadius::same(radius::SMALL),
@@ -142,20 +172,31 @@ fn trace_row(
         .editing
         .as_ref()
         .is_some_and(|(id, _)| *id == trace.id);
-    let name_width = top.available_width();
+    let name_width = (top.available_width() - ICON_BUTTON_SIZE - spacing::SM).max(0.0);
     if editing_this {
         if let Some((_, buffer)) = rename.editing.as_mut() {
             let response = top.add_sized(
                 vec2(name_width, size::MIN_CLICK_HEIGHT),
                 egui::TextEdit::singleline(buffer).font(fonts::ui(text_size::LABEL)),
             );
-            response.request_focus();
-            if response.lost_focus() {
+            if !rename.focused {
+                response.request_focus();
+                rename.focused = true;
+            }
+            let (escape, enter) = top.input(|input| {
+                (
+                    input.key_pressed(egui::Key::Escape),
+                    input.key_pressed(egui::Key::Enter),
+                )
+            });
+            if escape {
+                rename.stop();
+            } else if enter || response.lost_focus() {
                 let name = buffer.trim().to_owned();
                 if !name.is_empty() && name != trace.name {
                     commands.push(TraceCommand::Rename(trace.id, name));
                 }
-                rename.editing = None;
+                rename.stop();
             }
         }
     } else {
@@ -177,11 +218,38 @@ fn trace_row(
             )
             .inner
             .on_hover_text(text::TRACE_RENAME_HINT);
+        label.widget_info(|| {
+            WidgetInfo::labeled(
+                Role::Button,
+                true,
+                text::trace_control_label(text::TRACE_RENAME, &trace.name),
+            )
+        });
         if label.double_clicked() {
-            rename.editing = Some((trace.id, trace.name.clone()));
-        } else if label.clicked() {
-            commands.push(TraceCommand::ToggleSelected(trace.id));
+            rename.start(trace);
         }
+    }
+
+    let delete = top
+        .with_layout(Layout::right_to_left(Align::Center), |top| {
+            top.add_sized(
+                vec2(ICON_BUTTON_SIZE, ICON_BUTTON_SIZE),
+                egui::Button::new(
+                    RichText::new(text::TRACE_DELETE_GLYPH).font(fonts::ui(text_size::TITLE)),
+                )
+                .frame(false),
+            )
+        })
+        .inner;
+    delete.widget_info(|| {
+        WidgetInfo::labeled(
+            Role::Button,
+            true,
+            text::trace_control_label(text::TRACE_DELETE, &trace.name),
+        )
+    });
+    if delete.on_hover_text(text::TRACE_DELETE).clicked() {
+        commands.push(TraceCommand::Delete(trace.id));
     }
 
     let mut row = ui.new_child(
@@ -190,10 +258,31 @@ fn trace_row(
             .layout(Layout::left_to_right(Align::Center)),
     );
     row.spacing_mut().item_spacing.x = spacing::SM;
-    row.add_space(ICON_BUTTON_SIZE + spacing::SM);
+    row.add_space(spacing::XS);
+    let mut selected = trace.selected;
+    let select = row.add(egui::Checkbox::new(&mut selected, text::TRACE_SELECT_SHORT));
+    select.widget_info(|| {
+        WidgetInfo::selected(
+            Role::CheckBox,
+            true,
+            trace.selected,
+            text::trace_control_label(text::TRACE_SELECT, &trace.name),
+        )
+    });
+    if select.on_hover_text(text::TRACE_SELECT).changed() {
+        commands.push(TraceCommand::ToggleSelected(trace.id));
+    }
     let mut visible = trace.visible;
-    if row
-        .add(egui::Checkbox::new(&mut visible, text::TRACE_VISIBLE_SHORT))
+    let visibility = row.add(egui::Checkbox::new(&mut visible, text::TRACE_VISIBLE_SHORT));
+    visibility.widget_info(|| {
+        WidgetInfo::selected(
+            Role::CheckBox,
+            true,
+            trace.visible,
+            text::trace_control_label(text::TRACE_TOGGLE_VISIBLE, &trace.name),
+        )
+    });
+    if visibility
         .on_hover_text(text::TRACE_TOGGLE_VISIBLE)
         .changed()
     {
@@ -201,30 +290,21 @@ fn trace_row(
     }
 
     let mut offset = trace.offset_db;
-    if row
-        .add(
-            egui::DragValue::new(&mut offset)
-                .speed(OFFSET_SPEED_DB)
-                .range(-OFFSET_LIMIT_DB..=OFFSET_LIMIT_DB)
-                .max_decimals(1)
-                .custom_formatter(|value, _| text::format_db(value)),
-        )
-        .on_hover_text(text::TRACE_OFFSET)
-        .changed()
-    {
+    let offset_changed = row
+        .with_layout(Layout::right_to_left(Align::Center), |row| {
+            row.add_space(spacing::XS);
+            row.add(
+                egui::DragValue::new(&mut offset)
+                    .speed(OFFSET_SPEED_DB)
+                    .range(-OFFSET_LIMIT_DB..=OFFSET_LIMIT_DB)
+                    .max_decimals(1)
+                    .custom_formatter(|value, _| text::format_db(value)),
+            )
+            .on_hover_text(text::TRACE_OFFSET)
+            .changed()
+        })
+        .inner;
+    if offset_changed {
         commands.push(TraceCommand::SetOffset(trace.id, offset));
     }
-    row.with_layout(Layout::right_to_left(Align::Center), |row| {
-        let delete = row.add_sized(
-            vec2(ICON_BUTTON_SIZE, ICON_BUTTON_SIZE),
-            egui::Button::new(
-                RichText::new(text::TRACE_DELETE_GLYPH).font(fonts::ui(text_size::TITLE)),
-            )
-            .frame(false),
-        );
-        delete.widget_info(|| WidgetInfo::labeled(Role::Button, true, text::TRACE_DELETE));
-        if delete.on_hover_text(text::TRACE_DELETE).clicked() {
-            commands.push(TraceCommand::Delete(trace.id));
-        }
-    });
 }

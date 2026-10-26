@@ -192,7 +192,7 @@ Non corrigé, justifié :
 - Export CSV : `~/Documents/SoundTuning/soundtuning-AAAAMMJJ-HHMMSS.csv`, séparateur `;`, une colonne dB et une colonne γ² par trace (cellule vide = point invalide).
 - Nouvelle dépendance hors stack : **`chrono`** (horloge locale pour « Trace 3 — 21:42 » et les noms de fichiers ; la bibliothèque standard ne donne pas l'heure locale).
 
-### D-029 — Revue `ecc:rust-reviewer` de la phase 4 : à traiter (non encore corrigé)
+### D-029 — Revue `ecc:rust-reviewer` de la phase 4 (traitée, voir D-031)
 - Verdict BLOQUANT. Points HIGH à corriger avant le commit « phase 4 » : écriture de la session hors du thread UI (thread dédié, `sync_all`), préservation d'un `session.json` illisible (renommé + notification + `.bak`), nouvel essai après un échec d'autosauvegarde, export CSV linéaire. Points MEDIUM : sélection séparée du renommage, Échap/F2, jeton d'annulation, historique en `Arc<Trace>` et hors sélection/visibilité/couleur, erreurs typées (64 traces, moyenne), CSV à virgule décimale et nom unique, tests complémentaires. Détail et ordre de traitement : section « État » de `CLAUDE.md`.
 
 ### D-030 — Interface des phases 5 et 6 amorcée (2026-10-26)
@@ -200,3 +200,18 @@ Non corrigé, justifié :
 - Panneau EQ (`ui/eq_panel.rs`) : banques A/B, bypass global et par filtre, vues « Prédit » / « EQ seul » / « Trace inversée », cible (mesure en direct ou trace mémorisée), éditeur par filtre (type, fréquence, gain, Q, pente des coupe-bas/haut, largeur en octaves), ajout (E, 16 maximum), exports texte et JSON. L'état vit dans `Session.eq` (annulable).
 - Notifications : dédoublonnées par action associée (une seule « Trace capturée — Annuler » visible), largeur 420 px, texte tronqué avant le bouton.
 - Outil de packaging retenu pour la phase 8 : `cargo-packager` (crabnebula-dev) — `.app` macOS et installeur NSIS Windows depuis `[package.metadata.packager]` ; procédure Windows dans `docs/WINDOWS.md`.
+
+### D-031 — Suites de la revue de la phase 4 (2026-10-26)
+Corrigé :
+- Autosauvegarde sur un thread `session-writer` dédié : canal borné (1), coalescence sur la dernière session, JSON compact, `sync_all` avant `rename` ; le thread UI ne fait plus que cloner la session (traces partagées en `Arc<Trace>`, donc clone en O(nombre de traces)). Écriture synchrone seulement à la fermeture (`finish`).
+- `session.json` illisible : renommé `session.corrupt-AAAAMMJJ-HHMMSS.json`, la dernière sauvegarde valide (`session.json.bak`, conservée à chaque écriture) est rechargée, notification au lancement.
+- Échec d'écriture : notification une seule fois (« nouvel essai automatique »), session remise en attente, nouvel essai 2 s plus tard ; l'alerte se réarme après une écriture réussie.
+- `to_csv` linéaire (niveaux affichés calculés une fois par trace) ; nombres à virgule décimale (séparateur `;`, convention des tableurs français) ; nom de fichier unique (`-2`, `-3`… en `create_new`).
+- Erreurs typées : `CaptureError` (aucune moyenne, 64 traces) et `AverageError` (moins de deux traces, 64 traces, fréquences d'échantillonnage différentes), chacune avec son texte. Moyenne : moyennes cumulées, compensation conservée seulement si identique.
+- Ligne de trace : case « Sél. » dédiée (le double-clic ne fait plus que renommer), F2 renomme la trace sélectionnée, Échap annule, Entrée valide ; libellés AccessKit incluant le nom de la trace (« Supprimer la trace — Trace 2 — 21:42 »).
+- La sélection n'entre plus dans l'historique (n'encombre pas Cmd+Z) ; historique en `VecDeque`.
+- Tests : sélection + moyenne + annulation, F2 + Entrée, F2 + Échap, suppression + annulation, décalage + annulation, échec d'autosauvegarde notifié et en attente, session illisible signalée, `.bak` restauré, écrivain sur thread, limite de 64 traces, redo vidé après une nouvelle édition, CSV linéaire.
+Non corrigé, justifié :
+- Jeton d'annulation par notification : la notification « Annuler » expire en quelques secondes et toute édition ultérieure la remplace (dédoublonnage par action) ; Cmd+Z annule toujours la dernière édition, comme dans tout éditeur.
+- Visibilité et couleur restent annulables : ce sont des choix d'affichage que l'opérateur veut pouvoir défaire (spec : annuler/rétablir « pour traces »).
+- Glissé de décalage : les modifications successives d'une même trace forment une seule étape tant qu'aucune autre commande n'intervient (équivalent pratique de `drag_stopped`).

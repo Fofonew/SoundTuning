@@ -303,3 +303,143 @@ fn csv_export_writes_every_trace() {
     assert_eq!(csv.lines().count(), 958);
     std::fs::remove_dir_all(export_directory).unwrap();
 }
+
+fn capture_two_traces(
+    harness: &mut egui_kittest::Harness<'static, soundtuning::app::SoundTuningApp>,
+) {
+    wait_for_stable_measurement(harness);
+    harness.key_press(Key::S);
+    harness.step();
+    harness.key_press(Key::S);
+    harness.step();
+    assert_eq!(harness.state().session().traces.len(), 2);
+}
+
+#[test]
+fn trace_rows_select_average_rename_and_delete() {
+    let mut harness = harness(file_options(Theme::Night, true));
+    capture_two_traces(&mut harness);
+    harness.run_steps(4);
+
+    for checkbox in harness.get_all_by_label_contains(soundtuning::text::TRACE_SELECT) {
+        checkbox.click();
+    }
+    harness.run_steps(4);
+    assert!(
+        harness
+            .state()
+            .session()
+            .traces
+            .iter()
+            .all(|trace| trace.selected)
+    );
+
+    harness
+        .get_by_label(soundtuning::text::TRACES_AVERAGE)
+        .click();
+    harness.run_steps(4);
+    assert_eq!(harness.state().session().traces.len(), 3);
+    let average_id = harness.state().session().traces[2].id;
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+    harness.run_steps(4);
+    assert_eq!(harness.state().session().traces.len(), 2);
+
+    let first_select = format!(
+        "{} — {}",
+        soundtuning::text::TRACE_SELECT,
+        harness.state().session().traces[1].name
+    );
+    harness.get_by_label(&first_select).click();
+    harness.run_steps(4);
+    harness.key_press(Key::F2);
+    harness.run_steps(4);
+    harness.get_by_role(Role::TextInput).type_text(" façade");
+
+    harness.key_press(Key::Enter);
+    harness.run_steps(4);
+    let renamed = &harness.state().session().traces[0];
+    assert!(renamed.name.ends_with(" façade"), "{}", renamed.name);
+    assert_ne!(renamed.id, average_id);
+
+    harness.key_press(Key::F2);
+    harness.run_steps(4);
+    harness.get_by_role(Role::TextInput).type_text(" oublié");
+    harness.key_press(Key::Escape);
+    harness.run_steps(4);
+    assert!(
+        harness.state().session().traces[0]
+            .name
+            .ends_with(" façade")
+    );
+
+    let delete_label = format!(
+        "{} — {}",
+        soundtuning::text::TRACE_DELETE,
+        harness.state().session().traces[1].name
+    );
+    harness.get_by_label(&delete_label).click();
+    harness.run_steps(4);
+    assert_eq!(harness.state().session().traces.len(), 1);
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+    harness.run_steps(4);
+    assert_eq!(harness.state().session().traces.len(), 2);
+}
+
+#[test]
+fn offset_edits_shift_the_trace_and_are_undoable() {
+    let mut harness = harness(file_options(Theme::Night, true));
+    capture_two_traces(&mut harness);
+    let id = harness.state().session().traces[0].id;
+    harness.state_mut().apply_test_offset(id, 4.5);
+    assert_eq!(harness.state().session().trace(id).unwrap().offset_db, 4.5);
+    let level = harness.state().session().trace(id).unwrap().magnitude_db[400].unwrap();
+    let displayed = harness.state().session().trace(id).unwrap().displayed_db()[400].unwrap();
+    assert!((displayed - level - 4.5).abs() < 1.0e-12);
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+    harness.run_steps(4);
+    assert_eq!(harness.state().session().trace(id).unwrap().offset_db, 0.0);
+}
+
+#[test]
+fn failed_autosave_is_reported_once_and_retried() {
+    let directory =
+        std::env::temp_dir().join(format!("soundtuning-save-failure-{}", std::process::id()));
+    std::fs::create_dir_all(&directory).unwrap();
+    let blocker = directory.join("blocker");
+    std::fs::write(&blocker, b"").unwrap();
+    let mut options = file_options(Theme::Night, true);
+    options.session_store = soundtuning::session::SessionStore::File(blocker.join("session.json"));
+    let mut harness = harness(options);
+    wait_for_stable_measurement(&mut harness);
+    harness.key_press(Key::S);
+    harness.step();
+    step_until(&mut harness, Duration::from_secs(10), |app| {
+        app.notification_texts()
+            .iter()
+            .any(|text| text == soundtuning::text::NOTIFY_SESSION_SAVE_FAILED)
+    });
+    assert!(harness.state().is_session_save_pending());
+    std::fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn unreadable_session_is_reported_at_launch() {
+    let directory =
+        std::env::temp_dir().join(format!("soundtuning-corrupt-{}", std::process::id()));
+    std::fs::create_dir_all(&directory).unwrap();
+    let path = directory.join("session.json");
+    std::fs::write(&path, b"{ broken").unwrap();
+    let mut options = file_options(Theme::Night, false);
+    options.session_store = soundtuning::session::SessionStore::File(path.clone());
+    let mut harness = harness(options);
+    harness.step();
+    assert!(
+        harness
+            .state()
+            .notification_texts()
+            .iter()
+            .any(|text| text == soundtuning::text::NOTIFY_SESSION_CORRUPT_EMPTY)
+    );
+    assert!(!path.exists());
+    std::fs::remove_dir_all(directory).unwrap();
+}

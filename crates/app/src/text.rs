@@ -172,10 +172,11 @@ pub const TRACE_DELETE_GLYPH: &str = "×";
 pub const NOTIFY_TRACE_DELETED: &str = "Trace supprimée";
 pub const TRACE_TOGGLE_VISIBLE: &str = "Afficher / masquer";
 pub const TRACE_VISIBLE_SHORT: &str = "Visible";
-pub const TRACE_SELECT: &str = "Sélectionner";
+pub const TRACE_SELECT: &str = "Sélectionner pour la moyenne";
+pub const TRACE_SELECT_SHORT: &str = "Sél.";
 pub const TRACE_COLOR: &str = "Changer la couleur";
 pub const TRACE_OFFSET: &str = "Décalage";
-pub const TRACE_RENAME_HINT: &str = "Double-cliquez pour renommer";
+pub const TRACE_RENAME_HINT: &str = "Double-clic ou F2 pour renommer, Échap pour annuler";
 pub const NOTIFY_NOTHING_TO_CAPTURE: &str = "Rien à capturer : démarrez la mesure d'abord.";
 pub const NOTIFY_UNDONE: &str = "Action annulée";
 pub const NOTIFY_REDONE: &str = "Action rétablie";
@@ -183,6 +184,16 @@ pub const NOTIFY_NOTHING_TO_UNDO: &str = "Rien à annuler";
 pub const NOTIFY_AVERAGE_NEEDS_TWO: &str = "Sélectionnez au moins deux traces pour les moyenner.";
 pub const NOTIFY_EXPORT_FAILED: &str = "Export impossible";
 pub const EXPORT_DIRECTORY_NAME: &str = "SoundTuning";
+pub const NOTIFY_TOO_MANY_TRACES: &str = "64 traces au maximum : supprimez-en une pour capturer.";
+pub const NOTIFY_AVERAGE_INCOMPATIBLE: &str =
+    "Moyenne impossible : les traces n'ont pas la même fréquence d'échantillonnage.";
+pub const NOTIFY_SESSION_SAVE_FAILED: &str =
+    "Sauvegarde de la session impossible : nouvel essai automatique.";
+pub const NOTIFY_SESSION_CORRUPT_RESTORED: &str =
+    "Session illisible mise de côté : dernière sauvegarde valide restaurée.";
+pub const NOTIFY_SESSION_CORRUPT_EMPTY: &str =
+    "Session illisible mise de côté : nouvelle session vide.";
+pub const TRACE_RENAME: &str = "Renommer";
 
 pub const RANGE_SEPARATOR: &str = "–";
 pub const ALIGNMENT_TRACE_A: &str = "Trace A";
@@ -260,6 +271,14 @@ pub fn trace_name(number: u64, clock: &str) -> String {
 
 pub fn average_trace_name(number: u64, clock: &str, member_count: usize) -> String {
     format!("Moyenne {number} ({member_count} traces) — {clock}")
+}
+
+pub fn format_csv_number(value: f64, decimals: usize) -> String {
+    format!("{value:.decimals$}").replace('.', ",")
+}
+
+pub fn trace_control_label(control: &str, trace_name: &str) -> String {
+    format!("{control} — {trace_name}")
 }
 
 pub fn csv_coherence_header(trace_name: &str) -> String {

@@ -12,7 +12,9 @@ use crate::design::widgets::Tone;
 use crate::design::{Theme, fonts, theme};
 use crate::measurement::{MeasurementController, SourceSpec};
 use crate::plot::{PlotView, RangePreset, TraceStyle};
-use crate::session::{Session, SessionStore, UndoHistory};
+use crate::session::{
+    AverageError, CaptureError, LoadIssue, Session, SessionStore, SessionWriter, UndoHistory,
+};
 use crate::text;
 use crate::ui::banners::{BannerInputs, collect_banners, show_banners};
 use crate::ui::bottom_bar::{self, BottomBarModel};
@@ -106,7 +108,8 @@ pub struct SoundTuningApp {
     device_catalog: DeviceCatalog,
     low_coherence_cache: (u64, bool),
     session: Session,
-    session_store: SessionStore,
+    session_writer: SessionWriter,
+    save_failure_notified: bool,
     history: UndoHistory,
     session_dirty_since: Option<Instant>,
     rename: RenameState,
@@ -125,6 +128,7 @@ impl SoundTuningApp {
         let wizard = (!config.wizard_completed && !is_file_mode)
             .then(|| Wizard::new(options.devices.devices()));
         let measurement = MeasurementController::new(options.source.clone(), &config);
+        let loaded = options.session_store.load();
         let mut app = Self {
             config,
             store: options.store,
@@ -141,8 +145,9 @@ impl SoundTuningApp {
             last_notified_delay_sequence: 0,
             device_catalog: options.devices.clone(),
             low_coherence_cache: (0, false),
-            session: options.session_store.load(),
-            session_store: options.session_store.clone(),
+            session: loaded.session,
+            session_writer: SessionWriter::spawn(options.session_store.clone()),
+            save_failure_notified: false,
             history: UndoHistory::default(),
             session_dirty_since: None,
             rename: RenameState::default(),
@@ -150,6 +155,20 @@ impl SoundTuningApp {
             export_directory: options.export_directory.clone(),
         };
         app.apply_theme(context);
+        if let Some(LoadIssue::Corrupt {
+            restored_backup, ..
+        }) = loaded.issue
+        {
+            app.notifications.push(
+                if restored_backup {
+                    text::NOTIFY_SESSION_CORRUPT_RESTORED
+                } else {
+                    text::NOTIFY_SESSION_CORRUPT_EMPTY
+                },
+                Tone::Warning,
+                None,
+            );
+        }
         if options.start_measurement && app.wizard.is_none() {
             app.start_measurement();
         }
@@ -211,15 +230,37 @@ impl SoundTuningApp {
     }
 
     fn save_session_if_due(&mut self) {
+        for result in self.session_writer.poll() {
+            self.handle_save_result(result);
+        }
         if self
             .session_dirty_since
             .is_some_and(|since| since.elapsed() >= SESSION_SAVE_DELAY)
         {
             self.session_dirty_since = None;
-            if let Err(error) = self.session_store.save(&self.session) {
-                tracing::warn!(%error, "could not save the session");
+            if let Some(result) = self.session_writer.request(self.session.clone()) {
+                self.handle_save_result(result);
             }
         }
+    }
+
+    fn handle_save_result(&mut self, result: Result<(), String>) {
+        match result {
+            Ok(()) => self.save_failure_notified = false,
+            Err(error) => {
+                tracing::warn!(%error, "could not save the session");
+                self.session_dirty_since.get_or_insert_with(Instant::now);
+                if !self.save_failure_notified {
+                    self.save_failure_notified = true;
+                    self.notifications
+                        .push(text::NOTIFY_SESSION_SAVE_FAILED, Tone::Danger, None);
+                }
+            }
+        }
+    }
+
+    pub fn is_session_save_pending(&self) -> bool {
+        self.session_dirty_since.is_some()
     }
 
     fn capture_trace(&mut self) {
@@ -232,19 +273,28 @@ impl SoundTuningApp {
         let now = chrono::Local::now();
         let clock = now.format("%H:%M").to_string();
         let smoothing = self.config.analysis.smoothing_fraction;
-        let mut captured = None;
+        let mut captured = Err(CaptureError::NoAverages);
         self.edit_session(|session| {
             captured = session.capture(&snapshot, smoothing, now.timestamp(), &clock);
         });
-        if let Some(name) = captured
-            .and_then(|id| self.session.trace(id))
-            .map(|trace| trace.name.clone())
-        {
-            self.notifications.push(
-                text::trace_captured(&name),
-                Tone::Success,
-                Some(Action::Undo),
-            );
+        match captured {
+            Ok(id) => {
+                if let Some(name) = self.session.trace(id).map(|trace| trace.name.clone()) {
+                    self.notifications.push(
+                        text::trace_captured(&name),
+                        Tone::Success,
+                        Some(Action::Undo),
+                    );
+                }
+            }
+            Err(CaptureError::NoAverages) => {
+                self.notifications
+                    .push(text::NOTIFY_NOTHING_TO_CAPTURE, Tone::Warning, None);
+            }
+            Err(CaptureError::TooManyTraces) => {
+                self.notifications
+                    .push(text::NOTIFY_TOO_MANY_TRACES, Tone::Warning, None);
+            }
         }
     }
 
@@ -276,11 +326,12 @@ impl SoundTuningApp {
                     self.last_offset_edit = Some(id);
                 }
             }
-            TraceCommand::ToggleSelected(id) => self.edit_session(|session| {
-                if let Some(trace) = session.trace_mut(id) {
+            TraceCommand::ToggleSelected(id) => {
+                if let Some(trace) = self.session.trace_mut(id) {
                     trace.selected = !trace.selected;
+                    self.session_dirty_since.get_or_insert_with(Instant::now);
                 }
-            }),
+            }
             TraceCommand::Rename(id, name) => self.edit_session(|session| {
                 if let Some(trace) = session.trace_mut(id) {
                     trace.name = name;
@@ -297,13 +348,20 @@ impl SoundTuningApp {
             TraceCommand::AverageSelected => {
                 let now = chrono::Local::now();
                 let clock = now.format("%H:%M").to_string();
-                let mut created = None;
+                let mut created = Err(AverageError::NeedTwoTraces);
                 self.edit_session(|session| {
                     created = session.average_selected(now.timestamp(), &clock);
                 });
-                if created.is_none() {
-                    self.notifications
-                        .push(text::NOTIFY_AVERAGE_NEEDS_TWO, Tone::Warning, None);
+                let message = match created {
+                    Ok(_) => None,
+                    Err(AverageError::NeedTwoTraces) => Some(text::NOTIFY_AVERAGE_NEEDS_TWO),
+                    Err(AverageError::TooManyTraces) => Some(text::NOTIFY_TOO_MANY_TRACES),
+                    Err(AverageError::IncompatibleTraces) => {
+                        Some(text::NOTIFY_AVERAGE_INCOMPATIBLE)
+                    }
+                };
+                if let Some(message) = message {
+                    self.notifications.push(message, Tone::Warning, None);
                 }
             }
             TraceCommand::ExportCsv => self.export_csv(),
@@ -317,11 +375,11 @@ impl SoundTuningApp {
         let csv = self
             .session
             .to_csv(self.measurement.grid().frequencies_hz());
-        let file_name = format!(
-            "{EXPORT_FILE_PREFIX}-{}.csv",
+        let stem = format!(
+            "{EXPORT_FILE_PREFIX}-{}",
             chrono::Local::now().format("%Y%m%d-%H%M%S")
         );
-        match write_export(&self.export_directory, &file_name, &csv) {
+        match write_export(&self.export_directory, &stem, "csv", &csv) {
             Ok(path) => self
                 .notifications
                 .push(text::exported_to(&path), Tone::Success, None),
@@ -705,7 +763,7 @@ impl eframe::App for SoundTuningApp {
         if let Err(error) = self.store.save(&self.config) {
             tracing::warn!(%error, "could not save the configuration on exit");
         }
-        if let Err(error) = self.session_store.save(&self.session) {
+        if let Err(error) = self.session_writer.finish(&self.session) {
             tracing::warn!(%error, "could not save the session on exit");
         }
     }
@@ -885,13 +943,34 @@ pub fn default_export_directory() -> std::path::PathBuf {
 
 pub fn write_export(
     directory: &std::path::Path,
-    file_name: &str,
+    stem: &str,
+    extension: &str,
     contents: &str,
 ) -> anyhow::Result<String> {
+    use std::io::Write;
     std::fs::create_dir_all(directory)?;
-    let path = directory.join(file_name);
-    std::fs::write(&path, contents)?;
-    Ok(path.display().to_string())
+    let mut suffix = 1_u32;
+    loop {
+        let file_name = if suffix == 1 {
+            format!("{stem}.{extension}")
+        } else {
+            format!("{stem}-{suffix}.{extension}")
+        };
+        let path = directory.join(file_name);
+        match std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)
+        {
+            Ok(mut file) => {
+                file.write_all(contents.as_bytes())?;
+                file.sync_all()?;
+                return Ok(path.display().to_string());
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => suffix += 1,
+            Err(error) => return Err(error.into()),
+        }
+    }
 }
 
 #[cfg(test)]

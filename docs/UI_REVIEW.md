@@ -49,3 +49,9 @@ Critères : hiérarchie visuelle, lisibilité à 1 m, alignements, espacements, 
 - Critique : noms de trace centrés dans leur zone (lecture en colonne difficile).
 - Correction : noms alignés à gauche ; vérifié : la trace live (blanche, halo) reste distincte des traces Okabe–Ito ; le réticule annonce la trace la plus proche avec son décalage.
 - Captures : `traces-tour2-apres.png` (= `traces-tour2-final.png`).
+
+### Phase 4 — tour 3 (2026-10-26, après la revue de code)
+- Écran : le même (3 traces, panneau Traces) avec la nouvelle case « Sél. » (sélection séparée du renommage).
+- Critiques : deuxième ligne surchargée, « × » de suppression chevauchant le champ de décalage et rogné par le bord du panneau ; puis « × » collé au nom au lieu d'être aligné à droite ; « Visible » rogné par le champ de décalage.
+- Corrections : suppression déplacée sur la première ligne, alignée à droite ; décalage aligné à droite de la deuxième ligne ; retrait de la deuxième ligne réduit à 4 px.
+- Captures : avant `traces-tour2-final.png`, après `docs/ui-review/phase-4/traces-tour3-apres.png`.
