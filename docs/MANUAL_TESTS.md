@@ -13,8 +13,13 @@ Cocher, dater et noter les observations. Matériel de référence : UAX 2-2, mic
 - [ ] Référence interne : la latence calibrée reste identique (à ±1 échantillon) après arrêt/redémarrage du flux et après redémarrage de l'application.
 - [ ] Référence interne, micro à distance connue (ex. 3,43 m) : distance affichée cohérente (±5 cm).
 - [ ] Référence rebouclée : sortie console sur une entrée, mesure sur la musique, cohérence et délai stables.
+- [ ] Référence interne avec deux périphériques distincts (micro du Mac + sortie UAX) : le délai mesuré reste stable sur 5 min (dérive d'horloge éventuelle) ; noter la dérive observée.
 - [ ] Débrancher la carte pendant la mesure : alerte non bloquante ; la rebrancher : reprise en un clic.
-- [ ] Enregistrement CLI de 10 s : le WAV contient bien référence et mesure.
+- [ ] `soundtuning devices` liste la UAX 2-2 avec son identifiant `coreaudio:…`.
+- [ ] Enregistrement CLI de 10 s, référence interne : `soundtuning record --output test.wav --device <id UAX> --generator-channel 1` ; le bruit rose sort sur la sortie 1 et le WAV contient le générateur (canal 1) et le micro (canal 2), avec le micro en retard de la latence de la carte + distance.
+- [ ] Enregistrement CLI, référence rebouclée : `--loopback-channel 2` ; le WAV contient l'entrée 2 (référence) et l'entrée 1 (micro).
+- [ ] `soundtuning --input-file test.wav` : la fenêtre s'ouvre et les vu-mètres bougent en boucle.
+- [ ] Fenêtre minimale (phase 0) : Démarrer / Arrêter ouvre et ferme les flux sans erreur, vu-mètres référence (générateur) et mesure (micro) cohérents.
 
 ## Performance
 

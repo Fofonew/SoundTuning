@@ -81,6 +81,6 @@ Questions à l'utilisateur uniquement si : critère impossible, décision irrév
 
 ## État
 
-- Phase en cours : aucune (fondations posées, en attente de `/goal`).
-- Phases terminées : setup.
-- Prochaine étape : phase 0 (workspace, CI, périphériques, flux, vu-mètres, enregistrement CLI, mode fichier).
+- Phase en cours : 1 (`dsp-core`).
+- Phases terminées : setup, 0 (workspace, CI GitHub Actions, `audio-io` : périphériques, flux entrée + générateur, référence interne alignée par index de trame, vu-mètres, mode fichier, WAV ; app : CLI `devices` / `record`, fenêtre egui minimale).
+- Prochaine étape : phase 1 (fenêtres, FFT, accumulateurs, H1, γ², grille, délai, lissage, biquads, sommation, délai optimal, moyenne de traces + critères « Mesure »).

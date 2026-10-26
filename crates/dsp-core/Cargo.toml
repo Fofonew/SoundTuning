@@ -1,0 +1,16 @@
+[package]
+name = "dsp-core"
+edition.workspace = true
+version.workspace = true
+publish.workspace = true
+
+[dependencies]
+num-complex = "0.4.6"
+realfft = "3.5.0"
+thiserror = "2.0.21"
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+proptest = "1.12.0"

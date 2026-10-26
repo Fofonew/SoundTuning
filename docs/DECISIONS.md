@@ -44,3 +44,37 @@ Format : identifiant, date, contexte, décision, conséquences. Les plus récent
 
 ### D-008 — Noms de crates et du binaire (2026-10-26)
 - Crates du workspace : `dsp-core`, `audio-io`, `engine`, `app` (non publiées, dossiers `crates/<nom>`). Le crate `app` produit le binaire `soundtuning`.
+
+### D-009 — Dépendance hors stack : `clap` (phase 0)
+- Contexte : sous-commandes `devices` et `record`, option `--input-file`, aide en français.
+- Décision : `clap` (derive) plutôt qu'un analyseur maison : validation des canaux (≥ 1), aide générée, messages d'erreur cohérents, testable (`Cli::command().debug_assert()`).
+
+### D-010 — `serde` dans `audio-io` (phase 0)
+- Les réglages de flux (`StreamSettings`, `ReferenceMode`, `NoiseKind`) seront sérialisés dans la session (phase 4) ; ils dérivent `Serialize`/`Deserialize` dès maintenant. `serde` fait partie de la stack.
+
+### D-011 — Contrat entre `audio-io` et `engine` (phase 0)
+- `audio-io` expose un trait `FrameSource` (`read_frames` non bloquant, trames `StereoFrame { reference, measurement }` déjà alignées).
+- Implémentations : `LoopbackFrameSource` (référence rebouclée), `InternalReferenceAligner` (référence interne), `FilePlayback` (mode fichier temps réel), `RecordingCursor` (lecture instantanée pour les tests).
+- Référence interne : le callback de sortie publie chaque échantillon émis dans un `rtrb` ; l'aligneur apparie l'échantillon émis k et l'échantillon capturé i avec k = i + round((t_capture₀ − t_lecture₀)·fs), à partir des horodatages `cpal` du premier callback de chaque flux. Le délai résiduel mesuré = délai acoustique + latence des convertisseurs, compensée par le calibrage (phase 5).
+- « Horloges séparées » (référence interne moins fiable) : calculé d'après les identifiants des périphériques réellement ouverts, pas d'après les réglages (avec les réglages par défaut sur Mac, entrée = micro intégré, sortie = haut-parleurs).
+
+### D-012 — Tampons `rtrb` pré-touchés (phase 0)
+- Revue `audio-dsp-review` : les tampons de 2 s sont remplis puis vidés à l'ouverture pour éviter les défauts de page au premier callback.
+
+### D-013 — Dénormalisés sans `unsafe` (phase 0)
+- Pas de FTZ matériel (interdit sans `unsafe`). Le filtre de bruit rose remet à zéro ses états sous `DENORMAL_FLUSH_THRESHOLD` à chaque bloc.
+
+### D-014 — Suites de la revue `ecc:rust-reviewer` de la phase 0
+Corrigé :
+- **Index de trame absolu** dans `InputFrame` et `GeneratorSample` (compteur par callback, incrémenté même si l'anneau est plein). L'aligneur apparie par index, plus par comptage : une perte de trames ne décale plus jamais référence et mesure ; elle est signalée par `ReadReport::discontinuity`.
+- **Contrat `FrameSource`** : `read_frames` renvoie `ReadReport { frames_read, discontinuity, finished }` (fin de fichier, rebouclage, pertes).
+- **Canaux du générateur validés** à l'ouverture (`NoGeneratorChannel`, index ≥ 64 refusé) : plus de référence non nulle alors que rien n'est joué.
+- **Configuration de flux** : plus petit nombre de canaux suffisant (au lieu du maximum).
+- **Mode fichier** : contre-pression (attente quand l'anneau est plein) au lieu de jeter des trames ; rebouclage signalé comme discontinuité.
+- **Erreur d'ouverture du générateur en référence rebouclée** remontée (`LiveSession::generator_error`).
+- Horodatage `cpal` non convertible ignoré au lieu d'une valeur sentinelle ; différence d'horodatages en `i128`.
+- `too_many_arguments` supprimé (état partagé regroupé).
+Non corrigé, justifié :
+- **Reprise après déconnexion / changement de réglages** : on reconstruit un `LiveSession` complet (nouvelle horloge, nouveaux anneaux). Plus simple et sans état résiduel ; la reprise « en un clic » de la phase 5 utilisera ce chemin.
+- **Base de temps `StreamInstant` entre deux périphériques distincts** : non vérifiable sans matériel. Le mode est déjà marqué « moins fiable » dans ce cas ; test ajouté dans `docs/MANUAL_TESTS.md`.
+- **RMS du dernier bloc** pour les vu-mètres : suffisant pour l'affichage (la crête est maintenue jusqu'à lecture) ; la balistique est faite côté UI.
