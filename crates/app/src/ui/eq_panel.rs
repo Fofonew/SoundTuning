@@ -8,8 +8,8 @@ use crate::design::widgets::{
     Emphasis, action_button, combo_label, muted, section_title, spin_label,
 };
 use crate::eq_state::{
-    EqState, EqTarget, EqView, GAIN_LIMIT_DB, MAX_FREQUENCY_HZ, MAX_Q, MIN_FREQUENCY_HZ, MIN_Q,
-    StoredFilter, StoredFilterKind, StoredSlope,
+    AUTO_EQ_MAX_BOOST_LIMIT_DB, AUTO_EQ_MAX_CUT_LIMIT_DB, EqState, EqTarget, EqView, GAIN_LIMIT_DB,
+    MAX_FREQUENCY_HZ, MAX_Q, MIN_FREQUENCY_HZ, MIN_Q, StoredFilter, StoredFilterKind, StoredSlope,
 };
 use crate::session::Session;
 use crate::text;
@@ -25,6 +25,7 @@ pub enum EqCommand {
     AddFilter,
     ExportText,
     ExportJson,
+    AutoEq,
 }
 
 pub fn new_filter_at(frequency_hz: f64, gain_db: f64) -> StoredFilter {
@@ -92,6 +93,11 @@ pub fn show(ui: &mut egui::Ui, palette: &Palette, session: &Session) -> Vec<EqCo
             }
         });
     combo_label(&combo.response, text::EQ_TARGET_LABEL);
+
+    ui.add_space(spacing::SM);
+    if auto_eq_section(ui, palette, &mut state) {
+        commands.push(EqCommand::AutoEq);
+    }
 
     ui.add_space(spacing::MD);
     let filter_count = state.filters().len();
@@ -172,6 +178,81 @@ pub fn show(ui: &mut egui::Ui, palette: &Palette, session: &Session) -> Vec<EqCo
     commands
 }
 
+fn auto_eq_section(ui: &mut egui::Ui, palette: &Palette, state: &mut EqState) -> bool {
+    let mut run = false;
+    egui::CollapsingHeader::new(
+        RichText::new(text::AUTO_EQ_TITLE).font(fonts::ui_semibold(text_size::LABEL)),
+    )
+    .id_salt("auto-eq")
+    .default_open(false)
+    .show(ui, |ui| {
+        let auto = &mut state.auto;
+        ui.horizontal_wrapped(|ui| {
+            ui.label(RichText::new(text::AUTO_EQ_RANGE).color(palette.text_muted));
+            let high = auto.high_hz;
+            let response = ui.add(
+                egui::DragValue::new(&mut auto.low_hz)
+                    .range(MIN_FREQUENCY_HZ..=high)
+                    .speed(1.0)
+                    .custom_formatter(|value, _| text::format_frequency(value))
+                    .custom_parser(text::parse_number),
+            );
+            spin_label(&response, text::AUTO_EQ_RANGE_LOW);
+            ui.label(RichText::new(text::RANGE_SEPARATOR).color(palette.text_muted));
+            let low = auto.low_hz;
+            let response = ui.add(
+                egui::DragValue::new(&mut auto.high_hz)
+                    .range(low..=MAX_FREQUENCY_HZ)
+                    .speed(10.0)
+                    .custom_formatter(|value, _| text::format_frequency(value))
+                    .custom_parser(text::parse_number),
+            );
+            spin_label(&response, text::AUTO_EQ_RANGE_HIGH);
+        });
+        ui.horizontal_wrapped(|ui| {
+            ui.label(RichText::new(text::AUTO_EQ_MAX_BOOST).color(palette.text_muted));
+            let response = ui.add(
+                egui::DragValue::new(&mut auto.max_boost_db)
+                    .range(0.0..=AUTO_EQ_MAX_BOOST_LIMIT_DB)
+                    .speed(0.1)
+                    .custom_formatter(|value, _| text::format_db(value))
+                    .custom_parser(text::parse_number),
+            );
+            spin_label(&response, text::AUTO_EQ_MAX_BOOST);
+            ui.label(RichText::new(text::AUTO_EQ_MAX_CUT).color(palette.text_muted));
+            let response = ui.add(
+                egui::DragValue::new(&mut auto.max_cut_db)
+                    .range(0.0..=AUTO_EQ_MAX_CUT_LIMIT_DB)
+                    .speed(0.1)
+                    .custom_formatter(|value, _| text::format_db(-value))
+                    .custom_parser(|input| text::parse_number(input).map(f64::abs)),
+            );
+            spin_label(&response, text::AUTO_EQ_MAX_CUT);
+        });
+        ui.horizontal_wrapped(|ui| {
+            ui.label(RichText::new(text::AUTO_EQ_MAX_FILTERS).color(palette.text_muted));
+            let response = ui.add(
+                egui::DragValue::new(&mut auto.max_filters)
+                    .range(1..=MAX_EQ_FILTERS)
+                    .speed(0.1),
+            );
+            spin_label(&response, text::AUTO_EQ_MAX_FILTERS);
+        });
+        muted(ui, palette, text::AUTO_EQ_HINT);
+        ui.add_space(spacing::XS);
+        run = action_button(
+            ui,
+            palette,
+            text::AUTO_EQ_RUN,
+            None,
+            Emphasis::Primary,
+            true,
+        )
+        .clicked();
+    });
+    run
+}
+
 fn filter_editor(
     ui: &mut egui::Ui,
     palette: &Palette,
@@ -250,7 +331,8 @@ fn filter_editor(
                     egui::DragValue::new(&mut filter.frequency_hz)
                         .range(MIN_FREQUENCY_HZ..=MAX_FREQUENCY_HZ)
                         .speed(1.0)
-                        .custom_formatter(|value, _| text::format_frequency(value)),
+                        .custom_formatter(|value, _| text::format_frequency(value))
+                        .custom_parser(text::parse_number),
                 );
                 spin_label(
                     &response,
@@ -261,7 +343,8 @@ fn filter_editor(
                         egui::DragValue::new(&mut filter.gain_db)
                             .range(-GAIN_LIMIT_DB..=GAIN_LIMIT_DB)
                             .speed(0.1)
-                            .custom_formatter(|value, _| text::format_db(value)),
+                            .custom_formatter(|value, _| text::format_db(value))
+                            .custom_parser(text::parse_number),
                     );
                     spin_label(&response, text::eq_control_label(text::EQ_GAIN, index + 1));
                 }
@@ -289,7 +372,8 @@ fn filter_editor(
                         egui::DragValue::new(&mut filter.q)
                             .range(MIN_Q..=MAX_Q)
                             .speed(0.01)
-                            .custom_formatter(|value, _| text::format_q(value)),
+                            .custom_formatter(|value, _| text::format_q(value))
+                            .custom_parser(text::parse_number),
                     );
                     spin_label(&response, text::eq_control_label(text::EQ_Q, index + 1));
                 }

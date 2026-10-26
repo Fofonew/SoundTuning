@@ -252,6 +252,19 @@ pub const EQ_Q: &str = "Q";
 pub const EQ_KIND: &str = "Type";
 pub const EQ_SLOPE: &str = "Pente";
 pub const EQ_TARGET_LABEL: &str = "Trace égalisée";
+pub const AUTO_EQ_TITLE: &str = "Auto EQ";
+pub const AUTO_EQ_RANGE: &str = "Plage";
+pub const AUTO_EQ_RANGE_LOW: &str = "Auto EQ : fréquence basse";
+pub const AUTO_EQ_RANGE_HIGH: &str = "Auto EQ : fréquence haute";
+pub const AUTO_EQ_MAX_BOOST: &str = "Max boost";
+pub const AUTO_EQ_MAX_CUT: &str = "Max cut";
+pub const AUTO_EQ_MAX_FILTERS: &str = "Max filtres";
+pub const AUTO_EQ_RUN: &str = "Calculer l'auto EQ";
+pub const AUTO_EQ_HINT: &str =
+    "Remplace les filtres de la banque active par des PEQ (Cmd/Ctrl+Z pour revenir).";
+pub const NOTIFY_AUTO_EQ_NO_TARGET: &str =
+    "Auto EQ : aucune mesure à égaliser (démarrez la mesure ou choisissez une trace).";
+pub const NOTIFY_AUTO_EQ_NOT_ENOUGH: &str = "Auto EQ : pas assez de points valides dans la plage.";
 pub const ALIGNMENT_NO_PROPOSAL: &str = "Pas de proposition : il faut la phase des deux traces dans la bande (une moyenne de traces n'en a pas).";
 pub const PREDICTED_SUM_LABEL: &str = "Somme prédite";
 pub const ALIGNMENT_POLARITY_SUFFIX: &str = " · B inversée";
@@ -333,6 +346,32 @@ pub fn format_buffer(frames: Option<u32>) -> String {
     frames.map_or_else(
         || AUDIO_BUFFER_AUTO.to_owned(),
         |frames| format!("{frames} éch."),
+    )
+}
+
+pub fn parse_number(input: &str) -> Option<f64> {
+    let lower = input.trim().to_lowercase();
+    let multiplier = if lower.contains('k') { 1000.0 } else { 1.0 };
+    let cleaned: String = lower
+        .chars()
+        .filter_map(|character| match character {
+            '−' => Some('-'),
+            ',' => Some('.'),
+            '0'..='9' | '.' | '-' | '+' => Some(character),
+            _ => None,
+        })
+        .collect();
+    cleaned
+        .parse::<f64>()
+        .ok()
+        .filter(|value| value.is_finite())
+        .map(|value| value * multiplier)
+}
+
+pub fn auto_eq_done(filter_count: usize, residual_db: f64) -> String {
+    format!(
+        "Auto EQ : {filter_count} PEQ, écart {} dB RMS",
+        format_decimal(residual_db, 1)
     )
 }
 
@@ -626,6 +665,19 @@ pub fn crosshair_readout(frequency_hz: f64, level_db: f64) -> String {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn typed_numbers_accept_french_format_and_units() {
+        assert_eq!(parse_number("1,5"), Some(1.5));
+        assert_eq!(parse_number("−5,0 dB"), Some(-5.0));
+        assert_eq!(parse_number("1,20 kHz"), Some(1200.0));
+        assert_eq!(parse_number("250 Hz"), Some(250.0));
+        assert_eq!(parse_number("Q 1,40"), Some(1.4));
+        assert_eq!(parse_number("+3"), Some(3.0));
+        assert_eq!(parse_number("abc"), None);
+        assert_eq!(parse_number(&format_frequency(1000.0)), Some(1000.0));
+        assert_eq!(parse_number(&format_db(-4.5)), Some(-4.5));
+    }
     use super::*;
 
     #[test]

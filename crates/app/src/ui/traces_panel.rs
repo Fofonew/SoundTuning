@@ -299,7 +299,8 @@ fn trace_row(
                         .speed(OFFSET_SPEED_DB)
                         .range(-OFFSET_LIMIT_DB..=OFFSET_LIMIT_DB)
                         .max_decimals(1)
-                        .custom_formatter(|value, _| text::format_db(value)),
+                        .custom_formatter(|value, _| text::format_db(value))
+                        .custom_parser(text::parse_number),
                 )
                 .on_hover_text(text::TRACE_OFFSET);
             spin_label(

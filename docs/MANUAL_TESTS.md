@@ -45,6 +45,8 @@ Cocher, dater et noter les observations. Matériel de référence : UAX 2-2, mic
 - [ ] Onglet EQ : double-clic sur le tracé ajoute une cloche à l'endroit cliqué ; glisser une poignée déplace fréquence et gain ; molette sur une poignée change le Q ; aucune saccade des courbes pendant l'édition.
 - [ ] Recopier les filtres exportés (texte) dans un processeur réel : la mesure après correction suit le « Résultat prédit » (±1 dB hors zones de faible cohérence).
 - [ ] Banques A/B, bypass global et par filtre : bascule instantanée de la courbe prédite.
+- [ ] Auto EQ sur une trace réelle (salle) : les PEQ proposés respectent max boost / max cut / max filtres ; recopiés dans le processeur, la mesure suit le résultat prédit ; comparer avec l'auto EQ de REW sur la même mesure.
+- [ ] Saisie au clavier dans les champs (ex. « 1,2k », « -4,5 ») : la valeur est prise en compte.
 
 ## Packaging
 

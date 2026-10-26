@@ -1,5 +1,5 @@
 use dsp_core::{
-    Complex64, CutSlope, EqFilter, FilterKind, MAX_EQ_FILTERS, amplitude_to_db,
+    AutoEqSettings, Complex64, CutSlope, EqFilter, FilterKind, MAX_EQ_FILTERS, amplitude_to_db,
     bandwidth_octaves_from_q, eq_response,
 };
 use serde::{Deserialize, Serialize};
@@ -205,6 +205,44 @@ pub enum EqView {
     InvertedTrace,
 }
 
+pub const AUTO_EQ_MAX_BOOST_LIMIT_DB: f64 = 12.0;
+pub const AUTO_EQ_MAX_CUT_LIMIT_DB: f64 = 24.0;
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct AutoEqParams {
+    pub low_hz: f64,
+    pub high_hz: f64,
+    pub max_boost_db: f64,
+    pub max_cut_db: f64,
+    pub max_filters: usize,
+}
+
+impl Default for AutoEqParams {
+    fn default() -> Self {
+        Self {
+            low_hz: 40.0,
+            high_hz: 12_000.0,
+            max_boost_db: 3.0,
+            max_cut_db: 12.0,
+            max_filters: 8,
+        }
+    }
+}
+
+impl AutoEqParams {
+    pub fn to_dsp(self) -> AutoEqSettings {
+        AutoEqSettings {
+            low_hz: self.low_hz,
+            high_hz: self.high_hz,
+            max_boost_db: self.max_boost_db,
+            max_cut_db: self.max_cut_db,
+            max_filters: self.max_filters.min(MAX_EQ_FILTERS),
+            target_db: None,
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct EqState {
@@ -214,6 +252,7 @@ pub struct EqState {
     pub target: EqTarget,
     pub view: EqView,
     pub selected_filter: Option<usize>,
+    pub auto: AutoEqParams,
 }
 
 impl Default for EqState {
@@ -225,6 +264,7 @@ impl Default for EqState {
             target: EqTarget::Live,
             view: EqView::Predicted,
             selected_filter: None,
+            auto: AutoEqParams::default(),
         }
     }
 }
@@ -290,6 +330,24 @@ impl EqState {
                 bypassed: filter.bypassed || self.global_bypass,
             })
             .collect()
+    }
+
+    pub fn replace_with_auto(&mut self, filters: &[EqFilter]) {
+        if let Some(bank) = self.filters_mut() {
+            *bank = filters
+                .iter()
+                .take(MAX_EQ_FILTERS)
+                .map(|filter| StoredFilter {
+                    kind: StoredFilterKind::Bell,
+                    frequency_hz: filter.frequency_hz,
+                    gain_db: filter.gain_db,
+                    q: filter.q,
+                    bypassed: false,
+                })
+                .collect();
+        }
+        self.selected_filter = None;
+        self.global_bypass = false;
     }
 
     pub fn move_filter(&mut self, index: usize, frequency_hz: f64, gain_db: f64) {

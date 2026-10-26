@@ -1,5 +1,6 @@
 mod acoustics;
 mod alignment;
+mod auto_eq;
 mod averaging;
 mod biquad;
 mod decibel;
@@ -19,6 +20,7 @@ pub use alignment::{
     AlignmentCriterion, AlignmentResult, AlignmentSearch, DEFAULT_ALIGNMENT_BAND_HZ, Polarity,
     find_optimal_alignment, summed_response_db,
 };
+pub use auto_eq::{AutoEqResult, AutoEqSettings, auto_eq};
 pub use averaging::{Averaging, CrossSpectrumAccumulator, exponential_smoothing_coefficient};
 pub use biquad::{
     BiquadCoefficients, BiquadState, CutSlope, EqFilter, FilterKind, MAX_EQ_FILTERS,

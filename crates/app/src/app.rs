@@ -338,6 +338,7 @@ impl SoundTuningApp {
                 self.edit_session_merged(MergeKey::Eq, |session| session.eq = state);
             }
             EqCommand::AddFilter => self.add_eq_filter(eq_panel::default_new_filter()),
+            EqCommand::AutoEq => self.run_auto_eq(),
             EqCommand::ExportText => {
                 let contents = self.session.eq.export_text();
                 self.export_file("txt", &contents);
@@ -350,6 +351,42 @@ impl SoundTuningApp {
                         .push(text::NOTIFY_EXPORT_FAILED, Tone::Danger, None);
                 }
             },
+        }
+    }
+
+    fn run_auto_eq(&mut self) {
+        let Some(target_db) = self.eq_target_db() else {
+            self.notifications
+                .push(text::NOTIFY_AUTO_EQ_NO_TARGET, Tone::Warning, None);
+            return;
+        };
+        let settings = self.session.eq.auto.to_dsp();
+        let sample_rate_hz = f64::from(self.eq_sample_rate_hz());
+        let result = dsp_core::auto_eq(
+            &target_db,
+            self.measurement.grid().frequencies_hz(),
+            sample_rate_hz,
+            &settings,
+        );
+        match result {
+            Ok(Some(result)) => {
+                self.edit_session(|session| session.eq.replace_with_auto(&result.filters));
+                self.last_merge = None;
+                self.notifications.push(
+                    text::auto_eq_done(result.filters.len(), result.rms_error_db),
+                    Tone::Success,
+                    Some(Action::Undo),
+                );
+            }
+            Ok(None) => {
+                self.notifications
+                    .push(text::NOTIFY_AUTO_EQ_NOT_ENOUGH, Tone::Warning, None)
+            }
+            Err(error) => {
+                tracing::warn!(%error, "auto EQ failed");
+                self.notifications
+                    .push(text::NOTIFY_AUTO_EQ_NOT_ENOUGH, Tone::Warning, None);
+            }
         }
     }
 

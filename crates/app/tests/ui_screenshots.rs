@@ -187,3 +187,23 @@ fn screenshot_audio_settings() {
     harness.step();
     assert!(save_screenshot(&mut harness, "audio_settings").exists());
 }
+
+#[test]
+fn screenshot_auto_eq() {
+    use soundtuning::ui::eq_panel::EqCommand;
+    use soundtuning::ui::side_panel::SideTab;
+    let mut harness = rendering_harness(file_options(Theme::Night, true));
+    wait_for_stable_measurement(&mut harness);
+    harness.key_press(Key::F);
+    harness.step();
+    harness.state_mut().set_side_tab(SideTab::Eq);
+    harness.step();
+    harness
+        .get_by_label(soundtuning::text::AUTO_EQ_TITLE)
+        .click();
+    harness.step();
+    harness.state_mut().apply_test_eq(EqCommand::AutoEq);
+    harness.step();
+    harness.step();
+    assert!(save_screenshot(&mut harness, "auto_eq").exists());
+}

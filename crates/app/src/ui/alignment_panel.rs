@@ -86,7 +86,8 @@ pub fn show(ui: &mut egui::Ui, palette: &Palette, session: &Session) -> Vec<Alig
             egui::DragValue::new(&mut state.band_low_hz)
                 .range(BAND_LIMIT_LOW_HZ..=state.band_high_hz)
                 .speed(1.0)
-                .custom_formatter(|value, _| text::format_frequency(value)),
+                .custom_formatter(|value, _| text::format_frequency(value))
+                .custom_parser(text::parse_number),
         );
         spin_label(&response, text::ALIGNMENT_BAND_LOW);
         ui.label(RichText::new(text::RANGE_SEPARATOR).color(palette.text_muted));
@@ -94,7 +95,8 @@ pub fn show(ui: &mut egui::Ui, palette: &Palette, session: &Session) -> Vec<Alig
             egui::DragValue::new(&mut state.band_high_hz)
                 .range(state.band_low_hz..=BAND_LIMIT_HIGH_HZ)
                 .speed(1.0)
-                .custom_formatter(|value, _| text::format_frequency(value)),
+                .custom_formatter(|value, _| text::format_frequency(value))
+                .custom_parser(text::parse_number),
         );
         spin_label(&response, text::ALIGNMENT_BAND_HIGH);
     });
@@ -149,7 +151,8 @@ pub fn show(ui: &mut egui::Ui, palette: &Palette, session: &Session) -> Vec<Alig
                     .speed(DELAY_STEP_MS)
                     .range(-DELAY_LIMIT_MS..=DELAY_LIMIT_MS)
                     .fixed_decimals(2)
-                    .custom_formatter(|value, _| text::format_signed_milliseconds(value)),
+                    .custom_formatter(|value, _| text::format_signed_milliseconds(value))
+                    .custom_parser(text::parse_number),
             );
             spin_label(&response, text::ALIGNMENT_DELTA_LABEL);
         });

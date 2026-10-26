@@ -791,3 +791,43 @@ fn command_comma_opens_audio_settings_and_apply_saves_the_devices() {
     harness.run_steps(2);
     assert!(harness.state().is_audio_settings_open());
 }
+
+#[test]
+fn auto_eq_fills_the_bank_within_the_limits_and_is_undoable() {
+    use soundtuning::ui::eq_panel::EqCommand;
+    let mut harness = harness(file_options(Theme::Night, true));
+    wait_for_stable_measurement(&mut harness);
+    harness.key_press(Key::F);
+    harness.step();
+    harness
+        .state_mut()
+        .set_side_tab(soundtuning::ui::side_panel::SideTab::Eq);
+    let mut state = harness.state().session().eq.clone();
+    state.auto.max_filters = 4;
+    state.auto.max_boost_db = 2.0;
+    state.auto.max_cut_db = 6.0;
+    harness.state_mut().apply_test_eq(EqCommand::Update(state));
+    harness.state_mut().apply_test_eq(EqCommand::AutoEq);
+    harness.run_steps(2);
+    let filters = harness.state().session().eq.filters().to_vec();
+    assert!(!filters.is_empty() && filters.len() <= 4, "{filters:?}");
+    assert!(
+        filters
+            .iter()
+            .all(|filter| filter.gain_db <= 2.0 + 1.0e-9 && filter.gain_db >= -6.0 - 1.0e-9)
+    );
+    let bell_near_1k = filters
+        .iter()
+        .any(|filter| (filter.frequency_hz / 1000.0 - 1.0).abs() < 0.2 && filter.gain_db < -2.0);
+    assert!(bell_near_1k, "{filters:?}");
+    assert!(
+        harness
+            .state()
+            .notification_texts()
+            .iter()
+            .any(|text| text.starts_with("Auto EQ : "))
+    );
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+    harness.run_steps(2);
+    assert!(harness.state().session().eq.filters().is_empty());
+}
