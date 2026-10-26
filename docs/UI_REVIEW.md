@@ -116,3 +116,9 @@ Critères : hiérarchie visuelle, lisibilité à 1 m, alignements, espacements, 
 ### Delay Analysis — tour 2 (2026-10-26)
 - Critiques : aucune régression ; quatre colonnes lisibles (Pos magenta, Neg vert, Flat violet, Custom corail, contrastés dans les deux thèmes), barres de puissance Pos / Neg, sommes non sélectionnées limitées à la plage (50–200 Hz surlignée), réglage à recopier dans la couleur de la solution. Icônes nettes à 18 px, alignées sur les boutons texte ; barres sans chevauchement à 1024 × 600 (test `bars_and_audio_settings_do_not_overlap_in_small_windows`).
 - Captures après : `docs/ui-review/systune/alignment-tour2-apres.png`, `alignment_daylight-tour2-apres.png`, `measurement_night-tour2-apres.png`, `audio_settings-tour2-apres.png`.
+
+### Zoom par sélection, séparation des vues, somme de l'alignement — tour 1 (2026-10-26, demande de l'utilisateur)
+- Écrans : alignement (Nuit, Plein jour), vues superposées, sélection de zoom en cours de glissé (`screenshot_zoom_selection`).
+- Critiques : alignement : Reference (orange), Delay et la somme « Pos sum » (magenta, épaisse) se distinguent nettement ; Delay garde sa couleur et reste tracée par-dessus la somme ; contraste correct dans les deux thèmes. Sélection de zoom : rectangle clair à 8 % et bords à 70 %, plage « 80,0 Hz – 600 Hz » lisible en haut à gauche, réticule masqué pendant le glissé. Poignée du séparateur discrète au repos (couleur de bordure), en accent au survol : visible sans attirer l'œil.
+- Corrections : aucune nécessaire ; tour unique (aucun défaut relevé).
+- Captures : `docs/ui-review/zoom-split-somme/alignment.png`, `alignment_daylight.png`, `zoom_selection.png`, `phase_stacked.png`.

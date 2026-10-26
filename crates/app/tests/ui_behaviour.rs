@@ -489,7 +489,20 @@ fn delay_analysis_offers_pos_neg_flat_custom_and_shift_drag_picks_a_custom_range
         harness.get_by_label(label);
     }
 
-    let mut custom = alignment.clone();
+    assert!(alignment.shows_sum());
+    harness.get_by_label("Pos").click();
+    harness.run_steps(2);
+    assert!(!harness.state().session().alignment.shows_sum());
+    harness.get_by_label("Pos").click();
+    harness.run_steps(2);
+    assert!(harness.state().session().alignment.shows_sum());
+    harness.get_by_label("Flat").click();
+    harness.run_steps(2);
+    let flat = harness.state().session().alignment.clone();
+    assert_eq!(flat.choice, AlignmentChoice::Flat);
+    assert!(flat.shows_sum());
+
+    let mut custom = flat.clone();
     custom.custom_delay_ms = 3.0;
     custom.choice = AlignmentChoice::Custom;
     harness
@@ -534,29 +547,179 @@ fn shift_drag(
     to_x: f32,
 ) {
     let y = 400.0;
-    harness.event(Event::ModifiersChanged(Modifiers::SHIFT));
-    harness.hover_at(eframe::egui::pos2(from_x, y));
+    drag(
+        harness,
+        eframe::egui::pos2(from_x, y),
+        eframe::egui::pos2(to_x, y),
+        eframe::egui::PointerButton::Primary,
+        Modifiers::SHIFT,
+    );
+}
+
+fn drag(
+    harness: &mut egui_kittest::Harness<'static, soundtuning::app::SoundTuningApp>,
+    from: eframe::egui::Pos2,
+    to: eframe::egui::Pos2,
+    button: eframe::egui::PointerButton,
+    modifiers: Modifiers,
+) {
+    harness.event(Event::ModifiersChanged(modifiers));
+    harness.hover_at(from);
     harness.step();
     harness.event(Event::PointerButton {
-        pos: eframe::egui::pos2(from_x, y),
-        button: eframe::egui::PointerButton::Primary,
+        pos: from,
+        button,
         pressed: true,
-        modifiers: Modifiers::SHIFT,
+        modifiers,
     });
     harness.step();
     for step in 1..=3 {
-        let x = from_x + (to_x - from_x) * step as f32 / 3.0;
-        harness.hover_at(eframe::egui::pos2(x, y));
+        harness.hover_at(from + (to - from) * step as f32 / 3.0);
         harness.step();
     }
     harness.event(Event::PointerButton {
-        pos: eframe::egui::pos2(to_x, y),
-        button: eframe::egui::PointerButton::Primary,
+        pos: to,
+        button,
         pressed: false,
-        modifiers: Modifiers::SHIFT,
+        modifiers,
     });
     harness.event(Event::ModifiersChanged(Modifiers::NONE));
     harness.run_steps(3);
+}
+
+fn double_click(
+    harness: &mut egui_kittest::Harness<'static, soundtuning::app::SoundTuningApp>,
+    position: eframe::egui::Pos2,
+) {
+    harness.hover_at(position);
+    harness.step();
+    for _ in 0..2 {
+        harness.drag_at(position);
+        harness.event(Event::PointerButton {
+            pos: position,
+            button: eframe::egui::PointerButton::Primary,
+            pressed: false,
+            modifiers: Modifiers::NONE,
+        });
+        harness.step();
+    }
+    harness.run_steps(3);
+}
+
+#[test]
+fn dragging_on_the_plot_zooms_into_the_selection_and_double_click_resets() {
+    use eframe::egui::PointerButton;
+    use soundtuning::plot::PlotView;
+    let mut harness = common::fast_clock_harness(file_options(Theme::Night, true));
+    wait_until_running(&mut harness);
+    harness.run_steps(2);
+    let rect = harness.state().last_plot_rect().unwrap();
+    let initial = harness.state().plot_view();
+    assert_eq!(initial, PlotView::default());
+
+    drag(
+        &mut harness,
+        initial.to_screen(rect, 100.0, 0.0),
+        initial.to_screen(rect, 1000.0, -2.0),
+        PointerButton::Primary,
+        Modifiers::NONE,
+    );
+    let wide = harness.state().plot_view();
+    assert!((wide.low_hz / 100.0 - 1.0).abs() < 0.03, "{wide:?}");
+    assert!((wide.high_hz / 1000.0 - 1.0).abs() < 0.03, "{wide:?}");
+    assert_eq!(
+        (wide.low_db, wide.high_db),
+        (initial.low_db, initial.high_db)
+    );
+
+    drag(
+        &mut harness,
+        wide.to_screen(rect, 300.0, 6.0),
+        wide.to_screen(rect, 310.0, -6.0),
+        PointerButton::Primary,
+        Modifiers::NONE,
+    );
+    let tall = harness.state().plot_view();
+    assert!(
+        (tall.low_db + 6.0).abs() < 0.3 && (tall.high_db - 6.0).abs() < 0.3,
+        "{tall:?}"
+    );
+    assert_eq!((tall.low_hz, tall.high_hz), (wide.low_hz, wide.high_hz));
+
+    drag(
+        &mut harness,
+        tall.to_screen(rect, 300.0, 0.0),
+        tall.to_screen(rect, 200.0, 0.0),
+        PointerButton::Secondary,
+        Modifiers::NONE,
+    );
+    let panned = harness.state().plot_view();
+    assert!(panned.low_hz > tall.low_hz, "{panned:?}");
+    assert!(((panned.high_hz / panned.low_hz) / (tall.high_hz / tall.low_hz) - 1.0).abs() < 1.0e-6);
+
+    let from = panned.to_screen(rect, 300.0, 0.0);
+    harness.hover_at(from);
+    harness.step();
+    harness.event(Event::PointerButton {
+        pos: from,
+        button: PointerButton::Primary,
+        pressed: true,
+        modifiers: Modifiers::NONE,
+    });
+    harness.step();
+    for step in 1..=3 {
+        harness.hover_at(from + eframe::egui::vec2(60.0 * step as f32, 0.0));
+        harness.step();
+    }
+    harness.key_press(Key::Escape);
+    harness.step();
+    harness.event(Event::PointerButton {
+        pos: from + eframe::egui::vec2(180.0, 0.0),
+        button: PointerButton::Primary,
+        pressed: false,
+        modifiers: Modifiers::NONE,
+    });
+    harness.run_steps(3);
+    assert_eq!(harness.state().plot_view(), panned);
+
+    double_click(&mut harness, rect.center());
+    assert_eq!(harness.state().plot_view(), PlotView::default());
+}
+
+#[test]
+fn the_split_between_stacked_views_can_be_dragged_and_reset() {
+    use eframe::egui::{PointerButton, vec2};
+    use soundtuning::plot::DEFAULT_UPPER_PANE_FRACTION;
+    let mut harness = common::fast_clock_harness(file_options(Theme::Night, true));
+    wait_until_running(&mut harness);
+    harness.key_press(Key::V);
+    harness.run_steps(3);
+    let lower = harness.state().last_plot_rect().unwrap();
+    let splitter = harness.get_by_label(soundtuning::text::PANE_SPLITTER_LABEL);
+    let grip = splitter.rect().center();
+    assert!(grip.y < lower.top());
+    drag(
+        &mut harness,
+        grip,
+        grip + vec2(0.0, 120.0),
+        PointerButton::Primary,
+        Modifiers::NONE,
+    );
+    let fraction = harness.state().config().upper_pane_fraction;
+    assert!(fraction > DEFAULT_UPPER_PANE_FRACTION + 0.05, "{fraction}");
+    let moved_lower = harness.state().last_plot_rect().unwrap();
+    assert!(moved_lower.top() > lower.top() + 100.0);
+    assert!(moved_lower.height() < lower.height());
+
+    let grip = harness
+        .get_by_label(soundtuning::text::PANE_SPLITTER_LABEL)
+        .rect()
+        .center();
+    double_click(&mut harness, grip);
+    assert_eq!(
+        harness.state().config().upper_pane_fraction,
+        DEFAULT_UPPER_PANE_FRACTION
+    );
 }
 
 #[test]

@@ -174,12 +174,13 @@ fn solutions(ui: &mut egui::Ui, palette: &Palette, state: &mut AlignmentState) {
                         .color(color),
                 ),
             );
-            let header = header.on_hover_text(text::alignment_choice_summary(
+            let header = header.on_hover_text(text::alignment_choice_hint(
                 choice,
                 state.setting(choice),
+                selected && state.shows_sum(),
             ));
             if header.clicked() {
-                state.choice = choice;
+                state.select(choice);
             }
             if choice == AlignmentChoice::Custom {
                 let before = (state.custom_delay_ms, state.custom_inverted);
@@ -207,6 +208,7 @@ fn solutions(ui: &mut egui::Ui, palette: &Palette, state: &mut AlignmentState) {
                 }
                 if before != (state.custom_delay_ms, state.custom_inverted) {
                     state.choice = AlignmentChoice::Custom;
+                    state.sum_hidden = false;
                 }
                 continue;
             }

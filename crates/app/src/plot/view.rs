@@ -111,6 +111,30 @@ impl PlotView {
         }
     }
 
+    pub fn show_frequency_range(&mut self, low_hz: f64, high_hz: f64) {
+        let (low_hz, high_hz) = (low_hz.min(high_hz), low_hz.max(high_hz));
+        if !(low_hz.is_finite() && high_hz.is_finite() && low_hz > 0.0) {
+            return;
+        }
+        let center_hz = (low_hz * high_hz).sqrt();
+        let half_span = (high_hz / low_hz).log2().max(MIN_SPAN_OCTAVES) / 2.0;
+        self.low_hz = center_hz / half_span.exp2();
+        self.high_hz = center_hz * half_span.exp2();
+        self.clamp_frequency();
+    }
+
+    pub fn show_level_range(&mut self, low_db: f64, high_db: f64) {
+        let (low_db, high_db) = (low_db.min(high_db), low_db.max(high_db));
+        if !(low_db.is_finite() && high_db.is_finite()) {
+            return;
+        }
+        let center_db = (low_db + high_db) / 2.0;
+        let half_span = (high_db - low_db).max(MIN_SPAN_DB) / 2.0;
+        let center_db = center_db.clamp(-DB_LIMIT + half_span, DB_LIMIT - half_span);
+        self.low_db = center_db - half_span;
+        self.high_db = center_db + half_span;
+    }
+
     pub fn pan(&mut self, rect: Rect, delta_x: f32, delta_y: f32) {
         let octaves_per_pixel =
             (self.high_hz / self.low_hz).log2() / f64::from(rect.width().max(1.0));
@@ -193,6 +217,28 @@ mod tests {
     fn presets_select_expected_bands() {
         let view = PlotView::default().with_preset(RangePreset::Sub);
         assert_eq!((view.low_hz, view.high_hz), (20.0, 200.0));
+    }
+
+    #[test]
+    fn selected_ranges_are_shown_within_limits() {
+        let mut view = PlotView::default();
+        view.show_frequency_range(400.0, 100.0);
+        assert!((view.low_hz - 100.0).abs() < 1.0e-6 && (view.high_hz - 400.0).abs() < 1.0e-6);
+        view.show_frequency_range(1000.0, 1001.0);
+        assert!(((view.high_hz / view.low_hz).log2() - MIN_SPAN_OCTAVES).abs() < 1.0e-9);
+        view.show_frequency_range(5.0, 40_000.0);
+        assert_eq!((view.low_hz, view.high_hz), (FULL_LOW_HZ, FULL_HIGH_HZ));
+        view.show_level_range(3.0, -9.0);
+        assert_eq!((view.low_db, view.high_db), (-9.0, 3.0));
+        view.show_level_range(0.0, 1.0);
+        assert!((view.high_db - view.low_db - MIN_SPAN_DB).abs() < 1.0e-9);
+        view.show_level_range(DB_LIMIT, DB_LIMIT - 1.0);
+        assert_eq!(
+            (view.low_db, view.high_db),
+            (DB_LIMIT - MIN_SPAN_DB, DB_LIMIT)
+        );
+        view.show_frequency_range(f64::NAN, 100.0);
+        assert!(view.low_hz.is_finite());
     }
 
     #[test]

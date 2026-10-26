@@ -8,7 +8,7 @@ use engine::{AnalysisSettings, DelayPolicy, EngineConfig};
 use serde::{Deserialize, Serialize};
 
 use crate::design::Theme;
-use crate::plot::PlotLayout;
+use crate::plot::{DEFAULT_UPPER_PANE_FRACTION, PlotLayout, sanitized_upper_fraction};
 
 const CONFIG_FILE_NAME: &str = "config.json";
 const APP_DIRECTORY_NAME: &str = "SoundTuning";
@@ -82,6 +82,7 @@ pub struct AppConfig {
     pub air_temperature_celsius: f64,
     pub side_panel_open: bool,
     pub plot_layout: PlotLayout,
+    pub upper_pane_fraction: f32,
 }
 
 impl Default for AppConfig {
@@ -99,6 +100,7 @@ impl Default for AppConfig {
             air_temperature_celsius: DEFAULT_AIR_TEMPERATURE_CELSIUS,
             side_panel_open: true,
             plot_layout: PlotLayout::default(),
+            upper_pane_fraction: DEFAULT_UPPER_PANE_FRACTION,
         }
     }
 }
@@ -127,6 +129,7 @@ impl AppConfig {
         }
         self.system_latency_ms
             .retain(|_, latency| latency.is_finite() && *latency >= 0.0);
+        self.upper_pane_fraction = sanitized_upper_fraction(self.upper_pane_fraction);
         self
     }
 

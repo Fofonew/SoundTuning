@@ -63,9 +63,10 @@ Cocher, dater et noter les observations. Matériel de référence : UAX 2-2, mic
 
 ## Delay Analysis (alignement façon SysTune)
 
-- [ ] Sub et tête captés séparément (S), onglet Alignment : Reference = tête, Delay = sub ; Pos, Neg et Flat s'affichent avec leurs courbes de sommation ; la plus forte de Pos / Neg est sélectionnée.
+- [ ] Sub et tête captés séparément (S), onglet Alignment : Reference = tête, Delay = sub ; Pos, Neg et Flat s'affichent ; la plus forte de Pos / Neg est sélectionnée ; le tracé montre Reference, Delay (même masquées dans Traces) et une 3ᵉ courbe « Pos sum » / « Neg sum »… dans la couleur de la colonne, sans changer la couleur de Delay.
+- [ ] Cliquer une autre solution remplace la courbe de somme ; recliquer la solution sélectionnée masque la somme, un nouveau clic la réaffiche.
 - [ ] Recopier la solution dans le processeur (délai et polarité indiqués sous « Réglage à recopier »), mesurer les deux sources ensemble : la mesure suit la courbe prédite dans la plage (± 1 dB).
-- [ ] Custom : saisir un délai et inverser la polarité ; la courbe Custom suit immédiatement.
+- [ ] Custom : saisir un délai et inverser la polarité ; la courbe « Custom sum » suit immédiatement.
 - [ ] Range : Low, Mid, Full, Custom (Crossover en Hz + largeur) ; Maj + glisser sur le tracé passe en Custom.
 - [ ] Les boutons en icône (Superposer, Plein écran, Commandes, Audio, Panneau) affichent leur libellé au survol.
 
@@ -93,7 +94,8 @@ Cocher, dater et noter les observations. Matériel de référence : UAX 2-2, mic
 ## Visuel
 
 - [ ] Première ouverture : l'assistant s'affiche (carte son → référence et canaux avec vu-mètres → test), puis ne réapparaît plus au lancement suivant.
-- [ ] Tracé : zoom molette (fréquence), Alt + molette (dB), pincement sur le pavé tactile, glisser pour déplacer, double-clic pour réinitialiser ; aucune saccade.
+- [ ] Tracé : zoom molette (fréquence), Alt + molette (dB), pincement sur le pavé tactile ; glisser une sélection large = zoom en fréquence, haute = zoom en dB, en diagonale = les deux, appliqué au relâchement ; clic droit (ou Cmd/Ctrl + glisser) pour déplacer ; double-clic pour réinitialiser ; aucune saccade.
+- [ ] Vues superposées (V) : glisser la poignée entre les deux vues les redimensionne, double-clic la remet au milieu ; la proportion est conservée au redémarrage.
 - [ ] Cmd + / Cmd − : l'interface s'agrandit / se réduit proprement.
 - [ ] Navigation au clavier (Tab) : chaque bouton reçoit un contour de focus visible ; VoiceOver annonce les boutons et vu-mètres.
 

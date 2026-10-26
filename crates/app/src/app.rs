@@ -6,7 +6,6 @@ use eframe::egui::{self, CornerRadius, Frame, Margin, Panel, Stroke};
 use engine::EngineCommand;
 
 use crate::actions::{Action, triggered_by_keyboard};
-use crate::alignment_state::AlignmentChoice;
 use crate::config::{AppConfig, ConfigStore};
 use crate::design::tokens::{STORED_TRACE_COLOR_COUNT, size, spacing, stroke};
 use crate::design::widgets::Tone;
@@ -14,7 +13,7 @@ use crate::design::{Theme, fonts, theme};
 use crate::device_choice;
 use crate::eq_state::{EqState, EqTarget, EqView, inverted_db, predicted_db};
 use crate::measurement::{MeasurementController, SourceSpec};
-use crate::plot::{PlotLayout, PlotView, RangePreset, TraceStyle, ViewKind};
+use crate::plot::{PlotLayout, PlotView, RangePreset, TraceStyle, ViewKind, upper_pane_height};
 use crate::session::{
     AlignmentSumKey, AverageError, CaptureError, LoadIssue, Session, SessionStore, SessionWriter,
     UndoHistory,
@@ -28,6 +27,7 @@ use crate::ui::eq_panel::{self, EqCommand};
 use crate::ui::impulse_panel::{ImpulseCurve, ImpulseInputs, ImpulsePanel};
 use crate::ui::notifications::Notifications;
 use crate::ui::palette::CommandPalette;
+use crate::ui::pane_splitter;
 use crate::ui::plot_panel::{
     BandSelection, OverlayTrace, PlotEvents, PlotInputs, PlotPanel, default_phase_view,
 };
@@ -47,10 +47,7 @@ const MILLISECONDS_PER_SECOND: f64 = 1000.0;
 const DELAY_NUDGE_MS: f64 = 0.01;
 const DELAY_DRIFT_NOTIFY_MS: f64 = 0.5;
 
-type CachedSums = (
-    Option<(AlignmentSumKey, AlignmentChoice, u64, u64)>,
-    Vec<(AlignmentChoice, Vec<Option<f64>>)>,
-);
+type CachedSum = (Option<AlignmentSumKey>, Option<Vec<Option<f64>>>);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum MergeKey {
@@ -61,7 +58,6 @@ enum MergeKey {
 
 type CachedEqCurve = (EqState, u64, Vec<Option<f64>>);
 const FALLBACK_SAMPLE_RATE_HZ: u32 = 48_000;
-const UPPER_PANE_FRACTION: f32 = 0.42;
 const WINDOW_FIT_FRAMES: u32 = 30;
 const MONITOR_FILL_LIMIT: f32 = 0.95;
 
@@ -162,7 +158,7 @@ pub struct SoundTuningApp {
     rename: RenameState,
     last_merge: Option<MergeKey>,
     drift_notified: bool,
-    alignment_sums: Option<CachedSums>,
+    alignment_sum: Option<CachedSum>,
     eq_curve: Option<CachedEqCurve>,
     last_plot_rect: Option<egui::Rect>,
     audio_settings: Option<AudioSettingsPanel>,
@@ -216,7 +212,7 @@ impl SoundTuningApp {
             rename: RenameState::default(),
             last_merge: None,
             drift_notified: false,
-            alignment_sums: None,
+            alignment_sum: None,
             eq_curve: None,
             last_plot_rect: None,
             audio_settings: None,
@@ -555,45 +551,27 @@ impl SoundTuningApp {
         }
     }
 
-    fn refresh_alignment_sums(&mut self) {
-        let alignment = &self.session.alignment;
-        let (band_low_hz, band_high_hz) = alignment.band_hz();
-        let key = self.session.alignment_sum_key().map(|key| {
-            (
-                key,
-                alignment.choice,
-                band_low_hz.to_bits(),
-                band_high_hz.to_bits(),
-            )
-        });
-        if self.alignment_sums.as_ref().map(|(cached, _)| *cached) == Some(key) {
+    fn refresh_alignment_sum(&mut self) {
+        let key = self.session.alignment_sum_key();
+        if self.alignment_sum.as_ref().map(|(cached, _)| *cached) == Some(key) {
             return;
         }
-        let frequencies = self.measurement.grid().frequencies_hz();
-        let selected = alignment.choice;
-        let sums = self
+        let sum = self
             .session
-            .predicted_alignment_sums_db(frequencies)
-            .into_iter()
-            .map(|(choice, mut values)| {
-                if choice != selected {
-                    for (value, frequency_hz) in values.iter_mut().zip(frequencies) {
-                        if !(band_low_hz..=band_high_hz).contains(frequency_hz) {
-                            *value = None;
-                        }
-                    }
-                }
-                (choice, values)
-            })
-            .collect();
-        self.alignment_sums = Some((key, sums));
+            .predicted_alignment_sum_db(self.measurement.grid().frequencies_hz());
+        self.alignment_sum = Some((key, sum));
     }
 
     fn apply_alignment_command(&mut self, command: AlignmentCommand) {
         let frequencies = std::sync::Arc::clone(self.measurement.grid());
         match command {
-            AlignmentCommand::Update(state) => {
+            AlignmentCommand::Update(mut state) => {
                 let current = &self.session.alignment;
+                if (state.reference_trace, state.delayed_trace)
+                    != (current.reference_trace, current.delayed_trace)
+                {
+                    state.sum_hidden = false;
+                }
                 let needs_solutions = state.reference_trace != current.reference_trace
                     || state.delayed_trace != current.delayed_trace
                     || state.band_hz() != current.band_hz();
@@ -1578,43 +1556,33 @@ impl SoundTuningApp {
         let alignment_mode = tabs_visible
             && self.side_tab == SideTab::Alignment
             && self.session.alignment.is_ready();
-        if alignment_mode {
-            self.refresh_alignment_sums();
-        }
-        let selected_choice = self.session.alignment.choice;
-        let alignment_sums: Vec<(String, Vec<Option<f64>>, TraceStyle)> = if alignment_mode {
-            self.alignment_sums
-                .as_ref()
-                .map(|(_, sums)| {
-                    let mut sums: Vec<_> = sums
-                        .iter()
-                        .map(|(choice, values)| {
-                            let selected = *choice == selected_choice;
-                            (
-                                text::alignment_sum_label(*choice),
-                                values.clone(),
-                                TraceStyle {
-                                    color: alignment_panel::choice_color(palette, *choice),
-                                    width: if selected {
-                                        stroke::TRACE_LIVE
-                                    } else {
-                                        stroke::TRACE_STORED
-                                    },
-                                    halo: None,
-                                },
-                                selected,
-                            )
-                        })
-                        .collect();
-                    sums.sort_by_key(|(_, _, _, selected)| *selected);
-                    sums.into_iter()
-                        .map(|(label, values, style, _)| (label, values, style))
-                        .collect()
-                })
-                .unwrap_or_default()
+        let alignment_pair = if alignment_mode {
+            [
+                self.session.alignment.reference_trace,
+                self.session.alignment.delayed_trace,
+            ]
         } else {
-            Vec::new()
+            [None, None]
         };
+        if alignment_mode && self.session.alignment.shows_sum() {
+            self.refresh_alignment_sum();
+        }
+        let alignment_sum: Option<(String, Vec<Option<f64>>, TraceStyle)> = (alignment_mode
+            && self.session.alignment.shows_sum())
+        .then(|| {
+            let choice = self.session.alignment.choice;
+            let (_, sum) = self.alignment_sum.as_ref()?;
+            Some((
+                text::alignment_sum_label(choice),
+                sum.clone()?,
+                TraceStyle {
+                    color: alignment_panel::choice_color(palette, choice),
+                    width: stroke::TRACE_LIVE,
+                    halo: None,
+                },
+            ))
+        })
+        .flatten();
 
         let banners = collect_banners(&self.banner_inputs());
         let layout = self.config.plot_layout;
@@ -1641,24 +1609,26 @@ impl SoundTuningApp {
                     width: stroke::TRACE_STORED,
                     halo: None,
                 };
+                let in_alignment_pair = |trace: &std::sync::Arc<crate::session::Trace>| {
+                    alignment_pair.contains(&Some(trace.id))
+                };
                 let overlays: Vec<OverlayTrace<'_>> =
                     self.session
                         .traces
                         .iter()
-                        .filter(|trace| trace.visible)
-                        .map(|trace| OverlayTrace {
-                            label: &trace.name,
-                            values_db: &trace.magnitude_db,
-                            offset_db: trace.offset_db,
-                            style: trace_style(trace),
-                        })
-                        .chain(alignment_sums.iter().map(|(label, values_db, style)| {
+                        .filter(|trace| trace.visible && !in_alignment_pair(trace))
+                        .map(|trace| stored_overlay(trace, trace_style(trace)))
+                        .chain(alignment_sum.as_ref().map(|(label, values_db, style)| {
                             OverlayTrace {
                                 label,
                                 values_db,
                                 offset_db: 0.0,
                                 style: *style,
                             }
+                        }))
+                        .chain(alignment_pair.iter().filter_map(|id| {
+                            let trace = self.session.trace((*id)?)?;
+                            Some(stored_overlay(trace, trace_style(trace)))
                         }))
                         .chain(
                             eq_curves
@@ -1711,7 +1681,24 @@ impl SoundTuningApp {
                 let area = ui.available_rect_before_wrap();
                 let pane_count = layout.panes().count() as f32;
                 let gap = if pane_count > 1.0 { spacing::MD } else { 0.0 };
-                let upper_height = (area.height() - gap) * UPPER_PANE_FRACTION;
+                let upper_height =
+                    upper_pane_height(area.height() - gap, self.config.upper_pane_fraction);
+                if pane_count >= 2.0 {
+                    let gap_rect = egui::Rect::from_min_size(
+                        egui::pos2(area.left(), area.top() + upper_height),
+                        egui::vec2(area.width(), gap),
+                    );
+                    let split = pane_splitter::SplitArea {
+                        top: area.top(),
+                        available_height: area.height() - gap,
+                    };
+                    if let Some(fraction) = pane_splitter::show(ui, palette, gap_rect, split)
+                        && fraction != self.config.upper_pane_fraction
+                    {
+                        self.config.upper_pane_fraction = fraction;
+                        self.config_dirty_since.get_or_insert_with(Instant::now);
+                    }
+                }
                 let mut banner_anchor = None;
                 for (position, kind) in layout.panes().enumerate() {
                     let rect = if pane_count < 2.0 {
@@ -1838,6 +1825,15 @@ impl SoundTuningApp {
         if eq_mode {
             self.apply_eq_plot_events(&plot_events);
         }
+    }
+}
+
+fn stored_overlay(trace: &crate::session::Trace, style: TraceStyle) -> OverlayTrace<'_> {
+    OverlayTrace {
+        label: &trace.name,
+        values_db: &trace.magnitude_db,
+        offset_db: trace.offset_db,
+        style,
     }
 }
 

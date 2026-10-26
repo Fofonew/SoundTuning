@@ -125,6 +125,7 @@ pub struct AlignmentState {
     pub choice: AlignmentChoice,
     pub custom_delay_ms: f64,
     pub custom_inverted: bool,
+    pub sum_hidden: bool,
     pub solutions: Option<AlignmentSolutions>,
 }
 
@@ -139,6 +140,7 @@ impl Default for AlignmentState {
             choice: AlignmentChoice::default(),
             custom_delay_ms: 0.0,
             custom_inverted: false,
+            sum_hidden: false,
             solutions: None,
         }
     }
@@ -190,6 +192,19 @@ impl AlignmentState {
             AlignmentChoice::Negative => self.solutions.map(|found| solution(found.negative)),
             AlignmentChoice::Flat => self.solutions.map(|found| solution(found.flat)),
         }
+    }
+
+    pub fn select(&mut self, choice: AlignmentChoice) {
+        if self.choice == choice {
+            self.sum_hidden = !self.sum_hidden;
+        } else {
+            self.choice = choice;
+            self.sum_hidden = false;
+        }
+    }
+
+    pub fn shows_sum(&self) -> bool {
+        self.is_ready() && !self.sum_hidden
     }
 
     pub fn selected_setting(&self) -> Option<(f64, bool)> {
@@ -285,6 +300,24 @@ mod tests {
         state.adopt_solutions(Some(solutions()));
         assert_eq!(state.choice, AlignmentChoice::Custom);
         assert_eq!(state.selected_setting(), Some((-2.5, false)));
+    }
+
+    #[test]
+    fn clicking_the_selected_choice_again_hides_its_sum() {
+        let mut state = AlignmentState {
+            reference_trace: Some(1),
+            delayed_trace: Some(2),
+            ..AlignmentState::default()
+        };
+        assert!(state.shows_sum());
+        state.select(AlignmentChoice::Positive);
+        assert!(!state.shows_sum());
+        state.select(AlignmentChoice::Positive);
+        assert!(state.shows_sum());
+        state.select(AlignmentChoice::Positive);
+        state.select(AlignmentChoice::Flat);
+        assert_eq!(state.choice, AlignmentChoice::Flat);
+        assert!(state.shows_sum());
     }
 
     #[test]

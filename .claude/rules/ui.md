@@ -27,7 +27,7 @@ Début de phase 3 : `ecc:frontend-design-direction`. À chaque revue visuelle : 
 
 - Axe fréquence log, graduations standard (20, 50, 100, 200, 500, 1k, 2k, 5k, 10k, 20k ; mineures intermédiaires).
 - Réticule au survol : fréquence, dB, valeur de la trace la plus proche.
-- Zoom molette/pincement, déplacement au glisser, double-clic = réinitialiser ; plages 1–4 (plein spectre, sub 20–200 Hz, médium, aigu).
+- Zoom molette/pincement et par sélection au glisser (comme SysTune), déplacement au clic droit ou Cmd/Ctrl + glisser, double-clic = réinitialiser ; plages 1–4 (plein spectre, sub 20–200 Hz, médium, aigu).
 - Ne dessine que la grille d'affichage (≈ 957 points) ; points invalides ou sous le seuil de cohérence non tracés (ruptures de courbe).
 - Préparation d'une image < 1 ms ; aucun calcul DSP dans la boucle de rendu ; aucune animation sur les courbes.
 

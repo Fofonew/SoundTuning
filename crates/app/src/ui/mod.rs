@@ -6,6 +6,7 @@ pub mod eq_panel;
 pub mod impulse_panel;
 pub mod notifications;
 pub mod palette;
+pub mod pane_splitter;
 pub mod plot_panel;
 pub mod side_panel;
 pub mod top_bar;

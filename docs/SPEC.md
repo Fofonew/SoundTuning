@@ -88,7 +88,7 @@ Tout se passe sur un seul écran principal ; la mesure ne s'interrompt jamais pe
   - painter egui, sans `egui_plot` ;
   - axe fréquence logarithmique, graduations standard ;
   - réticule au survol : fréquence, dB, valeur de la trace la plus proche ;
-  - zoom molette ou pincement, déplacement au glisser, double-clic pour réinitialiser ;
+  - zoom molette ou pincement, zoom par sélection au glisser (largeur = fréquence, hauteur = niveau, rectangle = les deux), déplacement au clic droit ou Cmd/Ctrl + glisser, double-clic pour réinitialiser (D-048) ;
   - plages touches 1 à 4 : plein spectre, sub 20–200 Hz, médium, aigu.
 - **Palette de commandes** (Cmd/Ctrl+K) listant toutes les actions et leurs raccourcis.
 - **Annuler / rétablir** (Cmd/Ctrl+Z, Shift+Cmd/Ctrl+Z) pour traces, alignement et EQ.

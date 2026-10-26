@@ -146,6 +146,9 @@ pub const VIEW_IMPULSE_HINT: &str = "Réponse impulsionnelle";
 pub const VIEW_MAIN_LABEL: &str = "View";
 pub const VIEW_UPPER_LABEL: &str = "Top";
 pub const VIEW_STACKED: &str = "Superposer";
+pub const PANE_SPLITTER_LABEL: &str = "Séparation des deux vues";
+pub const PANE_SPLITTER_HINT: &str =
+    "Glisser pour redimensionner · double-clic : taille par défaut";
 pub const VIEW_FULLSCREEN: &str = "Plein écran";
 pub const VIEW_EXIT_FULLSCREEN: &str = "Quitter le plein écran";
 pub const IMPULSE_SCALE_LINEAR: &str = "Lin";
@@ -293,6 +296,8 @@ pub const ALIGNMENT_CUSTOM_POLARITY_LABEL: &str = "Polarité inversée (Custom)"
 pub const ALIGNMENT_APPLIED: &str = "Réglage à recopier dans le processeur";
 pub const ALIGNMENT_NO_DELAY: &str = "Aucun délai";
 pub const ALIGNMENT_NO_SOLUTION: &str = "Pas de Pos / Neg / Flat : il faut la phase des deux traces dans la plage (une moyenne de traces n'en a pas). Custom reste disponible.";
+pub const ALIGNMENT_SUM_SHOW_HINT: &str = "Clic : afficher sa somme Reference + Delay sur le tracé";
+pub const ALIGNMENT_SUM_HIDE_HINT: &str = "Clic : masquer la somme du tracé";
 pub const ALIGNMENT_POWER_HINT: &str =
     "Barres : niveau de la somme Pos et Neg, relatif au meilleur des deux.";
 pub const EQ_FREQUENCY: &str = "Fréquence";
@@ -366,6 +371,22 @@ pub fn alignment_choice_summary(
         ),
         None => alignment_choice(choice).to_owned(),
     }
+}
+
+pub fn alignment_choice_hint(
+    choice: crate::alignment_state::AlignmentChoice,
+    setting: Option<(f64, bool)>,
+    sum_shown: bool,
+) -> String {
+    format!(
+        "{}\n{}",
+        alignment_choice_summary(choice, setting),
+        if sum_shown {
+            ALIGNMENT_SUM_HIDE_HINT
+        } else {
+            ALIGNMENT_SUM_SHOW_HINT
+        }
+    )
 }
 
 pub fn alignment_instruction(

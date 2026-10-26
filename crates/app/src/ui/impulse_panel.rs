@@ -1,12 +1,12 @@
 use eframe::egui::{
-    self, Align2, CornerRadius, Pos2, Rect, Role, Sense, Shape, Stroke, StrokeKind, WidgetInfo,
-    pos2, vec2,
+    self, Align2, CornerRadius, Key, PointerButton, Pos2, Rect, Role, Sense, Shape, Stroke,
+    StrokeKind, WidgetInfo, pos2, vec2,
 };
 
 use crate::design::Palette;
 use crate::design::fonts;
 use crate::design::tokens::{radius, spacing, stroke, text_size};
-use crate::plot::TraceStyle;
+use crate::plot::{TraceStyle, ZoomSelection};
 use crate::text;
 
 const LEFT_AXIS_WIDTH: f32 = 40.0;
@@ -75,6 +75,18 @@ impl ImpulseView {
             self.end_ms = end;
             self.clamp();
         }
+    }
+
+    pub fn show_time_range(&mut self, start_ms: f64, end_ms: f64) {
+        let (start_ms, end_ms) = (start_ms.min(end_ms), start_ms.max(end_ms));
+        if !(start_ms.is_finite() && end_ms.is_finite()) {
+            return;
+        }
+        let center_ms = (start_ms + end_ms) / 2.0;
+        let half_span = (end_ms - start_ms).clamp(MIN_SPAN_MS, MAX_SPAN_MS) / 2.0;
+        self.start_ms = center_ms - half_span;
+        self.end_ms = center_ms + half_span;
+        self.clamp();
     }
 
     pub fn pan(&mut self, rect: Rect, delta_x: f32) {
@@ -152,6 +164,8 @@ pub struct ImpulseEvents {
 pub struct ImpulsePanel {
     pub view: ImpulseView,
     points: Vec<Pos2>,
+    zoom_selection: Option<ZoomSelection>,
+    panning: bool,
 }
 
 struct Scale {
@@ -258,7 +272,9 @@ impl ImpulsePanel {
             Stroke::new(stroke::BORDER, palette.border),
             StrokeKind::Inside,
         );
-        if let Some(hover) = response.hover_pos() {
+        if let Some(selection) = &self.zoom_selection {
+            selection.paint(&painter, palette, plot_rect);
+        } else if let Some(hover) = response.hover_pos() {
             self.paint_crosshair(&painter, palette, plot_rect, hover, inputs);
         }
         if inputs.live.is_none() && inputs.overlays.is_empty() {
@@ -284,10 +300,54 @@ impl ImpulsePanel {
             self.view = ImpulseView::default();
             return;
         }
-        if response.dragged() {
-            self.view.pan(plot_rect, response.drag_delta().x);
+        let (pointer_down, escape) =
+            ui.input(|input| (input.pointer.any_down(), input.key_pressed(Key::Escape)));
+        if (!pointer_down && !response.drag_stopped()) || escape {
+            self.zoom_selection = None;
         }
-        if let Some(hover) = response.hover_pos() {
+        if !pointer_down && !response.drag_stopped() {
+            self.panning = false;
+        }
+        if response.drag_started() {
+            let command = ui.input(|input| input.modifiers.command);
+            let origin = ui
+                .input(|input| input.pointer.press_origin())
+                .or_else(|| response.interact_pointer_pos());
+            if response.drag_started_by(PointerButton::Primary) && !command {
+                self.zoom_selection = origin.map(|position| {
+                    ZoomSelection::new(position.clamp(plot_rect.min, plot_rect.max), false)
+                });
+            } else {
+                self.panning = true;
+            }
+        }
+        if let Some(selection) = self.zoom_selection.as_mut() {
+            if let Some(position) = response.interact_pointer_pos() {
+                selection.update(plot_rect, position);
+            }
+            if !response.dragged() || response.drag_stopped() {
+                let selection = *selection;
+                self.zoom_selection = None;
+                if selection.axes(plot_rect).is_some() {
+                    let (left, right) = selection.x_range();
+                    self.view.show_time_range(
+                        self.view.x_to_time(plot_rect, left),
+                        self.view.x_to_time(plot_rect, right),
+                    );
+                }
+            }
+        }
+        if self.panning {
+            if response.dragged() {
+                self.view.pan(plot_rect, response.drag_delta().x);
+            } else {
+                self.panning = false;
+            }
+        }
+        if let Some(hover) = response
+            .hover_pos()
+            .filter(|_| self.zoom_selection.is_none())
+        {
             let (scroll, zoom) = ui.input(|input| (input.smooth_scroll_delta, input.zoom_delta()));
             let anchor_ms = self.view.x_to_time(plot_rect, hover.x);
             if (zoom - 1.0).abs() > f32::EPSILON {

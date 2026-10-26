@@ -230,6 +230,34 @@ fn screenshot_phase_stacked() {
 }
 
 #[test]
+fn screenshot_zoom_selection() {
+    let mut harness = captured_traces_harness(Theme::Night);
+    harness.key_press(Key::V);
+    harness.step();
+    harness.key_press(Key::F);
+    harness.step();
+    let rect = harness.state().last_plot_rect().unwrap();
+    let view = harness.state().plot_view();
+    let from = view.to_screen(rect, 80.0, 10.0);
+    let to = view.to_screen(rect, 600.0, -12.0);
+    harness.hover_at(from);
+    harness.step();
+    harness.event(eframe::egui::Event::PointerButton {
+        pos: from,
+        button: eframe::egui::PointerButton::Primary,
+        pressed: true,
+        modifiers: eframe::egui::Modifiers::NONE,
+    });
+    harness.step();
+    for step in 1..=3 {
+        harness.hover_at(from + (to - from) * step as f32 / 3.0);
+        harness.step();
+    }
+    harness.step();
+    assert!(save_screenshot(&mut harness, "zoom_selection").exists());
+}
+
+#[test]
 fn screenshot_impulse() {
     let mut harness = captured_traces_harness(Theme::Night);
     harness.key_press(Key::I);

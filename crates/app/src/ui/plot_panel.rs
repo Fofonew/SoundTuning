@@ -1,6 +1,6 @@
 use eframe::egui::{
-    self, Align2, Color32, CornerRadius, Pos2, Rect, Role, Sense, Shape, Stroke, StrokeKind,
-    WidgetInfo, pos2, vec2,
+    self, Align2, Color32, CornerRadius, Key, PointerButton, Pos2, Rect, Role, Sense, Shape,
+    Stroke, StrokeKind, WidgetInfo, pos2, vec2,
 };
 use engine::MeasurementSnapshot;
 
@@ -12,7 +12,9 @@ use crate::design::widgets::{Emphasis, action_button};
 use crate::eq_state::EqHandle;
 use crate::plot::axis::{db_ticks, degree_ticks, frequency_ticks};
 use crate::plot::frame::live_phase_deg;
-use crate::plot::{PlotFrame, PlotView, Polyline, TraceStyle, build_polyline_with_breaks};
+use crate::plot::{
+    PlotFrame, PlotView, Polyline, TraceStyle, ZoomAxes, ZoomSelection, build_polyline_with_breaks,
+};
 use crate::text;
 
 const LEFT_AXIS_WIDTH: f32 = 40.0;
@@ -115,6 +117,8 @@ pub struct PlotPanel {
     band_drag_start_hz: Option<f64>,
     band_drag_current: Option<(f64, f64)>,
     eq_drag: Option<(usize, egui::Vec2)>,
+    zoom_selection: Option<ZoomSelection>,
+    panning: bool,
 }
 
 impl PlotPanel {
@@ -127,6 +131,8 @@ impl PlotPanel {
             band_drag_start_hz: None,
             band_drag_current: None,
             eq_drag: None,
+            zoom_selection: None,
+            panning: false,
         }
     }
 
@@ -262,7 +268,10 @@ impl PlotPanel {
         }
         self.paint_eq_handles(&painter_handles, palette, plot_rect, inputs.eq_handles);
 
-        if let Some(hover) = response.hover_pos() {
+        if let Some(selection) = &self.zoom_selection {
+            selection.paint(&painter, palette, plot_rect);
+            self.paint_zoom_label(&painter, palette, plot_rect, selection);
+        } else if let Some(hover) = response.hover_pos() {
             self.paint_crosshair(&painter, palette, plot_rect, hover, inputs);
         }
         let has_data = inputs.snapshot.averages > 0 || !inputs.overlays.is_empty();
@@ -296,7 +305,20 @@ impl PlotPanel {
                 self.view.y_to_db(plot_rect, position.y),
             ));
         }
-        let shift = ui.input(|input| input.modifiers.shift);
+        let (shift, pointer_down, escape) = ui.input(|input| {
+            (
+                input.modifiers.shift,
+                input.pointer.any_down(),
+                input.key_pressed(Key::Escape),
+            )
+        });
+        if !pointer_down && !response.drag_stopped() {
+            self.zoom_selection = None;
+            self.panning = false;
+        }
+        if escape {
+            self.zoom_selection = None;
+        }
         let hovered_handle = response
             .hover_pos()
             .or_else(|| response.interact_pointer_pos())
@@ -313,8 +335,10 @@ impl PlotPanel {
         {
             self.eq_drag = None;
         }
+        let command = ui.input(|input| input.modifiers.command);
+        let starts_with_primary = response.drag_started_by(PointerButton::Primary);
         let mut drag_started = false;
-        if response.drag_started() && !shift {
+        if starts_with_primary && !shift && !command {
             self.eq_drag = ui
                 .input(|input| input.pointer.press_origin())
                 .and_then(|origin| {
@@ -339,16 +363,23 @@ impl PlotPanel {
             if finished {
                 self.eq_drag = None;
             }
-        }
-        if response.drag_started() && shift && inputs.band_hz.is_some() {
-            self.band_drag_start_hz = response
-                .interact_pointer_pos()
-                .map(|position| self.view.x_to_frequency(plot_rect, position.x));
+        } else if response.drag_started() {
+            let origin = ui
+                .input(|input| input.pointer.press_origin())
+                .or_else(|| response.interact_pointer_pos());
+            if starts_with_primary && shift && inputs.band_hz.is_some() {
+                self.band_drag_start_hz =
+                    origin.map(|position| self.view.x_to_frequency(plot_rect, position.x));
+            } else if starts_with_primary && !command {
+                self.zoom_selection = origin.map(|position| {
+                    ZoomSelection::new(position.clamp(plot_rect.min, plot_rect.max), true)
+                });
+            } else {
+                self.panning = true;
+            }
         }
         if let Some(start_hz) = self.band_drag_start_hz {
-            if let Some(position) = response.interact_pointer_pos()
-                && response.dragged()
-            {
+            if let Some(position) = response.interact_pointer_pos() {
                 let current_hz = self.view.x_to_frequency(
                     plot_rect,
                     position.x.clamp(plot_rect.left(), plot_rect.right()),
@@ -367,11 +398,29 @@ impl PlotPanel {
                 self.band_drag_start_hz = None;
                 self.band_drag_current = None;
             }
-        } else if response.dragged() && events.eq_drag.is_none() {
-            let delta = response.drag_delta();
-            self.view.pan(plot_rect, delta.x, delta.y);
         }
-        if let Some(hover) = response.hover_pos() {
+        if let Some(selection) = self.zoom_selection.as_mut() {
+            if let Some(position) = response.interact_pointer_pos() {
+                selection.update(plot_rect, position);
+            }
+            if !response.dragged() || response.drag_stopped() {
+                let selection = *selection;
+                self.zoom_selection = None;
+                self.apply_zoom_selection(plot_rect, &selection);
+            }
+        }
+        if self.panning {
+            if response.dragged() {
+                let delta = response.drag_delta();
+                self.view.pan(plot_rect, delta.x, delta.y);
+            } else {
+                self.panning = false;
+            }
+        }
+        if let Some(hover) = response
+            .hover_pos()
+            .filter(|_| self.zoom_selection.is_none())
+        {
             let (scroll, zoom, alternate) = ui.input(|input| {
                 (
                     input.smooth_scroll_delta,
@@ -401,6 +450,55 @@ impl PlotPanel {
                 self.view.pan(plot_rect, scroll.x, 0.0);
             }
         }
+    }
+
+    fn apply_zoom_selection(&mut self, plot_rect: Rect, selection: &ZoomSelection) {
+        let Some(axes) = selection.axes(plot_rect) else {
+            return;
+        };
+        if matches!(axes, ZoomAxes::Horizontal | ZoomAxes::Both) {
+            let (left, right) = selection.x_range();
+            self.view.show_frequency_range(
+                self.view.x_to_frequency(plot_rect, left),
+                self.view.x_to_frequency(plot_rect, right),
+            );
+        }
+        if matches!(axes, ZoomAxes::Vertical | ZoomAxes::Both) {
+            let (top, bottom) = selection.y_range();
+            self.view.show_level_range(
+                self.view.y_to_db(plot_rect, bottom),
+                self.view.y_to_db(plot_rect, top),
+            );
+        }
+    }
+
+    fn paint_zoom_label(
+        &self,
+        painter: &egui::Painter,
+        palette: &Palette,
+        plot_rect: Rect,
+        selection: &ZoomSelection,
+    ) {
+        if !matches!(
+            selection.axes(plot_rect),
+            Some(ZoomAxes::Horizontal | ZoomAxes::Both)
+        ) {
+            return;
+        }
+        let Some(region) = selection.region(plot_rect) else {
+            return;
+        };
+        let (left, right) = selection.x_range();
+        painter.text(
+            region.left_top() + vec2(spacing::XS, spacing::XS),
+            Align2::LEFT_TOP,
+            text::band_label(
+                self.view.x_to_frequency(plot_rect, left),
+                self.view.x_to_frequency(plot_rect, right),
+            ),
+            fonts::value(text_size::CAPTION),
+            palette.text_primary,
+        );
     }
 
     fn handle_position(&self, plot_rect: Rect, handle: &EqHandle) -> Pos2 {

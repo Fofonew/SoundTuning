@@ -12,7 +12,7 @@ use dsp_core::{
 use engine::MeasurementSnapshot;
 use serde::{Deserialize, Serialize};
 
-use crate::alignment_state::{AlignmentChoice, AlignmentSolutions, SEARCH_RANGE_MS};
+use crate::alignment_state::{AlignmentSolutions, SEARCH_RANGE_MS};
 use crate::design::tokens::STORED_TRACE_COLOR_COUNT;
 use crate::text;
 
@@ -160,7 +160,7 @@ pub struct AlignmentSumKey {
     traces: [*const Trace; 2],
     offsets_db_bits: [u64; 2],
     smoothing_fractions: [u32; 2],
-    settings: [Option<(u64, bool)>; 4],
+    setting: Option<(u64, bool)>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -350,11 +350,10 @@ impl Session {
                 reference.metadata.smoothing_fraction,
                 delayed.metadata.smoothing_fraction,
             ],
-            settings: AlignmentChoice::ALL.map(|choice| {
-                self.alignment
-                    .setting(choice)
-                    .map(|(delay_ms, inverted)| (delay_ms.to_bits(), inverted))
-            }),
+            setting: self
+                .alignment
+                .selected_setting()
+                .map(|(delay_ms, inverted)| (delay_ms.to_bits(), inverted)),
         })
     }
 
@@ -376,38 +375,25 @@ impl Session {
         self.alignment.adopt_solutions(solutions);
     }
 
-    pub fn predicted_alignment_sums_db(
-        &self,
-        frequencies_hz: &[f64],
-    ) -> Vec<(AlignmentChoice, Vec<Option<f64>>)> {
-        let Some((reference, delayed)) = self.alignment_responses() else {
-            return Vec::new();
+    pub fn predicted_alignment_sum_db(&self, frequencies_hz: &[f64]) -> Option<Vec<Option<f64>>> {
+        let (reference, delayed) = self.alignment_responses()?;
+        let (delay_ms, inverted) = self.alignment.selected_setting()?;
+        let polarity = if inverted {
+            Polarity::Inverted
+        } else {
+            Polarity::Normal
         };
-        AlignmentChoice::ALL
-            .into_iter()
-            .filter_map(|choice| {
-                let (delay_ms, inverted) = self.alignment.setting(choice)?;
-                let polarity = if inverted {
-                    Polarity::Inverted
-                } else {
-                    Polarity::Normal
-                };
-                let mut output = vec![None; reference.len()];
-                summed_response_db(
-                    &reference,
-                    &delayed,
-                    frequencies_hz,
-                    delay_ms,
-                    polarity,
-                    &mut output,
-                )
-                .ok()?;
-                output
-                    .iter()
-                    .any(Option::is_some)
-                    .then_some((choice, output))
-            })
-            .collect()
+        let mut output = vec![None; reference.len()];
+        summed_response_db(
+            &reference,
+            &delayed,
+            frequencies_hz,
+            delay_ms,
+            polarity,
+            &mut output,
+        )
+        .ok()?;
+        output.iter().any(Option::is_some).then_some(output)
     }
 
     pub fn to_csv(&self, frequencies_hz: &[f64]) -> String {
@@ -692,6 +678,7 @@ mod tests {
     use engine::AnalysisSettings;
 
     use super::*;
+    use crate::alignment_state::AlignmentChoice;
 
     fn snapshot(level_db: f64) -> MeasurementSnapshot {
         let mut snapshot = MeasurementSnapshot::empty(4, 48_000, AnalysisSettings::default());
@@ -1042,14 +1029,15 @@ mod tests {
         assert!(!solutions.positive.inverted);
         assert!(solutions.negative.inverted);
         assert_eq!(session.alignment.choice, AlignmentChoice::Positive);
-        let sums = session.predicted_alignment_sums_db(&frequencies);
-        assert_eq!(sums.len(), 4);
+        let positive = session.predicted_alignment_sum_db(&frequencies).unwrap();
         let index_100hz = frequencies
             .iter()
             .position(|frequency_hz| *frequency_hz >= 100.0)
             .unwrap();
-        let (_, positive) = &sums[0];
         assert!((positive[index_100hz].unwrap() - 6.02).abs() < 0.05);
+        session.alignment.choice = AlignmentChoice::Negative;
+        let negative = session.predicted_alignment_sum_db(&frequencies).unwrap();
+        assert_ne!(negative, positive);
     }
 
     #[test]
@@ -1057,9 +1045,7 @@ mod tests {
         let (mut session, frequencies) = aligned_pair(0.0);
         session.alignment.choice = AlignmentChoice::Custom;
         session.alignment.custom_delay_ms = 0.0;
-        let sums = session.predicted_alignment_sums_db(&frequencies);
-        let (choice, sum) = &sums[0];
-        assert_eq!(*choice, AlignmentChoice::Custom);
+        let sum = session.predicted_alignment_sum_db(&frequencies).unwrap();
         assert!(
             sum.iter()
                 .flatten()
@@ -1075,6 +1061,6 @@ mod tests {
         }
         session.refresh_alignment_solutions(&frequencies);
         assert_eq!(session.alignment.solutions, None);
-        assert!(session.predicted_alignment_sums_db(&frequencies).is_empty());
+        assert_eq!(session.predicted_alignment_sum_db(&frequencies), None);
     }
 }
