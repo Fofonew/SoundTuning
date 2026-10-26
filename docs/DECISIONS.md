@@ -337,10 +337,10 @@ Non corrigé, justifié :
 - Non repris de SysTune : calcul sur réponses fenêtrées (WINDOWED), panneau graphique séparé (les sommes sont sur le tracé principal).
 
 ### D-046 — Termes techniques en anglais (demande de l'utilisateur, 2026-10-26)
-- Boutons et étiquettes : Start / Stop, Freeze / Unfreeze, Capture, Peak (recherche du délai, ex-« Trouver »), Apply (ex-« Appliquer » le délai), Track (suivi), états Live / Warm-up / Frozen / Stopped, Ref, Mic, CLIP, Delay, Avg, Smoothing, Coh γ², Pink noise, Coherence, View, Top, Sample rate, Buffer, Internal / Loopback, onglet Alignment, Delay Analysis (Reference, Delay, Range, Crossover, Pos, Neg, Flat, Custom). Termes d'EQ déjà en anglais (D-034).
+- Boutons et étiquettes : Start / Stop, Freeze / Unfreeze, Capture, Peak (recherche du délai, ex-« Trouver »), Insert (ex-« Appliquer » le délai, terme de Smaart), Track (suivi), états Live / Warm-up / Frozen / Stopped, Ref, Mic, CLIP, Delay, Avg, Smoothing, Coh γ², Pink noise, Coherence, View, Top, Sample rate, Buffer, Internal / Loopback, onglet Alignment, Delay Analysis (Reference, Delay, Range, Crossover, Pos, Neg, Flat, Custom). Termes d'EQ déjà en anglais (D-034).
 - Phrases (aides, bandeaux, notifications, palette) : en français, avec le terme anglais du bouton (« Peak : trouver le délai »), pour que la palette retrouve les deux.
-- « Apply » plutôt que « Insert » (Smaart) pour le délai : à confirmer par l'utilisateur.
+- « Insert » (Smaart) retenu par l'utilisateur pour appliquer le délai.
 
 ### D-047 — Icônes (demande de l'utilisateur, 2026-10-26)
 - Police Phosphor Regular (licence MIT, `crates/app/assets/fonts/Phosphor-MIT.txt`) embarquée comme les autres polices, famille dédiée `icons` (pas de repli sur le texte). Le crate `egui-phosphor` n'est pas utilisé : sa version 0.14 dépend d'egui 0.36, l'application est en 0.37.
-- Boutons en icône (32 × 32 px, libellé et raccourci en infobulle au survol, libellé AccessKit inchangé) : Superposer, Plein écran / Quitter, Palette de commandes, Réglages audio, Panneau, fermeture des réglages audio. Les actions principales (Start, Freeze, Capture, Peak, Apply) gardent un libellé texte : action fréquente, lecture à 1 m.
+- Boutons en icône (32 × 32 px, libellé et raccourci en infobulle au survol, libellé AccessKit inchangé) : Superposer, Plein écran / Quitter, Palette de commandes, Réglages audio, Panneau, fermeture des réglages audio. Les actions principales (Start, Freeze, Capture, Peak, Insert) gardent un libellé texte : action fréquente, lecture à 1 m.

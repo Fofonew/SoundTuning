@@ -28,7 +28,7 @@ pub const KEY_SHIFT: &str = "Maj";
 
 pub const ACTION_TOGGLE_MEASUREMENT: &str = "Start / Stop (mesure continue)";
 pub const ACTION_FIND_DELAY: &str = "Peak : trouver le délai";
-pub const ACTION_APPLY_DELAY: &str = "Apply : appliquer le délai trouvé";
+pub const ACTION_APPLY_DELAY: &str = "Insert : appliquer le délai trouvé";
 pub const ACTION_CAPTURE_TRACE: &str = "Capture : mémoriser une trace";
 pub const ACTION_TOGGLE_FREEZE: &str = "Freeze / Unfreeze (figer l'affichage)";
 pub const ACTION_RANGE_FULL: &str = "Plage : plein spectre";
@@ -53,7 +53,7 @@ pub const BUTTON_CAPTURE: &str = "Capture";
 pub const BUTTON_FREEZE: &str = "Freeze";
 pub const BUTTON_UNFREEZE: &str = "Unfreeze";
 pub const BUTTON_FIND_DELAY: &str = "Peak";
-pub const BUTTON_APPLY_DELAY: &str = "Apply";
+pub const BUTTON_APPLY_DELAY: &str = "Insert";
 pub const BUTTON_PALETTE: &str = "Commandes";
 pub const BUTTON_AUDIO_SETTINGS: &str = "Audio";
 pub const ACTION_OPEN_AUDIO_SETTINGS: &str = "Réglages audio (entrée, sortie, canaux)";
