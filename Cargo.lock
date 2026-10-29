@@ -289,7 +289,7 @@ checksum = "330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470"
 
 [[package]]
 name = "app"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "anyhow",
  "audio-io",
@@ -544,7 +544,7 @@ dependencies = [
 
 [[package]]
 name = "audio-io"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "cpal",
  "hound",
@@ -1272,7 +1272,7 @@ checksum = "d8b14ccef22fc6f5a8f4d7d768562a182c04ce9a3b3157b91390b52ddfdf1a76"
 
 [[package]]
 name = "dsp-core"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "num-complex",
  "proptest",
@@ -1466,7 +1466,7 @@ checksum = "66b7e2430c6dff6a955451e2cfc438f09cea1965a9d6f87f7e3b90decc014099"
 
 [[package]]
 name = "engine"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "audio-io",
  "criterion",
