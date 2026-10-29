@@ -12,7 +12,7 @@ use dsp_core::{
 use engine::MeasurementSnapshot;
 use serde::{Deserialize, Serialize};
 
-use crate::alignment_state::{AlignmentSolutions, SEARCH_RANGE_MS};
+use crate::alignment_state::{AlignmentChoice, AlignmentSolutions, SEARCH_RANGE_MS};
 use crate::design::tokens::STORED_TRACE_COLOR_COUNT;
 use crate::text;
 
@@ -161,6 +161,12 @@ pub struct AlignmentSumKey {
     offsets_db_bits: [u64; 2],
     smoothing_fractions: [u32; 2],
     setting: Option<(u64, bool)>,
+}
+
+impl AlignmentSumKey {
+    pub fn clear_setting(&mut self) {
+        self.setting = None;
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -376,8 +382,29 @@ impl Session {
     }
 
     pub fn predicted_alignment_sum_db(&self, frequencies_hz: &[f64]) -> Option<Vec<Option<f64>>> {
+        let setting = self.alignment.selected_setting()?;
+        self.alignment_sum_db(frequencies_hz, setting)
+    }
+
+    pub fn predicted_alignment_sums_db(
+        &self,
+        frequencies_hz: &[f64],
+    ) -> Vec<(AlignmentChoice, Vec<Option<f64>>)> {
+        AlignmentChoice::ALL
+            .into_iter()
+            .filter_map(|choice| {
+                let setting = self.alignment.setting(choice)?;
+                Some((choice, self.alignment_sum_db(frequencies_hz, setting)?))
+            })
+            .collect()
+    }
+
+    fn alignment_sum_db(
+        &self,
+        frequencies_hz: &[f64],
+        (delay_ms, inverted): (f64, bool),
+    ) -> Option<Vec<Option<f64>>> {
         let (reference, delayed) = self.alignment_responses()?;
-        let (delay_ms, inverted) = self.alignment.selected_setting()?;
         let polarity = if inverted {
             Polarity::Inverted
         } else {
@@ -678,7 +705,6 @@ mod tests {
     use engine::AnalysisSettings;
 
     use super::*;
-    use crate::alignment_state::AlignmentChoice;
 
     fn snapshot(level_db: f64) -> MeasurementSnapshot {
         let mut snapshot = MeasurementSnapshot::empty(4, 48_000, AnalysisSettings::default());

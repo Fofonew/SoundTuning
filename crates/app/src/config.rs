@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 use crate::design::Theme;
 use crate::plot::{DEFAULT_UPPER_PANE_FRACTION, PlotLayout, sanitized_upper_fraction};
 
+pub const SMOOTHING_CHOICES: [u32; 6] = [0, 48, 24, 12, 6, 3];
 const CONFIG_FILE_NAME: &str = "config.json";
 const APP_DIRECTORY_NAME: &str = "SoundTuning";
 const CONFIG_DIRECTORY_OVERRIDE_VARIABLE: &str = "SOUNDTUNING_CONFIG_DIR";

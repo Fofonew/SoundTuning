@@ -13,7 +13,8 @@ use crate::eq_state::EqHandle;
 use crate::plot::axis::{db_ticks, degree_ticks, frequency_ticks};
 use crate::plot::frame::live_phase_deg;
 use crate::plot::{
-    PlotFrame, PlotView, Polyline, TraceStyle, ZoomAxes, ZoomSelection, build_polyline_with_breaks,
+    MouseMode, PlotFrame, PlotView, Polyline, TraceStyle, ZoomAxes, ZoomSelection,
+    build_polyline_with_breaks,
 };
 use crate::text;
 
@@ -26,7 +27,7 @@ const COHERENCE_FILL_ALPHA_SOFT: f32 = 0.38;
 const SCROLL_ZOOM_SENSITIVITY: f64 = 0.0025;
 const GRID_POINTS_PER_OCTAVE: f64 = 96.0;
 const GRID_LOW_HZ: f64 = 20.0;
-const READOUT_OFFSET: f32 = 14.0;
+const MARKER_RADIUS: f32 = 4.0;
 const COHERENCE_FILL_ALPHA: f32 = 0.75;
 const COHERENCE_LOW_ALPHA: f32 = 0.55;
 const EMPTY_STATE_WIDTH: f32 = 360.0;
@@ -80,9 +81,11 @@ pub struct PlotInputs<'a> {
     pub band_hz: Option<(f64, f64)>,
     pub eq_handles: &'a [EqHandle],
     pub show_empty_state: bool,
+    pub show_coherence: bool,
+    pub mouse_mode: MouseMode,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct PlotEvents {
     pub double_click_hz_db: Option<(f64, f64)>,
     pub plot_rect: Option<Rect>,
@@ -90,6 +93,7 @@ pub struct PlotEvents {
     pub eq_drag: Option<EqDrag>,
     pub eq_q_factor: Option<(usize, f64)>,
     pub eq_selected: Option<Option<usize>>,
+    pub hover_readout: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -112,6 +116,7 @@ pub struct BandSelection {
 pub struct PlotPanel {
     pub view: PlotView,
     pub quantity: PlotQuantity,
+    figure: (&'static str, &'static str),
     frame: PlotFrame,
     overlay_polylines: Vec<Polyline>,
     band_drag_start_hz: Option<f64>,
@@ -126,6 +131,7 @@ impl PlotPanel {
         Self {
             view,
             quantity: PlotQuantity::Magnitude,
+            figure: ("magnitude-plot", text::PLOT_ACCESSIBLE_LABEL),
             frame: PlotFrame::with_capacity(1024),
             overlay_polylines: Vec::new(),
             band_drag_start_hz: None,
@@ -139,7 +145,15 @@ impl PlotPanel {
     pub fn phase() -> Self {
         Self {
             quantity: PlotQuantity::Phase,
+            figure: ("phase-plot", text::PHASE_PLOT_ACCESSIBLE_LABEL),
             ..Self::new(default_phase_view())
+        }
+    }
+
+    pub fn module() -> Self {
+        Self {
+            figure: ("delay-analysis-plot", text::DELAY_ANALYSIS_PLOT_LABEL),
+            ..Self::new(PlotView::default())
         }
     }
 
@@ -194,7 +208,7 @@ impl PlotPanel {
         actions: &mut Vec<Action>,
     ) -> PlotEvents {
         let outer = ui.available_rect_before_wrap();
-        let is_magnitude = self.quantity == PlotQuantity::Magnitude;
+        let is_magnitude = self.quantity == PlotQuantity::Magnitude && inputs.show_coherence;
         let band_height = if is_magnitude {
             size::COHERENCE_BAND_HEIGHT
         } else {
@@ -215,10 +229,7 @@ impl PlotPanel {
             pos2(plot_rect.right(), outer.bottom()),
         );
         ui.allocate_rect(outer, Sense::hover());
-        let (plot_id, accessible_label) = match self.quantity {
-            PlotQuantity::Magnitude => ("magnitude-plot", text::PLOT_ACCESSIBLE_LABEL),
-            PlotQuantity::Phase => ("phase-plot", text::PHASE_PLOT_ACCESSIBLE_LABEL),
-        };
+        let (plot_id, accessible_label) = self.figure;
         let response = ui.interact(
             plot_rect,
             ui.make_persistent_id(plot_id),
@@ -272,7 +283,8 @@ impl PlotPanel {
             selection.paint(&painter, palette, plot_rect);
             self.paint_zoom_label(&painter, palette, plot_rect, selection);
         } else if let Some(hover) = response.hover_pos() {
-            self.paint_crosshair(&painter, palette, plot_rect, hover, inputs);
+            events.hover_readout =
+                Some(self.paint_crosshair(&painter, palette, plot_rect, hover, inputs));
         }
         let has_data = inputs.snapshot.averages > 0 || !inputs.overlays.is_empty();
         if !inputs.running && !has_data && inputs.show_empty_state {
@@ -371,9 +383,15 @@ impl PlotPanel {
                 self.band_drag_start_hz =
                     origin.map(|position| self.view.x_to_frequency(plot_rect, position.x));
             } else if starts_with_primary && !command {
-                self.zoom_selection = origin.map(|position| {
-                    ZoomSelection::new(position.clamp(plot_rect.min, plot_rect.max), true)
-                });
+                match inputs.mouse_mode {
+                    MouseMode::Zoom => {
+                        self.zoom_selection = origin.map(|position| {
+                            ZoomSelection::new(position.clamp(plot_rect.min, plot_rect.max), true)
+                        });
+                    }
+                    MouseMode::Drag => self.panning = true,
+                    MouseMode::Peek => {}
+                }
             } else {
                 self.panning = true;
             }
@@ -786,7 +804,7 @@ impl PlotPanel {
         plot_rect: Rect,
         hover: Pos2,
         inputs: &PlotInputs<'_>,
-    ) {
+    ) -> String {
         let stroke = Stroke::new(stroke::CROSSHAIR, palette.text_muted.gamma_multiply(0.8));
         painter.line_segment(
             [
@@ -808,49 +826,21 @@ impl PlotPanel {
             PlotQuantity::Magnitude => text::format_db(value),
             PlotQuantity::Phase => text::format_degrees(value),
         };
-        let mut lines = vec![match self.quantity {
+        let readout = match self.quantity {
             PlotQuantity::Magnitude => text::crosshair_readout(frequency_hz, level_db),
             PlotQuantity::Phase => text::crosshair_phase_readout(frequency_hz, level_db),
-        }];
-        if let Some((label, value, color)) =
-            nearest_trace_value(self.quantity, frequency_hz, level_db, inputs, palette)
-        {
-            lines.push(format!("{label} : {}", format_value(value)));
-            painter.circle_filled(
-                self.view.to_screen(plot_rect, frequency_hz, value),
-                4.0,
-                color,
-            );
+        };
+        match nearest_trace_value(self.quantity, frequency_hz, level_db, inputs, palette) {
+            Some((label, value, color)) => {
+                painter.circle_filled(
+                    self.view.to_screen(plot_rect, frequency_hz, value),
+                    MARKER_RADIUS,
+                    color,
+                );
+                text::readout_with_trace(&readout, &label, &format_value(value))
+            }
+            None => readout,
         }
-        let readout = lines.join("\n");
-        let galley = painter.layout_no_wrap(
-            readout,
-            fonts::value(text_size::LABEL),
-            palette.text_primary,
-        );
-        let mut position = hover + vec2(READOUT_OFFSET, READOUT_OFFSET);
-        if position.x + galley.size().x + 2.0 * spacing::SM > plot_rect.right() {
-            position.x = hover.x - READOUT_OFFSET - galley.size().x - 2.0 * spacing::SM;
-        }
-        if position.y + galley.size().y + 2.0 * spacing::SM > plot_rect.bottom() {
-            position.y = hover.y - READOUT_OFFSET - galley.size().y - 2.0 * spacing::SM;
-        }
-        let box_rect = Rect::from_min_size(
-            position,
-            galley.size() + vec2(2.0 * spacing::SM, 2.0 * spacing::SM),
-        );
-        painter.rect(
-            box_rect,
-            CornerRadius::same(radius::MEDIUM),
-            palette.surface_raised,
-            Stroke::new(stroke::BORDER, palette.border),
-            StrokeKind::Inside,
-        );
-        painter.galley(
-            position + vec2(spacing::SM, spacing::SM),
-            galley,
-            palette.text_primary,
-        );
     }
 }
 

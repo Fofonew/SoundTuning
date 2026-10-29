@@ -122,3 +122,47 @@ Critères : hiérarchie visuelle, lisibilité à 1 m, alignements, espacements, 
 - Critiques : alignement : Reference (orange), Delay et la somme « Pos sum » (magenta, épaisse) se distinguent nettement ; Delay garde sa couleur et reste tracée par-dessus la somme ; contraste correct dans les deux thèmes. Sélection de zoom : rectangle clair à 8 % et bords à 70 %, plage « 80,0 Hz – 600 Hz » lisible en haut à gauche, réticule masqué pendant le glissé. Poignée du séparateur discrète au repos (couleur de bordure), en accent au survol : visible sans attirer l'œil.
 - Corrections : aucune nécessaire ; tour unique (aucun défaut relevé).
 - Captures : `docs/ui-review/zoom-split-somme/alignment.png`, `alignment_daylight.png`, `zoom_selection.png`, `phase_stacked.png`.
+
+### Interface façon SysTune — tour 1 (2026-10-29, demande de l'utilisateur)
+- Référence : captures SysTune 1.2.6 (afmg.eu) et manuel (« Screen Layout »). Écrans : traces, alignement (Nuit), EQ, mesure Plein jour.
+- Critiques :
+  - panneau Measure trop haut à 1440×900 : Capture Measurement coupé, seulement deux lignes d'Overlays visibles ;
+  - libellés de ligne mal alignés (Signal / FFT Size / Averages ; Delay / Reference dans Delay Analysis) : leur largeur n'était pas réservée ;
+  - le graphe des sommes de Delay Analysis n'apparaît pas, la hauteur du graphe du haut ne suffit pas ;
+  - texte « Référence rebouclée : pas de calibrage » tronqué ;
+  - ligne « Mode fichier » superflue.
+- Corrections :
+  - espacements verticaux réduits ;
+  - Signal Channel et Reference Channel sur une seule ligne avec leurs boutons ;
+  - cellule de libellé à largeur fixe (`caption_cell`) ;
+  - commandes de Delay Analysis compactées (132 px) et légende retirée du module, ce qui libère le graphe des sommes ;
+  - Calibrate masqué quand il est inutile ;
+  - aide du mode fichier passée en infobulle.
+
+### Interface façon SysTune — tour 2 (2026-10-29)
+- Critiques :
+  - « Signal Channel » et « Reference Channel » passent sur deux lignes ;
+  - « Delay Offset [ms] » touche la distance et les échantillons ;
+  - la ligne « Processeur » de Delay Analysis est coupée en bas du graphe du haut.
+- Corrections :
+  - libellés des canaux à 112 px ;
+  - distance et échantillons sous la valeur, alignés à droite ;
+  - « Processeur » déplacé dans la colonne de gauche (Range, Delay, Reference, Processeur).
+
+### Interface façon SysTune — tour 3 (2026-10-29)
+- Critiques :
+  - en Plein jour, la ligne Signal (« Pink Noise » sur « −20,0 dBFS ») et Averages / Reset débordent ;
+  - les listes FFT Size et Averages dépassent le panneau de 4 px ;
+  - réglages audio (onglet Tools) : « Appliquer les réglages » recouvre l'aide quand les deux boutons tiennent sur une ligne (défaut latent, révélé par le panneau plus large) ;
+  - barre d'état : « Commands » dépasse de 2 px en 1024×600.
+- Corrections :
+  - libellés de ligne ramenés à 84 px (112 px pour les canaux) ;
+  - listes rétrécies de 24 px ;
+  - hauteur de la rangée de boutons du pied réservée ;
+  - bouton « Commands » en petite taille.
+- Vérifiés sans défaut :
+  - Delay Analysis : quatre sommes lisibles, Pos sélectionné plein, Inv Pol cochés pour Neg / Flat ;
+  - Virtual EQ : réglages à gauche, filtres à droite ;
+  - Tools : Color Scheme, Check for Updates, Commands puis réglages audio ;
+  - test de chevauchement à 1024×600, 1280×680 et 1440×900.
+- Captures après : `docs/ui-review/interface-systune/*-tour3-apres.png` (mesure Nuit et Plein jour, traces, alignement Nuit et Plein jour, EQ Nuit et Plein jour, réglages audio, phase, IR, premier lancement). Captures avant : `docs/ui-review/zoom-split-somme/`.

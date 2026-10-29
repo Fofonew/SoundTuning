@@ -17,7 +17,8 @@ use crate::text;
 const NEW_FILTER_FREQUENCY_HZ: f64 = 1000.0;
 const KIND_COMBO_WIDTH: f32 = 120.0;
 const SLOPE_COMBO_WIDTH: f32 = 150.0;
-const ACTIONS_RESERVED_HEIGHT: f32 = 120.0;
+const SETTINGS_COLUMN_FRACTION: f32 = 0.38;
+const SETTINGS_MIN_WIDTH: f32 = 240.0;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum EqCommand {
@@ -43,7 +44,69 @@ pub fn default_new_filter() -> StoredFilter {
 pub fn show(ui: &mut egui::Ui, palette: &Palette, session: &Session) -> Vec<EqCommand> {
     let mut commands = Vec::new();
     let mut state = session.eq.clone();
-    ui.add_space(spacing::MD);
+    let left_width = (ui.available_width() * SETTINGS_COLUMN_FRACTION).max(SETTINGS_MIN_WIDTH);
+    let height = ui.available_height();
+    let mut remove = None;
+    ui.horizontal_top(|ui| {
+        ui.spacing_mut().item_spacing.x = spacing::LG;
+        ui.allocate_ui_with_layout(
+            egui::vec2(left_width, height),
+            egui::Layout::top_down(egui::Align::Min),
+            |ui| {
+                egui::ScrollArea::vertical()
+                    .id_salt("eq-settings")
+                    .auto_shrink([false, false])
+                    .show(ui, |ui| {
+                        settings_column(ui, palette, session, &mut state, &mut commands);
+                    });
+            },
+        );
+        ui.allocate_ui_with_layout(
+            egui::vec2(ui.available_width(), height),
+            egui::Layout::top_down(egui::Align::Min),
+            |ui| {
+                if state.filters().is_empty() {
+                    section_title(ui, palette, text::EMPTY_EQ_TITLE);
+                    muted(ui, palette, text::EMPTY_EQ_BODY);
+                }
+                egui::ScrollArea::vertical()
+                    .id_salt("eq-filters")
+                    .auto_shrink([false, false])
+                    .show(ui, |ui| {
+                        if let Some(filters) = state.banks.get_mut(state.active_bank) {
+                            for (index, filter) in filters.iter_mut().enumerate() {
+                                if filter_editor(
+                                    ui,
+                                    palette,
+                                    index,
+                                    filter,
+                                    state.selected_filter == Some(index),
+                                ) {
+                                    remove = Some(index);
+                                }
+                                ui.add_space(spacing::SM);
+                            }
+                        }
+                    });
+            },
+        );
+    });
+    if let Some(index) = remove {
+        state.remove_filter(index);
+    }
+    if state != session.eq {
+        commands.insert(0, EqCommand::Update(state));
+    }
+    commands
+}
+
+fn settings_column(
+    ui: &mut egui::Ui,
+    palette: &Palette,
+    session: &Session,
+    state: &mut EqState,
+    commands: &mut Vec<EqCommand>,
+) {
     ui.horizontal_wrapped(|ui| {
         for bank in 0..2 {
             if ui
@@ -57,9 +120,8 @@ pub fn show(ui: &mut egui::Ui, palette: &Palette, session: &Session) -> Vec<EqCo
                 state.switch_bank();
             }
         }
+        ui.checkbox(&mut state.global_bypass, text::EQ_GLOBAL_BYPASS);
     });
-    ui.checkbox(&mut state.global_bypass, text::EQ_GLOBAL_BYPASS);
-    ui.add_space(spacing::SM);
     ui.horizontal_wrapped(|ui| {
         for (view, label) in [
             (EqView::Predicted, text::EQ_VIEW_PREDICTED),
@@ -74,7 +136,6 @@ pub fn show(ui: &mut egui::Ui, palette: &Palette, session: &Session) -> Vec<EqCo
             }
         }
     });
-    ui.add_space(spacing::SM);
     let target_name = match state.target {
         EqTarget::Live => text::EQ_TARGET_LIVE.to_owned(),
         EqTarget::Trace(id) => session.trace(id).map_or_else(
@@ -93,59 +154,22 @@ pub fn show(ui: &mut egui::Ui, palette: &Palette, session: &Session) -> Vec<EqCo
             }
         });
     combo_label(&combo.response, text::EQ_TARGET_LABEL);
-
-    ui.add_space(spacing::SM);
-    if auto_eq_section(ui, palette, &mut state) {
-        commands.push(EqCommand::AutoEq);
-    }
-
-    ui.add_space(spacing::MD);
     let filter_count = state.filters().len();
-    if filter_count == 0 {
-        section_title(ui, palette, text::EMPTY_EQ_TITLE);
-        muted(ui, palette, text::EMPTY_EQ_BODY);
-    }
-    let mut remove = None;
-    egui::ScrollArea::vertical()
-        .auto_shrink([false, true])
-        .max_height((ui.available_height() - ACTIONS_RESERVED_HEIGHT).max(0.0))
-        .show(ui, |ui| {
-            if let Some(filters) = state.banks.get_mut(state.active_bank) {
-                for (index, filter) in filters.iter_mut().enumerate() {
-                    if filter_editor(
-                        ui,
-                        palette,
-                        index,
-                        filter,
-                        state.selected_filter == Some(index),
-                    ) {
-                        remove = Some(index);
-                    }
-                    ui.add_space(spacing::SM);
-                }
-            }
-        });
-    if let Some(index) = remove {
-        state.remove_filter(index);
-    }
-
-    ui.add_space(spacing::SM);
-    if action_button(
-        ui,
-        palette,
-        text::ACTION_ADD_EQ_FILTER,
-        crate::actions::Action::AddEqFilter
-            .shortcut_text(cfg!(target_os = "macos"))
-            .as_deref(),
-        Emphasis::Secondary,
-        filter_count < MAX_EQ_FILTERS,
-    )
-    .clicked()
-    {
-        commands.push(EqCommand::AddFilter);
-    }
-    ui.add_space(spacing::XS);
     ui.horizontal_wrapped(|ui| {
+        if action_button(
+            ui,
+            palette,
+            text::ACTION_ADD_EQ_FILTER,
+            crate::actions::Action::AddEqFilter
+                .shortcut_text(cfg!(target_os = "macos"))
+                .as_deref(),
+            Emphasis::Secondary,
+            filter_count < MAX_EQ_FILTERS,
+        )
+        .clicked()
+        {
+            commands.push(EqCommand::AddFilter);
+        }
         if action_button(
             ui,
             palette,
@@ -171,11 +195,9 @@ pub fn show(ui: &mut egui::Ui, palette: &Palette, session: &Session) -> Vec<EqCo
             commands.push(EqCommand::ExportJson);
         }
     });
-
-    if state != session.eq {
-        commands.insert(0, EqCommand::Update(state));
+    if auto_eq_section(ui, palette, state) {
+        commands.push(EqCommand::AutoEq);
     }
-    commands
 }
 
 fn auto_eq_section(ui: &mut egui::Ui, palette: &Palette, state: &mut EqState) -> bool {

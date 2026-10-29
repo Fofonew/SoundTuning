@@ -44,6 +44,7 @@ impl Tone {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Emphasis {
     Primary,
+    Active,
     Secondary,
     Quiet,
 }
@@ -108,12 +109,22 @@ pub fn action_button(
     emphasis: Emphasis,
     enabled: bool,
 ) -> Response {
+    let width = action_button_width(ui, label, shortcut);
+    sized_action_button(ui, palette, label, shortcut, emphasis, enabled, width)
+}
+
+pub fn sized_action_button(
+    ui: &mut Ui,
+    palette: &Palette,
+    label: &str,
+    shortcut: Option<&str>,
+    emphasis: Emphasis,
+    enabled: bool,
+    width: f32,
+) -> Response {
     let font = fonts::label();
     let keycap = shortcut.map(|text| (text, keycap_width(ui, text)));
-    let desired = vec2(
-        action_button_width(ui, label, shortcut),
-        size::BUTTON_HEIGHT,
-    );
+    let desired = vec2(width, size::BUTTON_HEIGHT);
     let sense = if enabled {
         Sense::click()
     } else {
@@ -136,6 +147,13 @@ pub fn action_button(
                 },
                 palette.accent,
                 accent_text_color(palette),
+            ),
+            Emphasis::Active => (
+                palette
+                    .danger
+                    .gamma_multiply(if hovered || pressed { 0.34 } else { 0.22 }),
+                palette.danger,
+                palette.text_primary,
             ),
             Emphasis::Secondary => (
                 if hovered || pressed {
@@ -164,7 +182,7 @@ pub fn action_button(
         let painter = ui.painter();
         painter.rect(
             rect,
-            CornerRadius::same(radius::MEDIUM),
+            CornerRadius::same(radius::SMALL),
             fill.gamma_multiply(alpha),
             Stroke::new(stroke::BORDER, border.gamma_multiply(alpha)),
             StrokeKind::Inside,
@@ -172,14 +190,24 @@ pub fn action_button(
         if response.has_focus() {
             painter.rect_stroke(
                 rect.expand(2.0),
-                CornerRadius::same(radius::MEDIUM + 2),
+                CornerRadius::same(radius::SMALL + 2),
                 Stroke::new(stroke::FOCUS, palette.accent),
                 StrokeKind::Outside,
             );
         }
-        let text_position = egui::pos2(rect.left() + spacing::MD, rect.center().y);
+        let label_width = ui
+            .painter()
+            .layout_no_wrap(label.to_owned(), font.clone(), Color32::WHITE)
+            .size()
+            .x;
+        let natural = action_button_width(ui, label, shortcut);
+        let text_left = if width > natural && keycap.is_none() {
+            rect.center().x - label_width / 2.0
+        } else {
+            rect.left() + spacing::MD
+        };
         painter.text(
-            text_position,
+            egui::pos2(text_left, rect.center().y),
             Align2::LEFT_CENTER,
             label,
             font,
@@ -470,4 +498,183 @@ pub fn spin_label(response: &Response, label: impl Into<String>) {
 
 pub fn combo_label(response: &Response, label: impl Into<String>) {
     let _ = response.clone().accessible_name(label);
+}
+
+const SECTION_RULE_GAP: f32 = 6.0;
+const TAB_UNDERLINE: f32 = 2.0;
+
+pub fn section_header(ui: &mut Ui, palette: &Palette, title: &str) {
+    let galley = ui.painter().layout_no_wrap(
+        title.to_owned(),
+        fonts::ui_semibold(text_size::CAPTION),
+        palette.text_muted,
+    );
+    let (rect, _) = ui.allocate_exact_size(
+        vec2(ui.available_width(), galley.size().y + spacing::XS),
+        Sense::hover(),
+    );
+    let text_top = rect.center().y - galley.size().y / 2.0;
+    let rule_left = rect.left() + galley.size().x + SECTION_RULE_GAP;
+    ui.painter().galley(
+        egui::pos2(rect.left(), text_top),
+        galley,
+        palette.text_muted,
+    );
+    if rule_left < rect.right() {
+        ui.painter().line_segment(
+            [
+                egui::pos2(rule_left, rect.center().y),
+                egui::pos2(rect.right(), rect.center().y),
+            ],
+            Stroke::new(stroke::BORDER, palette.border),
+        );
+    }
+}
+
+pub fn field_caption(ui: &mut Ui, palette: &Palette, text: &str) -> Response {
+    ui.label(
+        egui::RichText::new(text)
+            .font(fonts::ui_medium(text_size::CAPTION))
+            .color(palette.text_muted),
+    )
+}
+
+pub fn toggle_button_width(ui: &Ui, label: &str) -> f32 {
+    ui.painter()
+        .layout_no_wrap(label.to_owned(), fonts::label(), Color32::WHITE)
+        .size()
+        .x
+        + 2.0 * spacing::SM
+}
+
+pub fn toggle_button(
+    ui: &mut Ui,
+    palette: &Palette,
+    label: &str,
+    selected: bool,
+    width: Option<f32>,
+) -> Response {
+    let width = width.unwrap_or_else(|| toggle_button_width(ui, label));
+    let (rect, response) =
+        ui.allocate_exact_size(vec2(width, size::MIN_CLICK_HEIGHT), Sense::click());
+    response.widget_info(|| WidgetInfo::selected(Role::Button, true, selected, label));
+    if ui.is_rect_visible(rect) {
+        let hovered = response.hovered();
+        let (fill, border) = if selected {
+            (palette.accent.gamma_multiply(0.2), palette.accent)
+        } else if hovered {
+            (palette.surface_hover, palette.text_muted)
+        } else {
+            (palette.surface_raised, palette.border)
+        };
+        let painter = ui.painter();
+        painter.rect(
+            rect,
+            CornerRadius::same(radius::SMALL),
+            fill,
+            Stroke::new(stroke::BORDER, border),
+            StrokeKind::Inside,
+        );
+        if response.has_focus() {
+            painter.rect_stroke(
+                rect.expand(2.0),
+                CornerRadius::same(radius::SMALL + 2),
+                Stroke::new(stroke::FOCUS, palette.accent),
+                StrokeKind::Outside,
+            );
+        }
+        painter.text(
+            rect.center(),
+            Align2::CENTER_CENTER,
+            label,
+            if selected {
+                fonts::ui_semibold(text_size::LABEL)
+            } else {
+                fonts::label()
+            },
+            palette.text_primary,
+        );
+    }
+    response.on_hover_cursor(egui::CursorIcon::PointingHand)
+}
+
+pub fn tab_strip<T: Copy + PartialEq>(
+    ui: &mut Ui,
+    palette: &Palette,
+    id_salt: &str,
+    tabs: &[(T, &str)],
+    selected: &mut T,
+) {
+    let width = ui.available_width();
+    let (rect, _) = ui.allocate_exact_size(vec2(width, size::MIN_CLICK_HEIGHT), Sense::hover());
+    ui.painter().line_segment(
+        [rect.left_bottom(), rect.right_bottom()],
+        Stroke::new(stroke::BORDER, palette.border),
+    );
+    let tab_width = width / tabs.len().max(1) as f32;
+    for (index, (tab, label)) in tabs.iter().enumerate() {
+        let tab_rect = Rect::from_min_size(
+            rect.left_top() + vec2(index as f32 * tab_width, 0.0),
+            vec2(tab_width, rect.height()),
+        );
+        let response = ui.interact(
+            tab_rect,
+            ui.make_persistent_id((id_salt, index)),
+            Sense::click(),
+        );
+        let is_selected = *selected == *tab;
+        response.widget_info(|| WidgetInfo::selected(Role::Tab, true, is_selected, *label));
+        if response.clicked() {
+            *selected = *tab;
+        }
+        if response.hovered() && !is_selected {
+            ui.painter().rect_filled(
+                tab_rect,
+                CornerRadius::same(radius::SMALL),
+                palette.surface_hover.gamma_multiply(0.5),
+            );
+        }
+        if is_selected {
+            ui.painter().rect_filled(
+                Rect::from_min_max(
+                    egui::pos2(tab_rect.left(), tab_rect.bottom() - TAB_UNDERLINE),
+                    tab_rect.right_bottom(),
+                ),
+                CornerRadius::ZERO,
+                palette.accent,
+            );
+        }
+        ui.painter().text(
+            tab_rect.center(),
+            Align2::CENTER_CENTER,
+            *label,
+            if is_selected {
+                fonts::ui_semibold(text_size::LABEL)
+            } else {
+                fonts::ui_medium(text_size::LABEL)
+            },
+            if is_selected {
+                palette.text_primary
+            } else {
+                palette.text_muted
+            },
+        );
+    }
+}
+
+pub fn caption_cell(ui: &mut Ui, palette: &Palette, text: &str, width: f32) -> Response {
+    let (rect, response) =
+        ui.allocate_exact_size(vec2(width, size::MIN_CLICK_HEIGHT), Sense::hover());
+    let galley = ui.painter().layout(
+        text.to_owned(),
+        fonts::ui_medium(text_size::CAPTION),
+        palette.text_muted,
+        width,
+    );
+    ui.painter().galley(
+        egui::pos2(rect.left(), rect.center().y - galley.size().y / 2.0),
+        galley,
+        palette.text_muted,
+    );
+    response
 }

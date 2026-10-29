@@ -68,7 +68,7 @@ impl Notifications {
             .retain(|item| now.duration_since(item.created) < NOTIFICATION_LIFETIME);
         let mut dismissed = Vec::new();
         let mut hovered = Vec::new();
-        let bottom_offset = size::BOTTOM_BAR_HEIGHT + spacing::LG;
+        let bottom_offset = size::STATUS_BAR_HEIGHT + spacing::LG;
         egui::Area::new(Id::unique("notifications"))
             .order(Order::Foreground)
             .anchor(
@@ -165,7 +165,7 @@ impl Notifications {
 
 fn action_label(action: Action) -> &'static str {
     match action {
-        Action::ApplyDelay => crate::text::BUTTON_APPLY_DELAY,
+        Action::ApplyDelay => crate::text::BUTTON_FIND_DELAY,
         Action::Undo => crate::text::ACTION_UNDO,
         Action::CalibrateLatency => crate::text::BUTTON_CALIBRATE,
         other => other.label(),

@@ -4,7 +4,7 @@ use eframe::egui::{self, Align, Layout, RichText};
 use crate::design::Palette;
 use crate::design::fonts;
 use crate::design::icons::{self, icon_button};
-use crate::design::tokens::{spacing, text_size};
+use crate::design::tokens::{size, spacing, text_size};
 use crate::design::widgets::{
     Emphasis, action_button, action_button_width, combo_label, muted, section_title,
 };
@@ -172,7 +172,12 @@ pub fn show(
         } else {
             Layout::bottom_up(Align::Min)
         };
-        ui.allocate_ui_with_layout(egui::vec2(width, 0.0), footer_layout, |ui| {
+        let footer_height = if buttons_on_one_row {
+            size::BUTTON_HEIGHT
+        } else {
+            0.0
+        };
+        ui.allocate_ui_with_layout(egui::vec2(width, footer_height), footer_layout, |ui| {
             let apply = |ui: &mut egui::Ui| {
                 action_button(
                     ui,

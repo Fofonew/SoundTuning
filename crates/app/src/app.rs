@@ -13,7 +13,9 @@ use crate::design::{Theme, fonts, theme};
 use crate::device_choice;
 use crate::eq_state::{EqState, EqTarget, EqView, inverted_db, predicted_db};
 use crate::measurement::{MeasurementController, SourceSpec};
-use crate::plot::{PlotLayout, PlotView, RangePreset, TraceStyle, ViewKind, upper_pane_height};
+use crate::plot::{
+    ExternalModule, PlotLayout, PlotView, RangePreset, TraceStyle, ViewKind, upper_pane_height,
+};
 use crate::session::{
     AlignmentSumKey, AverageError, CaptureError, LoadIssue, Session, SessionStore, SessionWriter,
     UndoHistory,
@@ -22,19 +24,22 @@ use crate::text;
 use crate::ui::alignment_panel::{self, AlignmentCommand};
 use crate::ui::audio_panel::{self, AudioCommand, AudioSettingsPanel};
 use crate::ui::banners::{BannerInputs, collect_banners, show_banners};
-use crate::ui::bottom_bar::{self, BottomBarModel};
+use crate::ui::control_panel::{
+    self, ControlCommand, ControlModel, ControlPanelState, ControlTab, DelayReadout, LatencyStatus,
+};
+use crate::ui::display_panel;
 use crate::ui::eq_panel::{self, EqCommand};
+use crate::ui::graph_bar::{self, LegendItem, ViewCommand};
 use crate::ui::impulse_panel::{ImpulseCurve, ImpulseInputs, ImpulsePanel};
+use crate::ui::mouse_bar::{self, MouseBarModel};
 use crate::ui::notifications::Notifications;
 use crate::ui::palette::CommandPalette;
-use crate::ui::pane_splitter;
+use crate::ui::pane_splitter::SplitArea;
 use crate::ui::plot_panel::{
     BandSelection, OverlayTrace, PlotEvents, PlotInputs, PlotPanel, default_phase_view,
 };
-use crate::ui::side_panel::{self, SideTab};
-use crate::ui::top_bar::{self, DelayReadout, TopBarModel};
-use crate::ui::traces_panel::{self, RenameState, TraceCommand};
-use crate::ui::view_bar::{self, ViewCommand};
+use crate::ui::status_bar::{self, StatusBarModel};
+use crate::ui::traces_panel::TraceCommand;
 use crate::ui::wizard::{Wizard, WizardAction};
 use crate::update::{CheckTrigger, Release, UpdateChecker, UpdateSource, UpdateStatus, Version};
 
@@ -48,6 +53,18 @@ const DELAY_NUDGE_MS: f64 = 0.01;
 const DELAY_DRIFT_NOTIFY_MS: f64 = 0.5;
 
 type CachedSum = (Option<AlignmentSumKey>, Option<Vec<Option<f64>>>);
+type ModuleSums = Vec<(crate::alignment_state::AlignmentChoice, Vec<Option<f64>>)>;
+type CachedModuleSums = (
+    (
+        Option<AlignmentSumKey>,
+        crate::alignment_state::AlignmentState,
+    ),
+    ModuleSums,
+);
+const MODULE_LEVEL_MARGIN_DB: f64 = 3.0;
+const MODULE_MIN_SPAN_DB: f64 = 12.0;
+const MODULE_PLOT_MIN_HEIGHT: f32 = 90.0;
+const FALLBACK_CHANNEL_COUNT: usize = 2;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum MergeKey {
@@ -66,18 +83,14 @@ pub fn window_exceeds_monitor(inner_size: egui::Vec2, monitor_size: egui::Vec2) 
         || inner_size.y > monitor_size.y * MONITOR_FILL_LIMIT
 }
 
-pub fn top_bar_height() -> f32 {
-    size::TOP_BAR_HEIGHT + 2.0 * spacing::SM
-}
-
 pub fn central_area_fraction(window_width: f32, window_height: f32, side_panel_open: bool) -> f32 {
     let side = if side_panel_open {
-        size::SIDE_PANEL_WIDTH
+        size::CONTROL_PANEL_WIDTH
     } else {
         0.0
     };
     let central_width = (window_width - side).max(0.0);
-    let central_height = (window_height - top_bar_height() - size::BOTTOM_BAR_HEIGHT).max(0.0);
+    let central_height = (window_height - size::STATUS_BAR_HEIGHT).max(0.0);
     central_width * central_height / (window_width * window_height).max(1.0)
 }
 
@@ -133,6 +146,10 @@ pub struct SoundTuningApp {
     measurement: MeasurementController,
     plot: PlotPanel,
     phase_plot: PlotPanel,
+    delay_plot: PlotPanel,
+    delay_plot_default: PlotView,
+    module_sums: Option<CachedModuleSums>,
+    delay_undo: Option<f64>,
     impulse_plot: ImpulsePanel,
     phase_cache: Vec<(std::sync::Arc<crate::session::Trace>, Vec<Option<f64>>)>,
     plot_fullscreen: bool,
@@ -142,7 +159,7 @@ pub struct SoundTuningApp {
     command_palette: CommandPalette,
     notifications: Notifications,
     wizard: Option<Wizard>,
-    side_tab: SideTab,
+    control: ControlPanelState,
     applied_theme: Option<Theme>,
     is_mac: bool,
     awaiting_delay_result: bool,
@@ -155,7 +172,6 @@ pub struct SoundTuningApp {
     save_failure_notified: bool,
     history: UndoHistory,
     session_dirty_since: Option<Instant>,
-    rename: RenameState,
     last_merge: Option<MergeKey>,
     drift_notified: bool,
     alignment_sum: Option<CachedSum>,
@@ -187,6 +203,10 @@ impl SoundTuningApp {
             measurement,
             plot: PlotPanel::new(PlotView::default()),
             phase_plot: PlotPanel::phase(),
+            delay_plot: PlotPanel::module(),
+            delay_plot_default: PlotView::default(),
+            module_sums: None,
+            delay_undo: None,
             impulse_plot: ImpulsePanel::default(),
             phase_cache: Vec::new(),
             plot_fullscreen: false,
@@ -196,7 +216,7 @@ impl SoundTuningApp {
             command_palette: CommandPalette::default(),
             notifications: Notifications::default(),
             wizard,
-            side_tab: SideTab::default(),
+            control: ControlPanelState::default(),
             applied_theme: None,
             is_mac: cfg!(target_os = "macos"),
             awaiting_delay_result: false,
@@ -209,7 +229,6 @@ impl SoundTuningApp {
             save_failure_notified: false,
             history: UndoHistory::default(),
             session_dirty_since: None,
-            rename: RenameState::default(),
             last_merge: None,
             drift_notified: false,
             alignment_sum: None,
@@ -275,12 +294,24 @@ impl SoundTuningApp {
         self.plot.view
     }
 
-    pub fn side_tab(&self) -> SideTab {
-        self.side_tab
+    pub fn module(&self) -> Option<ExternalModule> {
+        self.config
+            .plot_layout
+            .shows(ViewKind::VirtualEq)
+            .then_some(self.config.plot_layout.module)
     }
 
-    pub fn set_side_tab(&mut self, tab: SideTab) {
-        self.side_tab = tab;
+    pub fn show_module(&mut self, module: ExternalModule) {
+        self.config.plot_layout.show_module(module);
+        self.mark_config_dirty();
+    }
+
+    pub fn control_tab(&self) -> ControlTab {
+        self.control.tab
+    }
+
+    pub fn set_control_tab(&mut self, tab: ControlTab) {
+        self.control.tab = tab;
     }
 
     pub fn is_audio_settings_open(&self) -> bool {
@@ -313,7 +344,10 @@ impl SoundTuningApp {
                     panel.replace_devices(devices);
                 }
             }
-            AudioCommand::Close => self.audio_settings = None,
+            AudioCommand::Close => {
+                self.audio_settings = None;
+                self.control.tab = ControlTab::Measure;
+            }
         }
     }
 
@@ -605,6 +639,7 @@ impl SoundTuningApp {
         edit(&mut self.session);
         let changed = self.session != before;
         if changed {
+            self.delay_undo = None;
             self.history.record(before);
             self.session_dirty_since.get_or_insert_with(Instant::now);
         }
@@ -716,6 +751,27 @@ impl SoundTuningApp {
                     trace.name = name;
                 }
             }),
+            TraceCommand::RemoveSelected => {
+                let selected: Vec<u64> = self
+                    .session
+                    .traces
+                    .iter()
+                    .filter(|trace| trace.selected)
+                    .map(|trace| trace.id)
+                    .collect();
+                if !selected.is_empty() {
+                    self.edit_session(|session| {
+                        for id in &selected {
+                            session.remove(*id);
+                        }
+                    });
+                    self.notifications.push(
+                        text::overlays_removed(selected.len()),
+                        Tone::Neutral,
+                        Some(Action::Undo),
+                    );
+                }
+            }
             TraceCommand::Delete(id) => {
                 self.edit_session(|session| session.remove(id));
                 self.notifications.push(
@@ -835,12 +891,14 @@ impl SoundTuningApp {
     }
 
     fn start_measurement(&mut self) {
+        self.delay_undo = None;
         self.awaiting_delay_result = false;
         self.last_notified_delay_sequence = 0;
         self.measurement.start(&self.config);
     }
 
     fn stop_measurement(&mut self) {
+        self.delay_undo = None;
         self.awaiting_delay_result = false;
         self.last_notified_delay_sequence = 0;
         self.measurement.stop(&self.config);
@@ -853,6 +911,17 @@ impl SoundTuningApp {
             ViewCommand::Upper(kind) => layout.set_upper(kind),
             ViewCommand::ToggleStacked => layout.toggle_stacked(),
             ViewCommand::ImpulseInDb(in_db) => layout.impulse_in_db = in_db,
+            ViewCommand::Module(module) => layout.module = module,
+            ViewCommand::MouseMode(mode) => layout.mouse_mode = mode,
+            ViewCommand::ShowCoherence(show) => layout.show_coherence = show,
+            ViewCommand::FullView(kind) => {
+                match kind {
+                    ViewKind::Impulse => self.impulse_plot.view = Default::default(),
+                    ViewKind::VirtualEq => self.delay_plot.view = self.delay_plot_default,
+                    ViewKind::Magnitude | ViewKind::Phase => self.handle_action(Action::ResetView),
+                }
+                return;
+            }
             ViewCommand::ToggleFullscreen => {
                 self.plot_fullscreen = !self.plot_fullscreen;
                 return;
@@ -861,12 +930,193 @@ impl SoundTuningApp {
         self.mark_config_dirty();
     }
 
+    fn apply_latest_delay(&mut self) -> bool {
+        let delay = self.measurement.snapshot().delay;
+        let Some(latest) = delay.latest_confident else {
+            return false;
+        };
+        if self.delay_undo.is_none() && !self.config.delay_tracking {
+            self.delay_undo = Some(delay.applied_ms);
+        }
+        self.measurement.send(EngineCommand::ApplyLatestDelay);
+        self.notifications.push(
+            text::peak_applied(delay.acoustic_ms(latest.total_ms)),
+            Tone::Success,
+            Some(Action::Undo),
+        );
+        true
+    }
+
+    fn apply_control_command(&mut self, command: ControlCommand) {
+        match command {
+            ControlCommand::SetDelayMs(acoustic_ms) => {
+                let latency_ms = self
+                    .measurement
+                    .snapshot()
+                    .delay
+                    .system_latency_ms
+                    .unwrap_or(0.0);
+                self.delay_undo = None;
+                self.measurement
+                    .send(EngineCommand::SetCompensationMs(acoustic_ms + latency_ms));
+            }
+            ControlCommand::ApplyStream(stream) => {
+                self.config.stream = stream;
+                self.mark_config_dirty();
+                if self.measurement.is_running() {
+                    self.stop_measurement();
+                    self.start_measurement();
+                }
+            }
+            ControlCommand::SetGeneratorLevel(level) => {
+                self.config.stream.generator.level_dbfs = level;
+                if let Some(generator) = self.measurement.generator() {
+                    generator.set_level_dbfs(level);
+                }
+                self.mark_config_dirty();
+            }
+            ControlCommand::ResetAverages => {
+                self.measurement.send(EngineCommand::ResetAverages);
+            }
+            ControlCommand::Trace(command) => self.apply_trace_command(command),
+        }
+    }
+
+    fn channel_counts(&self) -> (usize, usize) {
+        let stream = &self.config.stream;
+        let used_inputs = match stream.reference {
+            ReferenceMode::Internal => stream.measurement_channel_index,
+            ReferenceMode::Loopback {
+                reference_channel_index,
+            } => stream
+                .measurement_channel_index
+                .max(reference_channel_index),
+        } + 1;
+        let used_outputs = stream
+            .generator
+            .output_channel_indices
+            .iter()
+            .max()
+            .map_or(0, |index| index + 1);
+        if self.measurement.is_file_mode() {
+            return (FALLBACK_CHANNEL_COUNT.max(used_inputs), 0);
+        }
+        let inputs = device_choice::resolved_input(&self.known_devices, stream).map_or_else(
+            || FALLBACK_CHANNEL_COUNT.max(used_inputs),
+            |device| device.input_channel_count,
+        );
+        let outputs = device_choice::resolved_output(&self.known_devices, stream).map_or_else(
+            || FALLBACK_CHANNEL_COUNT.max(used_outputs),
+            |device| device.output_channel_count,
+        );
+        (inputs, outputs)
+    }
+
+    fn latency_status(&self) -> LatencyStatus {
+        if !self.config.uses_internal_reference() || self.measurement.is_file_mode() {
+            return LatencyStatus::NotNeeded;
+        }
+        match self
+            .config
+            .calibrated_latency_ms(&self.current_route())
+            .or(self.measurement.snapshot().delay.system_latency_ms)
+        {
+            Some(latency_ms) => LatencyStatus::Calibrated(latency_ms),
+            None => LatencyStatus::NotCalibrated,
+        }
+    }
+
+    fn setup_line(&self) -> String {
+        let source = self
+            .measurement
+            .source_label()
+            .map(str::to_owned)
+            .or_else(|| {
+                device_choice::resolved_input(&self.known_devices, &self.config.stream).map(
+                    |device| {
+                        text::source_label(
+                            &text::device_name(device),
+                            self.config.stream.sample_rate_hz,
+                        )
+                    },
+                )
+            });
+        let reference = match self.config.stream.reference {
+            ReferenceMode::Loopback {
+                reference_channel_index,
+            } => Some(text::format_input_channel(reference_channel_index)),
+            ReferenceMode::Internal => None,
+        };
+        let outputs = text::output_channels(&self.config.stream.generator.output_channel_indices);
+        let generator = (!self.measurement.is_file_mode()
+            && (self.is_live_internal() || self.config.stream.generator.enabled))
+            .then_some((self.config.stream.generator.level_dbfs, outputs.as_str()));
+        text::setup_line(
+            self.measurement.is_file_mode(),
+            source.as_deref(),
+            reference.as_deref(),
+            generator,
+        )
+    }
+
+    fn refresh_module_sums(&mut self) {
+        let key = (
+            self.session.alignment_sum_key().map(|mut key| {
+                key.clear_setting();
+                key
+            }),
+            self.session.alignment.clone(),
+        );
+        if self
+            .module_sums
+            .as_ref()
+            .is_some_and(|(cached, _)| *cached == key)
+        {
+            return;
+        }
+        let frequencies = std::sync::Arc::clone(self.measurement.grid());
+        let sums = self
+            .session
+            .predicted_alignment_sums_db(frequencies.frequencies_hz());
+        let (low_hz, high_hz) = self.session.alignment.band_hz();
+        let levels = frequencies
+            .frequencies_hz()
+            .iter()
+            .enumerate()
+            .filter(|(_, frequency_hz)| (low_hz..=high_hz).contains(*frequency_hz))
+            .flat_map(|(index, _)| {
+                sums.iter()
+                    .filter_map(move |(_, values)| values.get(index).copied().flatten())
+            })
+            .fold(None, |range: Option<(f64, f64)>, value| {
+                Some(range.map_or((value, value), |(low, high)| {
+                    (low.min(value), high.max(value))
+                }))
+            });
+        let mut view = PlotView::default();
+        view.show_frequency_range(low_hz, high_hz);
+        if let Some((low_db, high_db)) = levels {
+            let center = (low_db + high_db) / 2.0;
+            let half =
+                ((high_db - low_db) / 2.0 + MODULE_LEVEL_MARGIN_DB).max(MODULE_MIN_SPAN_DB / 2.0);
+            view.show_level_range(center - half, center + half);
+        }
+        self.delay_plot_default = view;
+        self.delay_plot.view = view;
+        self.module_sums = Some((key, sums));
+    }
+
     pub fn is_plot_fullscreen(&self) -> bool {
         self.plot_fullscreen
     }
 
     pub fn plot_layout(&self) -> PlotLayout {
         self.config.plot_layout
+    }
+
+    pub fn set_plot_layout(&mut self, layout: PlotLayout) {
+        self.config.plot_layout = layout;
+        self.mark_config_dirty();
     }
 
     fn refresh_phase_cache(&mut self) {
@@ -902,29 +1152,14 @@ impl SoundTuningApp {
                 self.start_measurement();
             }
             Action::FindDelay => {
-                self.measurement.send(EngineCommand::FindDelayNow);
-                self.awaiting_delay_result = true;
+                if self.measurement.is_running() {
+                    self.measurement.send(EngineCommand::FindDelayNow);
+                    self.awaiting_delay_result = true;
+                }
             }
             Action::ApplyDelay => {
-                if !self.measurement.is_running() {
-                    return;
-                }
-                self.measurement.send(EngineCommand::ApplyLatestDelay);
-                if let Some(latest) = self.measurement.snapshot().delay.latest_confident {
-                    let acoustic = self
-                        .measurement
-                        .snapshot()
-                        .delay
-                        .acoustic_ms(latest.total_ms);
-                    self.notifications.push(
-                        format!(
-                            "{} : {}",
-                            text::NOTIFY_DELAY_APPLIED,
-                            text::format_milliseconds(acoustic)
-                        ),
-                        Tone::Success,
-                        None,
-                    );
+                if self.measurement.is_running() {
+                    self.apply_latest_delay();
                 }
             }
             Action::ToggleFreeze => {
@@ -945,6 +1180,10 @@ impl SoundTuningApp {
             }
             Action::ViewPhase => self.apply_view_command(ViewCommand::Main(ViewKind::Phase)),
             Action::ViewImpulse => self.apply_view_command(ViewCommand::Main(ViewKind::Impulse)),
+            Action::ViewVirtualEq => {
+                let module = self.config.plot_layout.module;
+                self.show_module(module);
+            }
             Action::ToggleStackedViews => self.apply_view_command(ViewCommand::ToggleStacked),
             Action::ToggleFullscreen => self.apply_view_command(ViewCommand::ToggleFullscreen),
             Action::CheckForUpdates => {
@@ -989,6 +1228,15 @@ impl SoundTuningApp {
                     .send(EngineCommand::StartLatencyCalibration);
             }
             Action::CaptureTrace => self.capture_trace(),
+            Action::Undo if self.delay_undo.is_some() && self.measurement.is_running() => {
+                if let Some(previous_ms) = self.delay_undo.take() {
+                    self.measurement
+                        .send(EngineCommand::SetCompensationMs(previous_ms));
+                    let acoustic = self.measurement.snapshot().delay.acoustic_ms(previous_ms);
+                    self.notifications
+                        .push(text::delay_restored(acoustic), Tone::Neutral, None);
+                }
+            }
             Action::Undo => {
                 let view = self.session.eq.view;
                 let text = if self.history.undo(&mut self.session) {
@@ -1013,24 +1261,21 @@ impl SoundTuningApp {
             }
             Action::ExportSession => self.export_csv(),
             Action::AddEqFilter => {
-                self.audio_settings = None;
-                self.config.side_panel_open = true;
-                self.side_tab = SideTab::Eq;
+                self.show_module(ExternalModule::VirtualEq);
                 self.add_eq_filter(eq_panel::default_new_filter());
             }
             Action::OpenAudioSettings => {
-                if self.audio_settings.is_some() && self.config.side_panel_open {
+                if self.control.tab == ControlTab::Tools && self.config.side_panel_open {
+                    self.control.tab = ControlTab::Measure;
                     self.audio_settings = None;
                 } else {
                     self.config.side_panel_open = true;
-                    self.audio_settings = Some(AudioSettingsPanel::new(
-                        self.available_devices(),
-                        &self.config.stream,
-                    ));
+                    self.control.tab = ControlTab::Tools;
                 }
                 self.mark_config_dirty();
             }
             Action::ToggleDelayTracking => {
+                self.delay_undo = None;
                 self.config.delay_tracking = !self.config.delay_tracking;
                 self.measurement
                     .send(EngineCommand::UpdateDelayPolicy(self.config.delay_policy()));
@@ -1047,6 +1292,7 @@ impl SoundTuningApp {
             }
             Action::NudgeDelayDown | Action::NudgeDelayUp => {
                 if self.measurement.is_running() {
+                    self.delay_undo = None;
                     let step = if action == Action::NudgeDelayUp {
                         DELAY_NUDGE_MS
                     } else {
@@ -1080,11 +1326,7 @@ impl SoundTuningApp {
         {
             self.last_notified_delay_sequence = confident.measured_at_sequence;
             self.awaiting_delay_result = false;
-            self.notifications.push(
-                text::delay_found(delay.acoustic_ms(confident.total_ms)),
-                Tone::Accent,
-                Some(Action::ApplyDelay),
-            );
+            self.apply_latest_delay();
         }
     }
 
@@ -1256,15 +1498,6 @@ impl SoundTuningApp {
         }
     }
 
-    fn reference_label(&self) -> String {
-        match self.config.stream.reference {
-            ReferenceMode::Internal => text::REFERENCE_INTERNAL.to_owned(),
-            ReferenceMode::Loopback {
-                reference_channel_index,
-            } => text::format_input_channel(reference_channel_index),
-        }
-    }
-
     fn show_wizard(&mut self, ui: &mut egui::Ui) {
         let palette = self.config.theme.palette();
         let meters = self
@@ -1329,6 +1562,9 @@ impl eframe::App for SoundTuningApp {
         self.apply_theme(&context);
         let palette = self.config.theme.palette();
         self.measurement.refresh();
+        if self.config.delay_tracking {
+            self.delay_undo = None;
+        }
         self.adopt_adjusted_sample_rate();
         self.update_low_coherence();
         self.process_engine_events();
@@ -1356,12 +1592,11 @@ impl eframe::App for SoundTuningApp {
             self.show_main(ui, palette, &mut actions);
         }
 
-        let right_inset =
-            if self.wizard.is_none() && self.config.side_panel_open && !self.plot_fullscreen {
-                size::SIDE_PANEL_WIDTH
-            } else {
-                0.0
-            };
+        let right_inset = if self.wizard.is_none() {
+            size::DISPLAY_PANEL_WIDTH + spacing::SM
+        } else {
+            0.0
+        };
         self.notifications
             .show(&context, palette, self.is_mac, right_inset, &mut actions);
         self.command_palette
@@ -1417,132 +1652,118 @@ impl SoundTuningApp {
         palette: &'static crate::design::Palette,
         actions: &mut Vec<Action>,
     ) {
-        let bar_frame = |fill| {
-            Frame::new()
-                .fill(fill)
-                .inner_margin(Margin::symmetric(spacing::LG as i8, spacing::SM as i8))
-                .stroke(Stroke::new(stroke::BORDER, palette.border))
-        };
-        let (reference_meter, measurement_meter) = self.measurement.meter_readings();
-        let (status_tone, status_text) = self.status();
-        let top_model = TopBarModel {
-            status_tone,
-            status_text,
-            source_label: self.measurement.source_label().map(str::to_owned),
-            reference_meter,
-            measurement_meter,
-            delay: self.delay_readout(),
-            can_apply_delay: self.measurement.snapshot().delay.latest_confident.is_some(),
-            running: self.measurement.is_running(),
-            tracking: self.config.delay_tracking,
-        };
-        Panel::top("top-bar")
-            .exact_size(top_bar_height())
-            .frame(bar_frame(palette.surface))
-            .show(ui, |ui| {
-                top_bar::show(ui, palette, &top_model, self.is_mac, actions)
-            });
-
-        let bottom_model = BottomBarModel {
-            running: self.measurement.is_running(),
-            frozen: self.measurement.is_frozen(),
-            reference_label: self.reference_label(),
-            generator_level_dbfs: (self.is_live_internal() || self.config.stream.generator.enabled)
-                .then_some(self.config.stream.generator.level_dbfs)
-                .filter(|_| !self.measurement.is_file_mode()),
-        };
-        let mut analysis = self.config.analysis.clone();
         let show_chrome = !self.plot_fullscreen;
-        let changes = if show_chrome {
-            Panel::bottom("bottom-bar")
-                .exact_size(size::BOTTOM_BAR_HEIGHT)
-                .frame(bar_frame(palette.surface))
-                .show(ui, |ui| {
-                    bottom_bar::show(
-                        ui,
-                        palette,
-                        &bottom_model,
-                        &mut analysis,
-                        self.is_mac,
-                        actions,
-                    )
-                })
-                .inner
-        } else {
-            bottom_bar::BottomBarChanges::default()
-        };
-        if changes.analysis_changed {
-            self.config.analysis = analysis;
-            self.measurement.send(EngineCommand::UpdateSettings(
-                self.config.analysis.to_settings(),
-            ));
-            self.mark_config_dirty();
-        }
-        if let Some(level) = changes.generator_level_dbfs {
-            self.config.stream.generator.level_dbfs = level;
-            if let Some(generator) = self.measurement.generator() {
-                generator.set_level_dbfs(level);
-            }
-            self.mark_config_dirty();
-        }
-
-        let mut trace_commands = Vec::new();
-        let mut alignment_commands = Vec::new();
-        let mut eq_commands = Vec::new();
-        let mut audio_commands = Vec::new();
-        let file_mode = self.measurement.is_file_mode();
-        if self.config.side_panel_open && show_chrome {
-            Panel::right("side-panel")
-                .exact_size(size::SIDE_PANEL_WIDTH)
+        if show_chrome {
+            let (status_tone, status_text) = self.status();
+            let status_model = StatusBarModel {
+                status_tone,
+                status_text,
+                setup: self.setup_line(),
+                version: text::version_label(Version::current()),
+            };
+            Panel::bottom("status-bar")
+                .exact_size(size::STATUS_BAR_HEIGHT)
                 .frame(
                     Frame::new()
                         .fill(palette.surface)
-                        .inner_margin(Margin::same(spacing::LG as i8))
+                        .inner_margin(Margin::symmetric(spacing::MD as i8, 0))
                         .stroke(Stroke::new(stroke::BORDER, palette.border)),
                 )
                 .show(ui, |ui| {
-                    if let Some(panel) = self.audio_settings.as_mut() {
-                        audio_commands =
-                            audio_panel::show(ui, palette, panel, &self.config.stream, file_mode);
-                        return;
-                    }
-                    side_panel::tab_bar(ui, palette, &mut self.side_tab);
-                    match self.side_tab {
-                        SideTab::Traces if !self.session.traces.is_empty() => {
-                            trace_commands =
-                                traces_panel::show(ui, palette, &self.session, &mut self.rename);
+                    status_bar::show(ui, palette, &status_model, self.is_mac, actions)
+                });
+        }
+
+        let panel_open = self.config.side_panel_open && show_chrome;
+        if panel_open && self.control.tab == ControlTab::Tools && self.audio_settings.is_none() {
+            let devices = self.available_devices();
+            self.audio_settings = Some(AudioSettingsPanel::new(devices, &self.config.stream));
+        }
+        if self.control.tab != ControlTab::Tools {
+            self.audio_settings = None;
+        }
+        let mut control_commands = Vec::new();
+        let mut audio_commands = Vec::new();
+        let mut analysis = self.config.analysis.clone();
+        let mut analysis_changed = false;
+        if panel_open {
+            let (reference_meter, measurement_meter) = self.measurement.meter_readings();
+            let (input_channels, output_channels) = self.channel_counts();
+            let delay = self.delay_readout();
+            let latency = self.latency_status();
+            let stream = self.config.stream.clone();
+            let file_mode = self.measurement.is_file_mode();
+            let running = self.measurement.is_running();
+            let frozen = self.measurement.is_frozen();
+            let sample_rate_hz = self.measurement.snapshot().sample_rate_hz;
+            let theme = self.config.theme;
+            Panel::left("control-panel")
+                .exact_size(size::CONTROL_PANEL_WIDTH)
+                .frame(
+                    Frame::new()
+                        .fill(palette.surface)
+                        .inner_margin(Margin::symmetric(spacing::MD as i8, spacing::SM as i8))
+                        .stroke(Stroke::new(stroke::BORDER, palette.border)),
+                )
+                .show(ui, |ui| {
+                    control_panel::tabs(ui, palette, &mut self.control);
+                    match self.control.tab {
+                        ControlTab::Measure => {
+                            let model = ControlModel {
+                                running,
+                                frozen,
+                                file_mode,
+                                delay,
+                                tracking: self.config.delay_tracking,
+                                stream: &stream,
+                                input_channels,
+                                output_channels,
+                                latency,
+                                sample_rate_hz,
+                                reference_meter,
+                                measurement_meter,
+                                session: &self.session,
+                            };
+                            let changes = control_panel::show_measure(
+                                ui,
+                                palette,
+                                &model,
+                                &mut analysis,
+                                &mut self.control,
+                                self.is_mac,
+                                actions,
+                            );
+                            control_commands = changes.commands;
+                            analysis_changed |= changes.analysis_changed;
                         }
-                        SideTab::Traces => side_panel::empty_state(
-                            ui,
-                            palette,
-                            text::EMPTY_TRACES_TITLE,
-                            text::EMPTY_TRACES_BODY,
-                        ),
-                        SideTab::Alignment => {
-                            alignment_commands = alignment_panel::show(ui, palette, &self.session);
-                        }
-                        SideTab::Eq => {
-                            eq_commands = eq_panel::show(ui, palette, &self.session);
+                        ControlTab::Tools => {
+                            ui.add_space(spacing::SM);
+                            tools_general(ui, palette, theme, self.is_mac, actions);
+                            ui.add_space(spacing::MD);
+                            if let Some(panel) = self.audio_settings.as_mut() {
+                                audio_commands = audio_panel::show(
+                                    ui,
+                                    palette,
+                                    panel,
+                                    &self.config.stream,
+                                    file_mode,
+                                );
+                            }
                         }
                     }
                 });
         }
-
-        for command in trace_commands {
-            self.apply_trace_command(command);
-        }
-        for command in alignment_commands {
-            self.apply_alignment_command(command);
-        }
-        for command in eq_commands {
-            self.apply_eq_command(command);
+        for command in control_commands {
+            self.apply_control_command(command);
         }
         for command in audio_commands {
             self.apply_audio_command(command);
         }
-        let tabs_visible =
-            self.config.side_panel_open && show_chrome && self.audio_settings.is_none();
-        let eq_mode = tabs_visible && self.side_tab == SideTab::Eq;
+
+        let layout = self.config.plot_layout;
+        let module_shown = layout.shows(ViewKind::VirtualEq);
+        let eq_mode = module_shown && layout.module == ExternalModule::VirtualEq;
+        let delay_module = module_shown && layout.module == ExternalModule::DelayAnalysis;
         let eq_curves = if eq_mode {
             self.eq_overlays(palette)
         } else {
@@ -1553,9 +1774,7 @@ impl SoundTuningApp {
         } else {
             Vec::new()
         };
-        let alignment_mode = tabs_visible
-            && self.side_tab == SideTab::Alignment
-            && self.session.alignment.is_ready();
+        let alignment_mode = delay_module && self.session.alignment.is_ready();
         let alignment_pair = if alignment_mode {
             [
                 self.session.alignment.reference_trace,
@@ -1566,6 +1785,9 @@ impl SoundTuningApp {
         };
         if alignment_mode && self.session.alignment.shows_sum() {
             self.refresh_alignment_sum();
+        }
+        if alignment_mode {
+            self.refresh_module_sums();
         }
         let alignment_sum: Option<(String, Vec<Option<f64>>, TraceStyle)> = (alignment_mode
             && self.session.alignment.shows_sum())
@@ -1583,26 +1805,52 @@ impl SoundTuningApp {
             ))
         })
         .flatten();
+        let module_curves: Vec<(String, Vec<Option<f64>>, TraceStyle)> = if alignment_mode {
+            self.module_sums
+                .as_ref()
+                .map(|(_, sums)| {
+                    sums.iter()
+                        .map(|(choice, values)| {
+                            let selected = *choice == self.session.alignment.choice;
+                            (
+                                text::alignment_choice(*choice).to_owned(),
+                                values.clone(),
+                                TraceStyle {
+                                    color: alignment_panel::choice_color(palette, *choice),
+                                    width: if selected {
+                                        stroke::TRACE_LIVE
+                                    } else {
+                                        stroke::TRACE_STORED
+                                    },
+                                    halo: None,
+                                },
+                            )
+                        })
+                        .collect()
+                })
+                .unwrap_or_default()
+        } else {
+            Vec::new()
+        };
 
         let banners = collect_banners(&self.banner_inputs());
-        let layout = self.config.plot_layout;
         if layout.shows(ViewKind::Phase) {
             self.refresh_phase_cache();
         }
         let mut band_selection = None;
         let mut plot_events = PlotEvents::default();
         let mut view_commands = Vec::new();
+        let mut alignment_commands = Vec::new();
+        let mut eq_commands = Vec::new();
+        let mut module_double_click = false;
         egui::CentralPanel::default()
             .frame(
                 Frame::new()
                     .fill(palette.background)
-                    .inner_margin(Margin::same(spacing::LG as i8))
+                    .inner_margin(Margin::same(spacing::SM as i8))
                     .corner_radius(CornerRadius::ZERO),
             )
             .show(ui, |ui| {
-                view_commands =
-                    view_bar::show(ui, palette, &layout, self.plot_fullscreen, self.is_mac);
-                ui.add_space(spacing::SM);
                 let grid = std::sync::Arc::clone(self.measurement.grid());
                 let trace_style = |trace: &crate::session::Trace| TraceStyle {
                     color: palette.stored_traces[trace.color_index % STORED_TRACE_COLOR_COUNT],
@@ -1641,6 +1889,15 @@ impl SoundTuningApp {
                                 }),
                         )
                         .collect();
+                let module_overlays: Vec<OverlayTrace<'_>> = module_curves
+                    .iter()
+                    .map(|(label, values_db, style)| OverlayTrace {
+                        label,
+                        values_db,
+                        offset_db: 0.0,
+                        style: *style,
+                    })
+                    .collect();
                 let phase_overlays: Vec<OverlayTrace<'_>> = self
                     .session
                     .traces
@@ -1677,46 +1934,120 @@ impl SoundTuningApp {
                         })
                     })
                     .collect();
-                let alignment = &self.session.alignment;
+                let live_legend = LegendItem {
+                    label: text::LIVE_TRACE_LABEL,
+                    color: palette.trace_live,
+                };
+                let legend_for = |kind: ViewKind| -> Vec<LegendItem<'_>> {
+                    let items = match kind {
+                        ViewKind::Magnitude => &overlays,
+                        ViewKind::Phase => &phase_overlays,
+                        ViewKind::VirtualEq => return Vec::new(),
+                        ViewKind::Impulse => {
+                            return show_live
+                                .then_some(live_legend)
+                                .into_iter()
+                                .chain(impulse_overlays.iter().map(|curve| LegendItem {
+                                    label: curve.label,
+                                    color: curve.style.color,
+                                }))
+                                .collect();
+                        }
+                    };
+                    let live = (show_live && kind != ViewKind::VirtualEq).then_some(live_legend);
+                    live.into_iter()
+                        .chain(items.iter().map(|overlay| LegendItem {
+                            label: overlay.label,
+                            color: overlay.style.color,
+                        }))
+                        .collect()
+                };
+
                 let area = ui.available_rect_before_wrap();
-                let pane_count = layout.panes().count() as f32;
-                let gap = if pane_count > 1.0 { spacing::MD } else { 0.0 };
-                let upper_height =
-                    upper_pane_height(area.height() - gap, self.config.upper_pane_fraction);
-                if pane_count >= 2.0 {
-                    let gap_rect = egui::Rect::from_min_size(
-                        egui::pos2(area.left(), area.top() + upper_height),
-                        egui::vec2(area.width(), gap),
-                    );
-                    let split = pane_splitter::SplitArea {
-                        top: area.top(),
-                        available_height: area.height() - gap,
-                    };
-                    if let Some(fraction) = pane_splitter::show(ui, palette, gap_rect, split)
-                        && fraction != self.config.upper_pane_fraction
-                    {
-                        self.config.upper_pane_fraction = fraction;
-                        self.config_dirty_since.get_or_insert_with(Instant::now);
-                    }
-                }
-                let mut banner_anchor = None;
-                for (position, kind) in layout.panes().enumerate() {
-                    let rect = if pane_count < 2.0 {
-                        area
-                    } else if position == 0 {
-                        egui::Rect::from_min_size(area.min, egui::vec2(area.width(), upper_height))
-                    } else {
+                let stacked = layout.upper.is_some();
+                let bar_height = size::MOUSE_BAR_HEIGHT;
+                let available = area.height() - bar_height;
+                let upper_height = upper_pane_height(available, self.config.upper_pane_fraction);
+                let (upper_rect, bar_rect, lower_rect) = if stacked {
+                    (
+                        Some(egui::Rect::from_min_size(
+                            area.min,
+                            egui::vec2(area.width(), upper_height),
+                        )),
+                        egui::Rect::from_min_size(
+                            egui::pos2(area.left(), area.top() + upper_height),
+                            egui::vec2(area.width(), bar_height),
+                        ),
                         egui::Rect::from_min_max(
-                            egui::pos2(area.left(), area.top() + upper_height + gap),
+                            egui::pos2(area.left(), area.top() + upper_height + bar_height),
                             area.max,
-                        )
-                    };
-                    let mut pane = ui.new_child(
+                        ),
+                    )
+                } else {
+                    (
+                        None,
+                        egui::Rect::from_min_size(area.min, egui::vec2(area.width(), bar_height)),
+                        egui::Rect::from_min_max(
+                            egui::pos2(area.left(), area.top() + bar_height),
+                            area.max,
+                        ),
+                    )
+                };
+                let panes = upper_rect
+                    .zip(layout.upper)
+                    .map(|(rect, kind)| (kind, true, rect))
+                    .into_iter()
+                    .chain(std::iter::once((layout.main, false, lower_rect)));
+                let mut banner_anchor = None;
+                let mut readout = None;
+                for (kind, upper, rect) in panes {
+                    let display_rect = egui::Rect::from_min_max(
+                        egui::pos2(rect.right() - size::DISPLAY_PANEL_WIDTH, rect.top()),
+                        rect.max,
+                    );
+                    let graph_rect = egui::Rect::from_min_max(
+                        rect.min,
+                        egui::pos2(display_rect.left() - spacing::SM, rect.bottom()),
+                    );
+                    ui.painter().rect(
+                        display_rect,
+                        CornerRadius::same(crate::design::tokens::radius::SMALL),
+                        palette.surface,
+                        Stroke::new(stroke::BORDER, palette.border),
+                        egui::StrokeKind::Inside,
+                    );
+                    let mut display_ui = ui.new_child(
                         egui::UiBuilder::new()
-                            .max_rect(rect)
+                            .max_rect(display_rect.shrink(spacing::SM))
                             .layout(egui::Layout::top_down(egui::Align::Min)),
                     );
-                    let is_main = kind == layout.main;
+                    let display = display_panel::show(
+                        &mut display_ui,
+                        palette,
+                        kind,
+                        upper,
+                        &layout,
+                        &mut analysis,
+                    );
+                    view_commands.extend(display.commands);
+                    analysis_changed |= display.analysis_changed;
+
+                    let legend = legend_for(kind);
+                    let mut pane = ui.new_child(
+                        egui::UiBuilder::new()
+                            .max_rect(graph_rect)
+                            .layout(egui::Layout::top_down(egui::Align::Min)),
+                    );
+                    view_commands.extend(graph_bar::show(
+                        &mut pane,
+                        palette,
+                        kind,
+                        upper,
+                        &legend,
+                        self.is_mac,
+                    ));
+                    pane.add_space(spacing::XS);
+                    let is_main = !upper;
                     let pane_plot_rect = match kind {
                         ViewKind::Magnitude => {
                             let inputs = PlotInputs {
@@ -1725,9 +2056,11 @@ impl SoundTuningApp {
                                 show_live,
                                 running: self.measurement.is_running(),
                                 overlays: &overlays,
-                                band_hz: alignment_mode.then(|| alignment.band_hz()),
+                                band_hz: alignment_mode.then(|| self.session.alignment.band_hz()),
                                 eq_handles: &eq_handles,
-                                show_empty_state: is_main,
+                                show_empty_state: true,
+                                show_coherence: layout.show_coherence,
+                                mouse_mode: layout.mouse_mode,
                             };
                             let events =
                                 self.plot
@@ -1736,9 +2069,11 @@ impl SoundTuningApp {
                                 actions.push(Action::ResetView);
                             }
                             band_selection = events.band_selection;
-                            plot_events = events;
+                            readout = readout.or_else(|| events.hover_readout.clone());
                             self.last_plot_rect = events.plot_rect;
-                            events.plot_rect
+                            let plot_rect = events.plot_rect;
+                            plot_events = events;
+                            plot_rect
                         }
                         ViewKind::Phase => {
                             self.phase_plot.view.low_hz = self.plot.view.low_hz;
@@ -1753,6 +2088,8 @@ impl SoundTuningApp {
                                 band_hz: None,
                                 eq_handles: &[],
                                 show_empty_state: is_main,
+                                show_coherence: false,
+                                mouse_mode: layout.mouse_mode,
                             };
                             let events = self.phase_plot.show(
                                 &mut pane,
@@ -1764,11 +2101,12 @@ impl SoundTuningApp {
                             self.plot.view.low_hz = self.phase_plot.view.low_hz;
                             self.plot.view.high_hz = self.phase_plot.view.high_hz;
                             if before != (self.plot.view.low_hz, self.plot.view.high_hz) {
-                                ui.ctx().request_repaint();
+                                pane.ctx().request_repaint();
                             }
                             if events.double_click_hz_db.is_some() && !eq_mode {
                                 actions.push(Action::ResetView);
                             }
+                            readout = readout.or(events.hover_readout);
                             events.plot_rect
                         }
                         ViewKind::Impulse => {
@@ -1792,10 +2130,57 @@ impl SoundTuningApp {
                                     self.config.air_temperature_celsius,
                                 ),
                                 warming_up: self.measurement.is_running() && snapshot.warming_up,
+                                mouse_mode: layout.mouse_mode,
                             };
-                            self.impulse_plot
-                                .show(&mut pane, palette, &inputs)
-                                .plot_rect
+                            let events = self.impulse_plot.show(&mut pane, palette, &inputs);
+                            readout = readout.or(events.hover_readout);
+                            events.plot_rect
+                        }
+                        ViewKind::VirtualEq => {
+                            if layout.module == ExternalModule::DelayAnalysis {
+                                let controls_height = alignment_panel::CONTROLS_HEIGHT;
+                                let plot_height = pane.available_height() - controls_height;
+                                if self.session.alignment.is_ready()
+                                    && plot_height >= MODULE_PLOT_MIN_HEIGHT
+                                {
+                                    let plot_rect = egui::Rect::from_min_size(
+                                        pane.cursor().min,
+                                        egui::vec2(pane.available_width(), plot_height),
+                                    );
+                                    let mut plot_ui = pane.new_child(
+                                        egui::UiBuilder::new()
+                                            .max_rect(plot_rect)
+                                            .layout(egui::Layout::top_down(egui::Align::Min)),
+                                    );
+                                    let inputs = PlotInputs {
+                                        frequencies_hz: grid.frequencies_hz(),
+                                        snapshot,
+                                        show_live: false,
+                                        running: false,
+                                        overlays: &module_overlays,
+                                        band_hz: None,
+                                        eq_handles: &[],
+                                        show_empty_state: false,
+                                        show_coherence: false,
+                                        mouse_mode: layout.mouse_mode,
+                                    };
+                                    let events = self.delay_plot.show(
+                                        &mut plot_ui,
+                                        palette,
+                                        &inputs,
+                                        self.is_mac,
+                                        actions,
+                                    );
+                                    module_double_click = events.double_click_hz_db.is_some();
+                                    readout = readout.or(events.hover_readout);
+                                    pane.advance_cursor_after_rect(plot_rect);
+                                }
+                                alignment_commands =
+                                    alignment_panel::show(&mut pane, palette, &self.session);
+                            } else {
+                                eq_commands = eq_panel::show(&mut pane, palette, &self.session);
+                            }
+                            None
                         }
                     };
                     if banner_anchor.is_none() {
@@ -1804,6 +2189,30 @@ impl SoundTuningApp {
                     if !layout.shows(ViewKind::Magnitude) && is_main {
                         self.last_plot_rect = pane_plot_rect;
                     }
+                }
+                let split = stacked.then_some(SplitArea {
+                    top: area.top(),
+                    available_height: available,
+                });
+                let bar = mouse_bar::show(
+                    ui,
+                    palette,
+                    bar_rect,
+                    &MouseBarModel {
+                        readout: readout.as_deref(),
+                        mode: layout.mouse_mode,
+                        stacked,
+                        fullscreen: self.plot_fullscreen,
+                    },
+                    split,
+                    self.is_mac,
+                );
+                view_commands.extend(bar.commands);
+                if let Some(fraction) = bar.upper_fraction
+                    && (fraction - self.config.upper_pane_fraction).abs() > f32::EPSILON
+                {
+                    self.config.upper_pane_fraction = fraction;
+                    self.config_dirty_since.get_or_insert_with(Instant::now);
                 }
                 ui.allocate_rect(area, egui::Sense::hover());
                 if let (false, Some(plot_rect)) = (banners.is_empty(), banner_anchor) {
@@ -1816,8 +2225,24 @@ impl SoundTuningApp {
                         });
                 }
             });
+        if analysis_changed && analysis != self.config.analysis {
+            self.config.analysis = analysis;
+            self.measurement.send(EngineCommand::UpdateSettings(
+                self.config.analysis.to_settings(),
+            ));
+            self.mark_config_dirty();
+        }
         for command in view_commands {
             self.apply_view_command(command);
+        }
+        for command in alignment_commands {
+            self.apply_alignment_command(command);
+        }
+        for command in eq_commands {
+            self.apply_eq_command(command);
+        }
+        if module_double_click {
+            self.delay_plot.view = self.delay_plot_default;
         }
         if let Some(selection) = band_selection {
             self.apply_band_selection(selection);
@@ -1826,6 +2251,51 @@ impl SoundTuningApp {
             self.apply_eq_plot_events(&plot_events);
         }
     }
+}
+
+fn tools_general(
+    ui: &mut egui::Ui,
+    palette: &crate::design::Palette,
+    theme: Theme,
+    is_mac: bool,
+    actions: &mut Vec<Action>,
+) {
+    use crate::design::widgets::{field_caption, section_header, toggle_button};
+    section_header(ui, palette, text::TOOLS_GENERAL);
+    field_caption(ui, palette, text::TOOLS_COLOR_SCHEME);
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = size::SEGMENT_GAP;
+        let half = (ui.available_width() - size::SEGMENT_GAP) / 2.0;
+        for (candidate, label) in [
+            (Theme::Night, text::TOOLS_NIGHT),
+            (Theme::Daylight, text::TOOLS_DAYLIGHT),
+        ] {
+            let response = toggle_button(ui, palette, label, theme == candidate, Some(half))
+                .on_hover_text(text::with_shortcut(
+                    Action::ToggleTheme.label(),
+                    Action::ToggleTheme.shortcut_text(is_mac).as_deref(),
+                ));
+            if response.clicked() && theme != candidate {
+                actions.push(Action::ToggleTheme);
+            }
+        }
+    });
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = size::SEGMENT_GAP;
+        let half = (ui.available_width() - size::SEGMENT_GAP) / 2.0;
+        if toggle_button(ui, palette, text::TOOLS_CHECK_UPDATES, false, Some(half)).clicked() {
+            actions.push(Action::CheckForUpdates);
+        }
+        if toggle_button(ui, palette, text::BUTTON_PALETTE, false, Some(half))
+            .on_hover_text(text::with_shortcut(
+                Action::OpenPalette.label(),
+                Action::OpenPalette.shortcut_text(is_mac).as_deref(),
+            ))
+            .clicked()
+        {
+            actions.push(Action::OpenPalette);
+        }
+    });
 }
 
 fn stored_overlay(trace: &crate::session::Trace, style: TraceStyle) -> OverlayTrace<'_> {

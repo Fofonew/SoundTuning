@@ -52,32 +52,45 @@ Traces mémorisées (Okabe–Ito, dans l'ordre) : `#E69F00` orange, `#56B4E9` bl
 - Traits : grille mineure 0,5 ; grille majeure 1 ; trace mémorisée 1,5 ; trace live 2,5 (halo 6, alpha 18 %) ; réticule 1 ; bord de focus 2.
 - Zones cliquables ≥ 28 px de haut ; boutons principaux 32 px.
 
-## Disposition (1440×900)
+## Disposition (1440×900) — structure SysTune (D-051)
 
 ```
-┌──────────────────────────────────────────────────────────────────────────────┐
-│ ● Mesure  UAX 2-2 · 48 kHz · Réf. interne   Réf ▮▮▮▮▯ −18   Mic ▮▮▮▯▯ −24   12,43 ms  4,27 m · 597 éch.  ▮▮▮▮▯  [D] [A] │  56 px
-├───────────────────────────────────────────────────────────┬──────────────────┤
-│                                                           │ Traces │ Align. │ EQ │
-│   tracé magnitude (dB / Hz log)                           │                  │
-│                                                           │  panneau 320 px  │
-│                                                           │  repliable       │
-├───────────────────────────────────────────────────────────┤                  │
-│   bande de cohérence (64 px)                              │                  │
-├───────────────────────────────────────────────────────────┴──────────────────┤
-│ FFT 32k · Moyenne 1 s · Lissage 1/48 · Seuil γ² 0,50 · Bruit rose −20 dBFS   [Espace Démarrer] [S Capturer] [F Figer] ⌘K │ 44 px
+┌──────────────┬────────────────────────────────────────────────────┬──────────┐
+│Measure│Tools │ ✥  Transfer Function [IR][Mag][Phs]  External [Virtual EQ] │ Display  │
+│─ Input ──────│ ▪Live ▪Trace 1                                     │Smoothing │
+│Signal Ch [1][2]│  graphe du haut (Phs par défaut)                 │          │
+│Delay Offset  │                                                    │          │
+│ ┌──────────┐ ├────────────────────────────────────────────────────┴──────────┤
+│ │  12,43   │ │ ═  1,19 kHz · −3,2 dB   Trace 1 : −4,0 dB  [Peek][Drag][Zoom] ⧉ ⛶ │ 36 px
+│ └──────────┘ ├────────────────────────────────────────────────────┬──────────┤
+│[−][+][Peak][Auto]│ ✥  Transfer Function …  External …             │ Display  │
+│Reference Ch [OUT][1][2]│ ▪Live ▪Trace 1 ▪Pos sum                  │☑ Show    │
+│[Calibrate] Calibrated │  graphe du bas (Mag)                       │ Coherence│
+│[Stop Analysis][Freeze]│                                            │Mask γ²   │
+│─ Output ─────│                                                    │Smoothing │
+│[Play Signal] │  bande de cohérence (64 px)                        │          │
+│─ Parameters ─│                                                    │          │
+│FFT Size, Averages [Reset]                                         │          │
+│[Capture Measurement]                                              │          │
+│Overlays│Levels                                                    │          │
+│▪ V Trace 1 ··· │                                                  │          │
+│[Average][Save][Remove]                                            │          │
+├──────────────┴────────────────────────────────────────────────────┴──────────┤
+│● Live  Setup: Live Signal UAX 2-2 · 48,0 kHz / Play+Reference Signal: …  Commands (⌘K)  SoundTuning 0.2.1 │ 28 px
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
-Zone centrale (tracé + cohérence) : ≥ 70 % de la surface avec le panneau ouvert à 1440×900.
+- Panneau Measure 288 px, panneau Display 148 px par graphe, barre souris 36 px, barre d'état 28 px.
+- Zone centrale (graphes avec leur panneau Display et la barre souris) : ≥ 70 % de la surface avec le panneau Measure ouvert (77 % à 1440×900, 75 % à 1280×720).
+- Moderne mais sobre : traits fins de 1 px, rayons de 4 px, titres de section en petites capitales grises suivies d'un filet, aucun dégradé ni ombre portée, l'accent réservé aux sélections (boutons à bascule, onglet actif souligné) ; Stop Analysis teinté `danger` pendant la mesure, Start Analysis en accent.
 
 ## États
 
 | État | Déclencheur | Retour visible | Suite proposée |
 |---|---|---|---|
-| Chargement / préchauffage | démarrage, fenêtre N pas encore pleine | pastille « Préchauffage » + barre fine de remplissage dans la barre supérieure, tracé grisé | aucune action, < 1 s |
+| Chargement / préchauffage | démarrage, fenêtre N pas encore pleine | pastille « Warm-up » dans la barre d'état, message dans le tracé | aucune action, < 1 s |
 | Vide | aucune mesure lancée | tracé vide avec message centré « Espace pour démarrer la mesure » + bouton | Démarrer |
-| Erreur | carte déconnectée, flux invalidé, échec d'ouverture | bandeau `danger` non bloquant sous la barre supérieure | « Reprendre » |
+| Erreur | carte déconnectée, flux invalidé, échec d'ouverture | bandeau `danger` non bloquant en haut du premier graphe | « Reprendre » |
 | Partiel | cohérence < seuil, référence absente, latence non calibrée | points masqués (ruptures de courbe), bande hachurée ; bandeau `warning` avec la marche à suivre | « Calibrer », « Vérifier la référence » |
 | Succès | délai trouvé, trace capturée, filtre ajouté | notification en bas à droite (≤ 150 ms d'apparition), avec action | « Appliquer », « Annuler » |
 | Permission | micro refusé par macOS, entrée entièrement nulle | bandeau `danger` avec le chemin Réglages › Confidentialité › Micro | « Réessayer » |

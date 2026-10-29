@@ -7,10 +7,10 @@ use crate::design::tokens::stroke;
 use crate::plot::{DEFAULT_UPPER_PANE_FRACTION, upper_fraction_at};
 use crate::text;
 
-const HIT_MARGIN: f32 = 3.0;
-const GRIP_WIDTH: f32 = 48.0;
-const GRIP_THICKNESS: f32 = 3.0;
-const GRIP_RADIUS: u8 = 2;
+const GRIP_LENGTH: f32 = 20.0;
+const GRIP_THICKNESS: f32 = 2.0;
+const GRIP_SPACING: f32 = 4.0;
+const GRIP_RADIUS: u8 = 1;
 const ACTIVE_LINE_ALPHA: f32 = 0.4;
 
 pub struct SplitArea {
@@ -18,10 +18,16 @@ pub struct SplitArea {
     pub available_height: f32,
 }
 
-pub fn show(ui: &mut egui::Ui, palette: &Palette, gap: Rect, area: SplitArea) -> Option<f32> {
+pub fn show(
+    ui: &mut egui::Ui,
+    palette: &Palette,
+    gap: Rect,
+    grip_center: egui::Pos2,
+    area: SplitArea,
+) -> Option<f32> {
     let response = ui
         .interact(
-            gap.expand2(vec2(0.0, HIT_MARGIN)),
+            gap,
             ui.make_persistent_id("pane-splitter"),
             Sense::click_and_drag(),
         )
@@ -31,21 +37,33 @@ pub fn show(ui: &mut egui::Ui, palette: &Palette, gap: Rect, area: SplitArea) ->
     if active {
         ui.ctx().set_cursor_icon(CursorIcon::ResizeVertical);
     }
-    let grip = Rect::from_center_size(gap.center(), vec2(GRIP_WIDTH, GRIP_THICKNESS));
-    ui.painter().rect_filled(
-        grip,
-        CornerRadius::same(GRIP_RADIUS),
-        if active {
-            palette.accent
-        } else {
-            palette.border
-        },
-    );
+    for offset in [-GRIP_SPACING / 2.0, GRIP_SPACING / 2.0] {
+        let grip = Rect::from_center_size(
+            grip_center + vec2(0.0, offset),
+            vec2(GRIP_LENGTH, GRIP_THICKNESS),
+        );
+        ui.painter().rect_filled(
+            grip,
+            CornerRadius::same(GRIP_RADIUS),
+            if active {
+                palette.accent
+            } else {
+                palette.text_muted
+            },
+        );
+    }
     if active {
         ui.painter().line_segment(
+            [pos2(gap.left(), gap.top()), pos2(gap.right(), gap.top())],
+            Stroke::new(
+                stroke::BORDER,
+                palette.accent.gamma_multiply(ACTIVE_LINE_ALPHA),
+            ),
+        );
+        ui.painter().line_segment(
             [
-                pos2(gap.left(), gap.center().y),
-                pos2(gap.right(), gap.center().y),
+                pos2(gap.left(), gap.bottom()),
+                pos2(gap.right(), gap.bottom()),
             ],
             Stroke::new(
                 stroke::BORDER,

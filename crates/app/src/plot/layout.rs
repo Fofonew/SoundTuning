@@ -30,25 +30,61 @@ pub enum ViewKind {
     Magnitude,
     Phase,
     Impulse,
+    VirtualEq,
 }
 
 impl ViewKind {
-    pub const ALL: [Self; 3] = [Self::Magnitude, Self::Phase, Self::Impulse];
+    pub const ALL: [Self; 4] = [Self::Magnitude, Self::Phase, Self::Impulse, Self::VirtualEq];
 
     fn companion(self) -> Self {
         match self {
             Self::Magnitude => Self::Phase,
-            Self::Phase | Self::Impulse => Self::Magnitude,
+            Self::Phase | Self::Impulse | Self::VirtualEq => Self::Magnitude,
         }
     }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ExternalModule {
+    #[default]
+    DelayAnalysis,
+    VirtualEq,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum MouseMode {
+    Peek,
+    Drag,
+    #[default]
+    Zoom,
+}
+
+impl MouseMode {
+    pub const ALL: [Self; 3] = [Self::Peek, Self::Drag, Self::Zoom];
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct PlotLayout {
     pub main: ViewKind,
     pub upper: Option<ViewKind>,
     pub impulse_in_db: bool,
+    pub module: ExternalModule,
+    pub mouse_mode: MouseMode,
+    pub show_coherence: bool,
+}
+
+impl Default for PlotLayout {
+    fn default() -> Self {
+        Self {
+            main: ViewKind::Magnitude,
+            upper: Some(ViewKind::Phase),
+            impulse_in_db: false,
+            module: ExternalModule::default(),
+            mouse_mode: MouseMode::default(),
+            show_coherence: true,
+        }
+    }
 }
 
 impl PlotLayout {
@@ -74,6 +110,18 @@ impl PlotLayout {
         self.upper = Some(kind);
     }
 
+    pub fn show_module(&mut self, module: ExternalModule) {
+        self.module = module;
+        if !self.shows(ViewKind::VirtualEq) {
+            if self.main == ViewKind::Magnitude || self.upper.is_none() {
+                self.set_upper(ViewKind::VirtualEq);
+            } else {
+                self.set_main(ViewKind::Magnitude);
+                self.set_upper(ViewKind::VirtualEq);
+            }
+        }
+    }
+
     pub fn toggle_stacked(&mut self) {
         self.upper = match self.upper {
             Some(_) => None,
@@ -87,30 +135,52 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_default_is_a_single_magnitude_view() {
+    fn the_default_shows_phase_above_magnitude_like_two_graphs() {
         let layout = PlotLayout::default();
         assert_eq!(
             layout.panes().collect::<Vec<_>>(),
-            vec![ViewKind::Magnitude]
+            vec![ViewKind::Phase, ViewKind::Magnitude]
         );
+        assert_eq!(layout.mouse_mode, MouseMode::Zoom);
+        assert!(layout.show_coherence);
     }
 
     #[test]
-    fn stacking_adds_phase_above_magnitude() {
+    fn a_single_graph_can_be_shown_and_stacking_brings_the_companion_back() {
         let mut layout = PlotLayout::default();
+        layout.toggle_stacked();
+        assert_eq!(layout.upper, None);
         layout.toggle_stacked();
         assert_eq!(
             layout.panes().collect::<Vec<_>>(),
             vec![ViewKind::Phase, ViewKind::Magnitude]
         );
-        layout.toggle_stacked();
-        assert_eq!(layout.upper, None);
+    }
+
+    #[test]
+    fn showing_a_module_puts_virtual_eq_above_the_magnitude() {
+        let mut layout = PlotLayout {
+            main: ViewKind::Phase,
+            upper: Some(ViewKind::Impulse),
+            ..PlotLayout::default()
+        };
+        layout.show_module(ExternalModule::VirtualEq);
+        assert_eq!(layout.module, ExternalModule::VirtualEq);
+        assert_eq!(layout.main, ViewKind::Magnitude);
+        assert_eq!(layout.upper, Some(ViewKind::VirtualEq));
+        layout.show_module(ExternalModule::DelayAnalysis);
+        assert_eq!(layout.upper, Some(ViewKind::VirtualEq));
+        let mut single = PlotLayout {
+            upper: None,
+            ..PlotLayout::default()
+        };
+        single.show_module(ExternalModule::DelayAnalysis);
+        assert_eq!(single.upper, Some(ViewKind::VirtualEq));
     }
 
     #[test]
     fn choosing_the_view_already_shown_above_swaps_the_panes() {
         let mut layout = PlotLayout::default();
-        layout.toggle_stacked();
         layout.set_main(ViewKind::Phase);
         assert_eq!(layout.main, ViewKind::Phase);
         assert_eq!(layout.upper, Some(ViewKind::Magnitude));
@@ -152,8 +222,10 @@ mod tests {
 
     #[test]
     fn layouts_without_new_fields_still_load() {
-        let layout: PlotLayout = serde_json::from_str(r#"{"main":"Phase"}"#).unwrap();
+        let layout: PlotLayout = serde_json::from_str(r#"{"main":"Phase","upper":null}"#).unwrap();
         assert_eq!(layout.main, ViewKind::Phase);
         assert_eq!(layout.upper, None);
+        assert!(layout.show_coherence);
+        assert_eq!(layout.module, ExternalModule::DelayAnalysis);
     }
 }

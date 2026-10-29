@@ -6,15 +6,14 @@ use audio_io::{StereoFrame, write_stereo_wav};
 use criterion::{Criterion, criterion_group, criterion_main};
 use eframe::egui;
 use egui_kittest::Harness;
-use soundtuning::actions::Action;
 use soundtuning::app::{AppOptions, DeviceCatalog, SoundTuningApp};
 use soundtuning::config::{AppConfig, ConfigStore};
 use soundtuning::eq_state::{StoredFilter, StoredFilterKind};
 use soundtuning::measurement::{FilePacing, SourceSpec};
+use soundtuning::plot::{ExternalModule, PlotLayout, ViewKind};
 use soundtuning::session::SessionStore;
 use soundtuning::ui::alignment_panel::AlignmentCommand;
 use soundtuning::ui::eq_panel::EqCommand;
-use soundtuning::ui::side_panel::SideTab;
 use soundtuning::update::UpdateSource;
 
 const SAMPLE_RATE_HZ: u32 = 48_000;
@@ -91,7 +90,9 @@ fn ui_frame(criterion: &mut Criterion) {
     let mut group = criterion.benchmark_group("ui_frame_cpu_frozen");
     group.bench_function("traces", |bencher| bencher.iter(|| harness.step()));
 
-    harness.state_mut().set_side_tab(SideTab::Alignment);
+    harness
+        .state_mut()
+        .show_module(ExternalModule::DelayAnalysis);
     let ids: Vec<u64> = harness
         .state()
         .session()
@@ -107,7 +108,7 @@ fn ui_frame(criterion: &mut Criterion) {
         .apply_test_alignment(AlignmentCommand::Update(alignment));
     group.bench_function("alignment", |bencher| bencher.iter(|| harness.step()));
 
-    harness.state_mut().set_side_tab(SideTab::Eq);
+    harness.state_mut().show_module(ExternalModule::VirtualEq);
     let mut eq = harness.state().session().eq.clone();
     for index in 0..EQ_FILTERS {
         eq.add_filter(StoredFilter::new(
@@ -119,14 +120,15 @@ fn ui_frame(criterion: &mut Criterion) {
     harness.state_mut().apply_test_eq(EqCommand::Update(eq));
     group.bench_function("eq", |bencher| bencher.iter(|| harness.step()));
 
-    harness.state_mut().set_side_tab(SideTab::Traces);
-    harness
-        .state_mut()
-        .handle_action(Action::ToggleStackedViews);
+    harness.state_mut().set_plot_layout(PlotLayout::default());
     group.bench_function("phase_over_magnitude", |bencher| {
         bencher.iter(|| harness.step())
     });
-    harness.state_mut().handle_action(Action::ViewImpulse);
+    harness.state_mut().set_plot_layout(PlotLayout {
+        main: ViewKind::Impulse,
+        upper: Some(ViewKind::Magnitude),
+        ..PlotLayout::default()
+    });
     group.bench_function("magnitude_over_impulse", |bencher| {
         bencher.iter(|| harness.step())
     });

@@ -157,10 +157,12 @@ pub mod stroke {
 
 pub mod size {
     pub const MIN_CLICK_HEIGHT: f32 = 28.0;
+    pub const SEGMENT_GAP: f32 = 2.0;
     pub const BUTTON_HEIGHT: f32 = 32.0;
-    pub const TOP_BAR_HEIGHT: f32 = 52.0;
-    pub const BOTTOM_BAR_HEIGHT: f32 = 48.0;
-    pub const SIDE_PANEL_WIDTH: f32 = 272.0;
+    pub const CONTROL_PANEL_WIDTH: f32 = 288.0;
+    pub const DISPLAY_PANEL_WIDTH: f32 = 148.0;
+    pub const STATUS_BAR_HEIGHT: f32 = 28.0;
+    pub const MOUSE_BAR_HEIGHT: f32 = 36.0;
     pub const COHERENCE_BAND_HEIGHT: f32 = 64.0;
     pub const METER_WIDTH: f32 = 120.0;
     pub const METER_HEIGHT: f32 = 8.0;

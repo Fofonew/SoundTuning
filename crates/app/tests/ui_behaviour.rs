@@ -30,7 +30,7 @@ fn space_starts_and_stops_the_measurement() {
 }
 
 #[test]
-fn d_finds_the_delay_and_a_applies_it() {
+fn peak_finds_the_delay_puts_it_in_delay_offset_and_command_z_restores_it() {
     let mut harness = harness(file_options(Theme::Night, true));
     wait_for_stable_measurement(&mut harness);
     harness
@@ -40,17 +40,26 @@ fn d_finds_the_delay_and_a_applies_it() {
     step_until(&mut harness, SHORT_TIMEOUT, |app| {
         app.measurement().snapshot().delay.applied_ms.abs() < 1.0e-9
     });
-    harness.key_press(Key::D);
-    harness.step();
-    step_until(&mut harness, SHORT_TIMEOUT, |app| {
-        app.notification_texts()
-            .iter()
-            .any(|text| text.starts_with(soundtuning::text::NOTIFY_DELAY_FOUND))
-    });
-    harness.key_press(Key::A);
+    harness
+        .query_all_by_role_and_label(Role::Button, soundtuning::text::BUTTON_FIND_DELAY)
+        .min_by(|first, second| first.rect().left().total_cmp(&second.rect().left()))
+        .unwrap()
+        .click();
     harness.step();
     step_until(&mut harness, SHORT_TIMEOUT, |app| {
         (app.measurement().snapshot().delay.applied_ms - 2.0).abs() < 0.05
+    });
+    assert!(
+        harness
+            .state()
+            .notification_texts()
+            .iter()
+            .any(|text| text.starts_with(soundtuning::text::DELAY_OFFSET))
+    );
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+    harness.step();
+    step_until(&mut harness, SHORT_TIMEOUT, |app| {
+        app.measurement().snapshot().delay.applied_ms.abs() < 1.0e-9
     });
 }
 
@@ -114,11 +123,19 @@ fn every_main_action_is_a_visible_button() {
     let mut harness = harness(file_options(Theme::Night, true));
     harness.step();
     for label in [
-        soundtuning::text::BUTTON_STOP,
-        soundtuning::text::BUTTON_CAPTURE,
+        soundtuning::text::BUTTON_STOP_ANALYSIS,
+        soundtuning::text::BUTTON_CAPTURE_MEASUREMENT,
         soundtuning::text::BUTTON_FREEZE,
         soundtuning::text::BUTTON_FIND_DELAY,
-        soundtuning::text::BUTTON_APPLY_DELAY,
+        soundtuning::text::BUTTON_PLAY_SIGNAL,
+        soundtuning::text::BUTTON_RESET_AVERAGES,
+        soundtuning::text::TRACES_AVERAGE,
+        soundtuning::text::TRACES_EXPORT_CSV,
+        soundtuning::text::BUTTON_REMOVE,
+        soundtuning::text::MOUSE_PEEK,
+        soundtuning::text::MOUSE_DRAG,
+        soundtuning::text::MOUSE_ZOOM,
+        soundtuning::text::VIEW_VIRTUAL_EQ,
         soundtuning::text::BUTTON_PALETTE,
     ] {
         assert!(
@@ -373,12 +390,9 @@ fn trace_rows_select_average_rename_and_delete() {
             .ends_with(" façade")
     );
 
-    let delete_label = format!(
-        "{} — {}",
-        soundtuning::text::TRACE_DELETE,
-        harness.state().session().traces[1].name
-    );
-    harness.get_by_label(&delete_label).click();
+    harness
+        .get_by_label(soundtuning::text::BUTTON_REMOVE)
+        .click();
     harness.run_steps(4);
     assert_eq!(harness.state().session().traces.len(), 1);
     harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
@@ -448,11 +462,13 @@ fn unreadable_session_is_reported_at_launch() {
 #[test]
 fn delay_analysis_offers_pos_neg_flat_custom_and_shift_drag_picks_a_custom_range() {
     use soundtuning::alignment_state::{AlignmentChoice, AlignmentRange};
+    use soundtuning::plot::ExternalModule;
     use soundtuning::ui::alignment_panel::AlignmentCommand;
-    use soundtuning::ui::side_panel::SideTab;
     let mut harness = harness(file_options(Theme::Night, true));
     capture_two_traces(&mut harness);
-    harness.state_mut().set_side_tab(SideTab::Alignment);
+    harness
+        .state_mut()
+        .show_module(ExternalModule::DelayAnalysis);
     let ids: Vec<u64> = harness
         .state()
         .session()
@@ -514,7 +530,7 @@ fn delay_analysis_offers_pos_neg_flat_custom_and_shift_drag_picks_a_custom_range
         Some((3.0, false))
     );
 
-    shift_drag(&mut harness, 200.0, 420.0);
+    shift_drag(&mut harness, 45.0, 160.0);
     let band = harness.state().session().alignment.clone();
     let (low_hz, high_hz) = band.band_hz();
     assert_eq!(band.range, AlignmentRange::Custom);
@@ -526,7 +542,7 @@ fn delay_analysis_offers_pos_neg_flat_custom_and_shift_drag_picks_a_custom_range
     );
     let first_band = band.band_hz();
 
-    shift_drag(&mut harness, 600.0, 900.0);
+    shift_drag(&mut harness, 300.0, 1200.0);
     let second = harness.state().session().alignment.clone();
     assert!(second.band_hz().0 > 150.0, "{second:?}");
 
@@ -543,14 +559,16 @@ fn delay_analysis_offers_pos_neg_flat_custom_and_shift_drag_picks_a_custom_range
 
 fn shift_drag(
     harness: &mut egui_kittest::Harness<'static, soundtuning::app::SoundTuningApp>,
-    from_x: f32,
-    to_x: f32,
+    from_hz: f64,
+    to_hz: f64,
 ) {
-    let y = 400.0;
+    harness.step();
+    let rect = harness.state().last_plot_rect().unwrap();
+    let view = harness.state().plot_view();
     drag(
         harness,
-        eframe::egui::pos2(from_x, y),
-        eframe::egui::pos2(to_x, y),
+        view.to_screen(rect, from_hz, 0.0),
+        view.to_screen(rect, to_hz, 0.0),
         eframe::egui::PointerButton::Primary,
         Modifiers::SHIFT,
     );
@@ -692,7 +710,6 @@ fn the_split_between_stacked_views_can_be_dragged_and_reset() {
     use soundtuning::plot::DEFAULT_UPPER_PANE_FRACTION;
     let mut harness = common::fast_clock_harness(file_options(Theme::Night, true));
     wait_until_running(&mut harness);
-    harness.key_press(Key::V);
     harness.run_steps(3);
     let lower = harness.state().last_plot_rect().unwrap();
     let splitter = harness.get_by_label(soundtuning::text::PANE_SPLITTER_LABEL);
@@ -781,8 +798,8 @@ fn eq_filters_are_added_dragged_scrolled_exported_and_undone() {
     harness.key_press(Key::E);
     harness.run_steps(3);
     assert_eq!(
-        harness.state().side_tab(),
-        soundtuning::ui::side_panel::SideTab::Eq
+        harness.state().module(),
+        Some(soundtuning::plot::ExternalModule::VirtualEq)
     );
     assert_eq!(harness.state().session().eq.filters().len(), 1);
     let filter = harness.state().session().eq.filters()[0];
@@ -865,7 +882,7 @@ fn double_click_on_the_plot_adds_an_eq_filter_in_the_eq_tab() {
     let mut harness = common::fast_clock_harness(file_options(Theme::Night, false));
     harness
         .state_mut()
-        .set_side_tab(soundtuning::ui::side_panel::SideTab::Eq);
+        .show_module(soundtuning::plot::ExternalModule::VirtualEq);
     harness.run_steps(2);
     let rect = harness.state().last_plot_rect().unwrap();
     let view = harness.state().plot_view();
@@ -909,13 +926,19 @@ fn double_click_on_the_plot_adds_an_eq_filter_in_the_eq_tab() {
 #[test]
 fn every_control_has_an_accessible_label_in_every_tab() {
     use egui_kittest::kittest::NodeT;
-    use soundtuning::ui::side_panel::SideTab;
+    use soundtuning::plot::ExternalModule;
+    use soundtuning::ui::control_panel::ControlTab;
     let mut harness = harness(file_options(Theme::Night, true));
     capture_two_traces(&mut harness);
     harness.key_press(Key::E);
     harness.run_steps(3);
-    for tab in [SideTab::Traces, SideTab::Alignment, SideTab::Eq] {
-        harness.state_mut().set_side_tab(tab);
+    for tab in [
+        (ControlTab::Measure, ExternalModule::DelayAnalysis),
+        (ControlTab::Measure, ExternalModule::VirtualEq),
+        (ControlTab::Tools, ExternalModule::DelayAnalysis),
+    ] {
+        harness.state_mut().set_control_tab(tab.0);
+        harness.state_mut().show_module(tab.1);
         harness.run_steps(3);
         let mut checked = 0;
         for role in [
@@ -992,7 +1015,7 @@ fn auto_eq_fills_the_bank_within_the_limits_and_is_undoable() {
     harness.step();
     harness
         .state_mut()
-        .set_side_tab(soundtuning::ui::side_panel::SideTab::Eq);
+        .show_module(soundtuning::plot::ExternalModule::VirtualEq);
     let mut state = harness.state().session().eq.clone();
     state.auto.max_filters = 4;
     state.auto.max_boost_db = 2.0;
@@ -1029,6 +1052,7 @@ fn view_shortcuts_switch_and_stack_the_plots() {
     let mut harness = harness(file_options(Theme::Night, false));
     harness.step();
     assert_eq!(harness.state().plot_layout().main, ViewKind::Magnitude);
+    assert_eq!(harness.state().plot_layout().upper, Some(ViewKind::Phase));
     harness.key_press(Key::H);
     harness.step();
     assert_eq!(harness.state().plot_layout().main, ViewKind::Phase);
@@ -1040,6 +1064,9 @@ fn view_shortcuts_switch_and_stack_the_plots() {
         Role::Figure,
         soundtuning::text::IMPULSE_PLOT_ACCESSIBLE_LABEL,
     );
+    harness.key_press(Key::V);
+    harness.step();
+    assert_eq!(harness.state().plot_layout().upper, None);
     harness.key_press(Key::V);
     harness.step();
     let layout = harness.state().plot_layout();
@@ -1059,6 +1086,7 @@ fn view_shortcuts_switch_and_stack_the_plots() {
         .click();
     harness.step();
     assert_eq!(harness.state().plot_layout().upper, None);
+    harness.step();
     harness.get_by_label(soundtuning::text::VIEW_PHASE).click();
     harness.step();
     assert_eq!(harness.state().plot_layout().main, ViewKind::Phase);
@@ -1066,7 +1094,7 @@ fn view_shortcuts_switch_and_stack_the_plots() {
 }
 
 #[test]
-fn fullscreen_hides_the_side_panel_and_the_bottom_bar() {
+fn fullscreen_hides_the_control_panel_and_the_status_bar() {
     let mut harness = harness(file_options(Theme::Night, false));
     harness.step();
     assert!(
@@ -1127,6 +1155,13 @@ fn a_captured_trace_changes_definition_and_the_change_is_undoable() {
     let restored = &harness.state().session().traces[0];
     assert_eq!(restored.metadata.smoothing_fraction, captured_fraction);
     assert_eq!(restored.magnitude_db, trace.magnitude_db);
+    harness
+        .get_by_label(&soundtuning::text::trace_control_label(
+            soundtuning::text::OVERLAY_PROPERTIES,
+            &trace.name,
+        ))
+        .click();
+    harness.run_steps(2);
     harness.get_by_role_and_label(
         Role::ComboBox,
         &soundtuning::text::trace_control_label(soundtuning::text::TRACE_SMOOTHING, &trace.name),
@@ -1226,7 +1261,7 @@ fn a_manual_check_reports_an_up_to_date_version() {
 }
 
 #[test]
-fn bars_and_audio_settings_do_not_overlap_in_small_windows() {
+fn control_panel_status_bar_and_audio_settings_do_not_overlap_in_small_windows() {
     use eframe::egui;
     use egui_kittest::kittest::NodeT;
     use soundtuning::design::tokens::size;
@@ -1242,25 +1277,26 @@ fn bars_and_audio_settings_do_not_overlap_in_small_windows() {
         harness.key_press_modifiers(Modifiers::COMMAND, Key::Comma);
         harness.step();
         harness.step();
-        let top_limit = soundtuning::app::top_bar_height();
-        let bottom_limit = height - size::BOTTOM_BAR_HEIGHT;
+        let bottom_limit = height - size::STATUS_BAR_HEIGHT;
         let mut rects: Vec<(String, egui::Rect)> = Vec::new();
         for role in [Role::Button, Role::SpinButton, Role::Label, Role::CheckBox] {
             for node in harness.query_all_by_role(role) {
                 let rect = node.rect();
-                let in_bars = rect.max.y <= top_limit || rect.min.y >= bottom_limit;
+                let in_bars = rect.min.y >= bottom_limit;
                 let label = node.accesskit_node().label().unwrap_or_default();
                 let in_audio_footer =
                     ["Appliquer les réglages", "Actualiser"].contains(&label.as_str());
-                if (in_bars || in_audio_footer) && rect.area() > 0.0 {
+                let clipped_in_panel =
+                    rect.min.x < size::CONTROL_PANEL_WIDTH && rect.max.y > height + 0.5;
+                if (in_bars || in_audio_footer) && !clipped_in_panel && rect.area() > 0.0 {
                     rects.push((format!("{role:?} {label}"), rect));
                 }
             }
         }
         for (index, (first, first_rect)) in rects.iter().enumerate() {
             assert!(
-                first_rect.max.x <= width + 0.5,
-                "{first} leaves the window at {width}"
+                first_rect.max.x <= width + 0.5 && first_rect.max.y <= height + 0.5,
+                "{first} leaves the window at {width}×{height}"
             );
             for (second, second_rect) in &rects[index + 1..] {
                 let overlap = first_rect.intersect(*second_rect);
@@ -1271,4 +1307,96 @@ fn bars_and_audio_settings_do_not_overlap_in_small_windows() {
             }
         }
     }
+}
+
+#[test]
+fn mouse_modes_switch_the_left_drag_between_zoom_drag_and_peek() {
+    use eframe::egui::PointerButton;
+    use soundtuning::plot::MouseMode;
+    let mut harness = common::fast_clock_harness(file_options(Theme::Night, true));
+    wait_until_running(&mut harness);
+    harness.key_press(Key::Num2);
+    harness.run_steps(2);
+    harness.get_by_label(soundtuning::text::MOUSE_DRAG).click();
+    harness.run_steps(2);
+    assert_eq!(harness.state().plot_layout().mouse_mode, MouseMode::Drag);
+    let rect = harness.state().last_plot_rect().unwrap();
+    let view = harness.state().plot_view();
+    drag(
+        &mut harness,
+        view.to_screen(rect, 100.0, 0.0),
+        view.to_screen(rect, 50.0, 0.0),
+        PointerButton::Primary,
+        Modifiers::NONE,
+    );
+    let dragged = harness.state().plot_view();
+    assert!(dragged.low_hz > view.low_hz, "{dragged:?}");
+    assert!(
+        ((dragged.high_hz / dragged.low_hz) / (view.high_hz / view.low_hz) - 1.0).abs() < 1.0e-6
+    );
+
+    harness.get_by_label(soundtuning::text::MOUSE_PEEK).click();
+    harness.run_steps(2);
+    drag(
+        &mut harness,
+        dragged.to_screen(rect, 60.0, 6.0),
+        dragged.to_screen(rect, 150.0, -6.0),
+        PointerButton::Primary,
+        Modifiers::NONE,
+    );
+    assert_eq!(harness.state().plot_view(), dragged);
+
+    harness.get_by_label(soundtuning::text::MOUSE_ZOOM).click();
+    harness.run_steps(2);
+    drag(
+        &mut harness,
+        dragged.to_screen(rect, 60.0, 0.0),
+        dragged.to_screen(rect, 150.0, 0.0),
+        PointerButton::Primary,
+        Modifiers::NONE,
+    );
+    let zoomed = harness.state().plot_view();
+    assert!((zoomed.low_hz / 60.0 - 1.0).abs() < 0.03, "{zoomed:?}");
+    assert_eq!(
+        harness.state().config().plot_layout.mouse_mode,
+        MouseMode::Zoom
+    );
+}
+
+#[test]
+fn reset_restarts_the_averages_and_display_picks_the_virtual_eq_module() {
+    use soundtuning::plot::{ExternalModule, ViewKind};
+    let mut harness = harness(file_options(Theme::Night, true));
+    wait_for_stable_measurement(&mut harness);
+    let before = harness.state().measurement().snapshot().averages;
+    harness
+        .get_by_label(soundtuning::text::BUTTON_RESET_AVERAGES)
+        .click();
+    harness.step();
+    step_until(&mut harness, SHORT_TIMEOUT, |app| {
+        app.measurement().snapshot().averages < before
+    });
+
+    harness
+        .get_by_label(&soundtuning::text::upper_view_label(
+            soundtuning::text::VIEW_VIRTUAL_EQ,
+        ))
+        .click();
+    harness.run_steps(2);
+    assert_eq!(
+        harness.state().plot_layout().upper,
+        Some(ViewKind::VirtualEq)
+    );
+    assert_eq!(
+        harness.state().module(),
+        Some(ExternalModule::DelayAnalysis)
+    );
+    harness
+        .get_by_label(&soundtuning::text::display_option_label(
+            soundtuning::text::MODULE_VIRTUAL_EQ,
+        ))
+        .click();
+    harness.run_steps(2);
+    assert_eq!(harness.state().module(), Some(ExternalModule::VirtualEq));
+    harness.get_by_label(soundtuning::text::ACTION_ADD_EQ_FILTER);
 }

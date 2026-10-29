@@ -6,7 +6,7 @@ use eframe::egui::{
 use crate::design::Palette;
 use crate::design::fonts;
 use crate::design::tokens::{radius, spacing, stroke, text_size};
-use crate::plot::{TraceStyle, ZoomSelection};
+use crate::plot::{MouseMode, TraceStyle, ZoomSelection};
 use crate::text;
 
 const LEFT_AXIS_WIDTH: f32 = 40.0;
@@ -31,7 +31,6 @@ const MIN_RELATIVE_AMPLITUDE: f64 = 1.0e-6;
 const SCROLL_ZOOM_SENSITIVITY: f64 = 0.0025;
 const SAMPLES_PER_COLUMN_FOR_ENVELOPE: f64 = 2.0;
 const PEAK_MARKER_RADIUS: f32 = 4.0;
-const READOUT_OFFSET: f32 = 14.0;
 const MILLISECONDS_PER_SECOND: f64 = 1000.0;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -153,11 +152,13 @@ pub struct ImpulseInputs<'a> {
     pub in_db: bool,
     pub speed_of_sound_m_per_s: f64,
     pub warming_up: bool,
+    pub mouse_mode: MouseMode,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct ImpulseEvents {
     pub plot_rect: Option<Rect>,
+    pub hover_readout: Option<String>,
 }
 
 #[derive(Debug, Default)]
@@ -238,9 +239,10 @@ impl ImpulsePanel {
         response.widget_info(|| {
             WidgetInfo::labeled(Role::Figure, true, text::IMPULSE_PLOT_ACCESSIBLE_LABEL)
         });
-        self.handle_interaction(ui, &response, plot_rect);
+        self.handle_interaction(ui, &response, plot_rect, inputs.mouse_mode);
 
         let scale = Scale::new(inputs);
+        let mut hover_readout = None;
         let painter = ui.painter_at(outer);
         painter.rect_filled(
             plot_rect,
@@ -275,7 +277,7 @@ impl ImpulsePanel {
         if let Some(selection) = &self.zoom_selection {
             selection.paint(&painter, palette, plot_rect);
         } else if let Some(hover) = response.hover_pos() {
-            self.paint_crosshair(&painter, palette, plot_rect, hover, inputs);
+            hover_readout = Some(self.paint_crosshair(&painter, palette, plot_rect, hover, inputs));
         }
         if inputs.live.is_none() && inputs.overlays.is_empty() {
             painter.text(
@@ -292,10 +294,17 @@ impl ImpulsePanel {
         }
         ImpulseEvents {
             plot_rect: Some(plot_rect),
+            hover_readout,
         }
     }
 
-    fn handle_interaction(&mut self, ui: &egui::Ui, response: &egui::Response, plot_rect: Rect) {
+    fn handle_interaction(
+        &mut self,
+        ui: &egui::Ui,
+        response: &egui::Response,
+        plot_rect: Rect,
+        mouse_mode: MouseMode,
+    ) {
         if response.double_clicked() {
             self.view = ImpulseView::default();
             return;
@@ -314,9 +323,15 @@ impl ImpulsePanel {
                 .input(|input| input.pointer.press_origin())
                 .or_else(|| response.interact_pointer_pos());
             if response.drag_started_by(PointerButton::Primary) && !command {
-                self.zoom_selection = origin.map(|position| {
-                    ZoomSelection::new(position.clamp(plot_rect.min, plot_rect.max), false)
-                });
+                match mouse_mode {
+                    MouseMode::Zoom => {
+                        self.zoom_selection = origin.map(|position| {
+                            ZoomSelection::new(position.clamp(plot_rect.min, plot_rect.max), false)
+                        });
+                    }
+                    MouseMode::Drag => self.panning = true,
+                    MouseMode::Peek => {}
+                }
             } else {
                 self.panning = true;
             }
@@ -561,7 +576,7 @@ impl ImpulsePanel {
         plot_rect: Rect,
         hover: Pos2,
         inputs: &ImpulseInputs<'_>,
-    ) {
+    ) -> String {
         painter.line_segment(
             [
                 pos2(hover.x, plot_rect.top()),
@@ -588,34 +603,7 @@ impl ImpulsePanel {
                 ));
             }
         }
-        let galley = painter.layout_no_wrap(
-            lines.join("\n"),
-            fonts::value(text_size::LABEL),
-            palette.text_primary,
-        );
-        let mut position = hover + vec2(READOUT_OFFSET, READOUT_OFFSET);
-        if position.x + galley.size().x + 2.0 * spacing::SM > plot_rect.right() {
-            position.x = hover.x - READOUT_OFFSET - galley.size().x - 2.0 * spacing::SM;
-        }
-        if position.y + galley.size().y + 2.0 * spacing::SM > plot_rect.bottom() {
-            position.y = hover.y - READOUT_OFFSET - galley.size().y - 2.0 * spacing::SM;
-        }
-        let box_rect = Rect::from_min_size(
-            position,
-            galley.size() + vec2(2.0 * spacing::SM, 2.0 * spacing::SM),
-        );
-        painter.rect(
-            box_rect,
-            CornerRadius::same(radius::MEDIUM),
-            palette.surface_raised,
-            Stroke::new(stroke::BORDER, palette.border),
-            StrokeKind::Inside,
-        );
-        painter.galley(
-            position + vec2(spacing::SM, spacing::SM),
-            galley,
-            palette.text_primary,
-        );
+        lines.join("    ")
     }
 }
 
@@ -702,6 +690,7 @@ mod tests {
             in_db: true,
             speed_of_sound_m_per_s: 343.0,
             warming_up: false,
+            mouse_mode: MouseMode::Zoom,
         };
         let scale = Scale::new(&inputs);
         assert!((scale.level(0.5)).abs() < 1.0e-9);

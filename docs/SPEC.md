@@ -80,19 +80,20 @@ Tout se passe sur un seul écran principal ; la mesure ne s'interrompt jamais pe
 - **Deux thèmes**, touche L : « Nuit » (sombre, éblouissement minimal, défaut) et « Plein jour » (clair, contraste élevé, extérieur au soleil).
 - **Couleurs des traces** : palette Okabe–Ito (daltoniens). Trace live plus épaisse et nettement distinguée des traces mémorisées.
 - **Disposition** :
-  - barre supérieure fine : source et fréquence d'échantillonnage, mode de référence, état de la mesure, vu-mètres compacts référence et mesure, délai courant en gros chiffres ;
-  - zone centrale ≥ 70 % de la surface : tracé magnitude et, dessous, bande de cohérence ;
-  - panneau latéral repliable à onglets : Traces, Alignement, EQ ;
-  - barre inférieure : réglages (FFT, moyennage, lissage, seuil de cohérence) en pastilles modifiables d'un clic ou à la molette.
+  - à gauche, panneau **Measure / Tools** repliable (P), comme la zone de contrôle de SysTune : sections Input (Signal Channel, Delay Offset en gros chiffres avec −/+, Peak, Auto, Reference Channel OUT/1/2…, Calibrate), Start Analysis / Stop Analysis et Freeze, Output (Play Signal, niveau du Pink Noise, Play Channel), Parameters (FFT Size, Averages, Reset), Capture Measurement, puis onglets Overlays (liste des traces : couleur, V, nom, propriétés ; Average, Save, Remove) et Levels (Signal et Reference en Peak / RMS dBFS) ; l'onglet Tools contient le Color Scheme, Check for Updates, Commands et les réglages audio ;
+  - zone centrale ≥ 70 % de la surface : deux graphes superposés (un seul au choix, V), chacun avec sa barre de sélection (Transfer Function : IR, Mag, Phs ; External : Virtual EQ), sa légende et son panneau Display à droite (Show Coherence, Mask γ², Smoothing ; Unit pour l'IR ; Delay Analysis / Virtual EQ pour le module) ; bande de cohérence sous le graphe Mag ;
+  - entre les deux graphes, la barre souris : coordonnées du pointeur et valeur de la trace la plus proche, modes Peek / Drag / Zoom, un ou deux graphes, plein écran ; elle sert aussi de séparation redimensionnable ;
+  - en bas, barre d'état : état de la mesure, ligne « Setup: » (source, fréquence, référence, signal joué et sorties), Commands (Cmd/Ctrl+K) et version.
+  - structure reprise de SysTune à la demande de l'utilisateur (D-051).
 - **Tracé** :
   - painter egui, sans `egui_plot` ;
   - axe fréquence logarithmique, graduations standard ;
-  - réticule au survol : fréquence, dB, valeur de la trace la plus proche ;
-  - zoom molette ou pincement, zoom par sélection au glisser (largeur = fréquence, hauteur = niveau, rectangle = les deux), déplacement au clic droit ou Cmd/Ctrl + glisser, double-clic pour réinitialiser (D-048) ;
+  - réticule au survol : fréquence, dB, valeur de la trace la plus proche (affichées dans la barre souris) ;
+  - zoom molette ou pincement, zoom par sélection au glisser (largeur = fréquence, hauteur = niveau, rectangle = les deux), déplacement au clic droit ou Cmd/Ctrl + glisser, double-clic ou Full View pour réinitialiser (D-048) ; modes de la souris Peek (lecture seule), Drag (glisser = déplacer) et Zoom (défaut) comme SysTune (D-051) ;
   - plages touches 1 à 4 : plein spectre, sub 20–200 Hz, médium, aigu.
 - **Palette de commandes** (Cmd/Ctrl+K) listant toutes les actions et leurs raccourcis.
 - **Annuler / rétablir** (Cmd/Ctrl+Z, Shift+Cmd/Ctrl+Z) pour traces, alignement et EQ.
-- **Aucune fenêtre modale pendant la mesure** : notifications non bloquantes avec action quand c'est utile (« Délai trouvé : 12,43 ms — Appliquer »).
+- **Aucune fenêtre modale pendant la mesure** : notifications non bloquantes avec action quand c'est utile (« Delay Offset [ms] : 12,43 ms — Annuler », « Délai changé — Peak »).
 - **Assistant de premier lancement en 3 étapes** : périphérique ; mode de référence et canaux (micro, référence ou sortie générateur) avec vu-mètres en direct ; test et démarrage. Ne réapparaît plus ensuite.
 - **États explicites**, chacun avec la marche à suivre : pas de signal, écrêtage, référence absente, cohérence faible, autorisation micro manquante, carte son déconnectée, latence non calibrée (référence interne).
 - **Animations** ≤ 150 ms, réservées aux changements d'état, jamais sur les courbes.

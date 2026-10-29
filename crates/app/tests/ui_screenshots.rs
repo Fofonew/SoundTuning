@@ -11,12 +11,25 @@ use eframe::egui::{Key, pos2};
 use egui_kittest::kittest::Queryable;
 use soundtuning::design::Theme;
 
+fn hover_plot(
+    harness: &mut egui_kittest::Harness<'static, soundtuning::app::SoundTuningApp>,
+    x_fraction: f32,
+    y_fraction: f32,
+) {
+    harness.step();
+    let rect = harness.state().last_plot_rect().unwrap();
+    harness.hover_at(pos2(
+        rect.left() + rect.width() * x_fraction,
+        rect.top() + rect.height() * y_fraction,
+    ));
+}
+
 fn measurement_screenshot(theme: Theme, name: &str) {
     let mut harness = rendering_harness(file_options(theme, true));
     wait_for_stable_measurement(&mut harness);
     harness.key_press(Key::F);
     harness.step();
-    harness.hover_at(pos2(560.0, 300.0));
+    hover_plot(&mut harness, 0.55, 0.45);
     harness.step();
     harness.step();
     let path = save_screenshot(&mut harness, name);
@@ -62,7 +75,7 @@ fn screenshot_traces() {
     harness.state_mut().apply_test_offset(ids[2], 3.0);
     harness.key_press(Key::F);
     harness.step();
-    harness.hover_at(pos2(700.0, 330.0));
+    hover_plot(&mut harness, 0.6, 0.4);
     harness.step();
     harness.step();
     assert!(save_screenshot(&mut harness, "traces").exists());
@@ -79,8 +92,8 @@ fn screenshot_alignment_daylight() {
 }
 
 fn alignment_screenshot(theme: Theme, name: &str) {
+    use soundtuning::plot::ExternalModule;
     use soundtuning::ui::alignment_panel::AlignmentCommand;
-    use soundtuning::ui::side_panel::SideTab;
     let mut harness = rendering_harness(file_options(theme, true));
     wait_for_stable_measurement(&mut harness);
     harness.key_press(Key::S);
@@ -102,7 +115,9 @@ fn alignment_screenshot(theme: Theme, name: &str) {
     });
     harness.key_press(Key::S);
     harness.step();
-    harness.state_mut().set_side_tab(SideTab::Alignment);
+    harness
+        .state_mut()
+        .show_module(ExternalModule::DelayAnalysis);
     let ids: Vec<u64> = harness
         .state()
         .session()
@@ -139,13 +154,13 @@ fn screenshot_eq_daylight() {
 
 fn eq_screenshot(theme: Theme, name: &str) {
     use soundtuning::eq_state::{StoredFilter, StoredFilterKind, StoredSlope};
+    use soundtuning::plot::ExternalModule;
     use soundtuning::ui::eq_panel::EqCommand;
-    use soundtuning::ui::side_panel::SideTab;
     let mut harness = rendering_harness(file_options(theme, true));
     wait_for_stable_measurement(&mut harness);
     harness.key_press(Key::F);
     harness.step();
-    harness.state_mut().set_side_tab(SideTab::Eq);
+    harness.state_mut().show_module(ExternalModule::VirtualEq);
     let mut state = harness.state().session().eq.clone();
     let mut bell = StoredFilter::new(StoredFilterKind::Bell, 1000.0, -5.0);
     bell.q = 1.4;
@@ -186,13 +201,13 @@ fn screenshot_audio_settings() {
 
 #[test]
 fn screenshot_auto_eq() {
+    use soundtuning::plot::ExternalModule;
     use soundtuning::ui::eq_panel::EqCommand;
-    use soundtuning::ui::side_panel::SideTab;
     let mut harness = rendering_harness(file_options(Theme::Night, true));
     wait_for_stable_measurement(&mut harness);
     harness.key_press(Key::F);
     harness.step();
-    harness.state_mut().set_side_tab(SideTab::Eq);
+    harness.state_mut().show_module(ExternalModule::VirtualEq);
     harness.step();
     harness
         .get_by_label(soundtuning::text::AUTO_EQ_TITLE)
@@ -219,11 +234,9 @@ fn captured_traces_harness(
 #[test]
 fn screenshot_phase_stacked() {
     let mut harness = captured_traces_harness(Theme::Night);
-    harness.key_press(Key::V);
-    harness.step();
     harness.key_press(Key::F);
     harness.step();
-    harness.hover_at(pos2(700.0, 260.0));
+    hover_plot(&mut harness, 0.6, 0.5);
     harness.step();
     harness.step();
     assert!(save_screenshot(&mut harness, "phase_stacked").exists());
@@ -232,8 +245,6 @@ fn screenshot_phase_stacked() {
 #[test]
 fn screenshot_zoom_selection() {
     let mut harness = captured_traces_harness(Theme::Night);
-    harness.key_press(Key::V);
-    harness.step();
     harness.key_press(Key::F);
     harness.step();
     let rect = harness.state().last_plot_rect().unwrap();
@@ -260,11 +271,13 @@ fn screenshot_zoom_selection() {
 #[test]
 fn screenshot_impulse() {
     let mut harness = captured_traces_harness(Theme::Night);
+    harness.key_press(Key::V);
+    harness.step();
     harness.key_press(Key::I);
     harness.step();
     harness.key_press(Key::F);
     harness.step();
-    harness.hover_at(pos2(560.0, 420.0));
+    hover_plot(&mut harness, 0.5, 0.5);
     harness.step();
     harness.step();
     assert!(save_screenshot(&mut harness, "impulse").exists());
@@ -273,8 +286,6 @@ fn screenshot_impulse() {
 #[test]
 fn screenshot_impulse_stacked_fullscreen_daylight() {
     let mut harness = captured_traces_harness(Theme::Daylight);
-    harness.key_press(Key::V);
-    harness.step();
     harness.key_press(Key::I);
     harness.step();
     harness.key_press(Key::F);

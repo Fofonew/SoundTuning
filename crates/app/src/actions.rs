@@ -31,6 +31,7 @@ pub enum Action {
     ViewMagnitude,
     ViewPhase,
     ViewImpulse,
+    ViewVirtualEq,
     ToggleStackedViews,
     ToggleFullscreen,
     CheckForUpdates,
@@ -39,7 +40,7 @@ pub enum Action {
 }
 
 impl Action {
-    pub const ALL: [Self; 30] = [
+    pub const ALL: [Self; 31] = [
         Self::ToggleMeasurement,
         Self::FindDelay,
         Self::ApplyDelay,
@@ -67,6 +68,7 @@ impl Action {
         Self::ViewMagnitude,
         Self::ViewPhase,
         Self::ViewImpulse,
+        Self::ViewVirtualEq,
         Self::ToggleStackedViews,
         Self::ToggleFullscreen,
         Self::CheckForUpdates,
@@ -129,6 +131,7 @@ impl Action {
             Self::ViewMagnitude => text::ACTION_VIEW_MAGNITUDE,
             Self::ViewPhase => text::ACTION_VIEW_PHASE,
             Self::ViewImpulse => text::ACTION_VIEW_IMPULSE,
+            Self::ViewVirtualEq => text::ACTION_VIEW_VIRTUAL_EQ,
             Self::ToggleStackedViews => text::ACTION_TOGGLE_STACKED_VIEWS,
             Self::ToggleFullscreen => text::ACTION_TOGGLE_FULLSCREEN,
             Self::CheckForUpdates => text::ACTION_CHECK_FOR_UPDATES,
@@ -169,6 +172,7 @@ impl Action {
                 Key::Z,
             )),
             Self::ResetView
+            | Self::ViewVirtualEq
             | Self::CalibrateLatency
             | Self::ExportSession
             | Self::RestartMeasurement

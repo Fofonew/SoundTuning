@@ -26,10 +26,10 @@ pub const KEY_SPACE: &str = "Espace";
 pub const KEY_CTRL: &str = "Ctrl";
 pub const KEY_SHIFT: &str = "Maj";
 
-pub const ACTION_TOGGLE_MEASUREMENT: &str = "Start / Stop (mesure continue)";
-pub const ACTION_FIND_DELAY: &str = "Peak : trouver le délai";
-pub const ACTION_APPLY_DELAY: &str = "Insert : appliquer le délai trouvé";
-pub const ACTION_CAPTURE_TRACE: &str = "Capture : mémoriser une trace";
+pub const ACTION_TOGGLE_MEASUREMENT: &str = "Start / Stop Analysis (mesure continue)";
+pub const ACTION_FIND_DELAY: &str = "Peak : trouver le délai et le reporter dans Delay Offset";
+pub const ACTION_APPLY_DELAY: &str = "Reporter le dernier délai trouvé dans Delay Offset";
+pub const ACTION_CAPTURE_TRACE: &str = "Capture Measurement : mémoriser une trace (overlay)";
 pub const ACTION_TOGGLE_FREEZE: &str = "Freeze / Unfreeze (figer l'affichage)";
 pub const ACTION_RANGE_FULL: &str = "Plage : plein spectre";
 pub const ACTION_RANGE_SUB: &str = "Plage : sub (20–200 Hz)";
@@ -40,9 +40,9 @@ pub const ACTION_TOGGLE_THEME: &str = "Thème Nuit / Plein jour";
 pub const ACTION_OPEN_PALETTE: &str = "Palette de commandes";
 pub const ACTION_UNDO: &str = "Annuler";
 pub const ACTION_REDO: &str = "Rétablir";
-pub const ACTION_TOGGLE_SIDE_PANEL: &str = "Afficher / masquer le panneau latéral";
-pub const ACTION_TOGGLE_GENERATOR: &str = "Pink noise on / off";
-pub const ACTION_CALIBRATE_LATENCY: &str = "Calibrer la latence de la carte";
+pub const ACTION_TOGGLE_SIDE_PANEL: &str = "Afficher / masquer le panneau Measure";
+pub const ACTION_TOGGLE_GENERATOR: &str = "Play Signal (pink noise) on / off";
+pub const ACTION_CALIBRATE_LATENCY: &str = "Calibrate : calibrer la latence de la carte";
 pub const ACTION_ADD_EQ_FILTER: &str = "Ajouter un filtre d'EQ";
 pub const ACTION_EXPORT_SESSION: &str = "Exporter (CSV, filtres)";
 pub const ACTION_RESTART_MEASUREMENT: &str = "Relancer la mesure";
@@ -54,8 +54,8 @@ pub const BUTTON_FREEZE: &str = "Freeze";
 pub const BUTTON_UNFREEZE: &str = "Unfreeze";
 pub const BUTTON_FIND_DELAY: &str = "Peak";
 pub const BUTTON_APPLY_DELAY: &str = "Insert";
-pub const BUTTON_PALETTE: &str = "Commandes";
-pub const BUTTON_AUDIO_SETTINGS: &str = "Audio";
+pub const BUTTON_PALETTE: &str = "Commands";
+pub const BUTTON_AUDIO_SETTINGS: &str = "Tools";
 pub const ACTION_OPEN_AUDIO_SETTINGS: &str = "Réglages audio (entrée, sortie, canaux)";
 pub const AUDIO_SETTINGS_TITLE: &str = "Réglages audio";
 pub const AUDIO_SETTINGS_CLOSE: &str = "Fermer les réglages audio";
@@ -85,7 +85,92 @@ pub const BUTTON_NEXT: &str = "Suivant";
 pub const BUTTON_BACK: &str = "Retour";
 pub const BUTTON_FINISH_WIZARD: &str = "Start";
 pub const BUTTON_SKIP_WIZARD: &str = "Passer";
-pub const BUTTON_TOGGLE_PANEL: &str = "Panneau";
+pub const BUTTON_TOGGLE_PANEL: &str = "Measure";
+
+pub const TAB_MEASURE: &str = "Measure";
+pub const TAB_TOOLS: &str = "Tools";
+pub const SECTION_INPUT: &str = "Input";
+pub const SECTION_OUTPUT: &str = "Output";
+pub const SECTION_PARAMETERS: &str = "Parameters";
+pub const SIGNAL_CHANNEL: &str = "Signal Channel";
+pub const REFERENCE_CHANNEL: &str = "Reference Channel";
+pub const REFERENCE_CHANNEL_OUT: &str = "OUT";
+pub const REFERENCE_CHANNEL_OUT_HINT: &str =
+    "OUT : référence interne (le signal joué par la sortie)";
+pub const CHANNEL_FILE_MODE: &str = "Mode fichier : canaux fixés par le fichier WAV";
+pub const DELAY_OFFSET: &str = "Delay Offset [ms]";
+pub const DELAY_OFFSET_HINT: &str =
+    "Délai appliqué à la référence. Saisie, molette ou glisser ; Peak le trouve, Auto le suit.";
+pub const BUTTON_AUTO: &str = "Auto";
+pub const BUTTON_CALIBRATE_LATENCY: &str = "Calibrate";
+pub const LATENCY_NOT_CALIBRATED: &str = "Latence non calibrée";
+pub const LATENCY_NOT_NEEDED: &str = "Référence rebouclée : pas de calibrage";
+pub const BUTTON_START_ANALYSIS: &str = "Start Analysis";
+pub const BUTTON_STOP_ANALYSIS: &str = "Stop Analysis";
+pub const BUTTON_PLAY_SIGNAL: &str = "Play Signal";
+pub const OUTPUT_SIGNAL: &str = "Signal";
+pub const OUTPUT_PINK_NOISE: &str = "Pink Noise";
+pub const OUTPUT_LEVEL_LABEL: &str = "Niveau du pink noise (dBFS)";
+pub const PLAY_CHANNEL: &str = "Play Channel";
+pub const FFT_SIZE: &str = "FFT Size";
+pub const AVERAGES: &str = "Averages";
+pub const BUTTON_RESET_AVERAGES: &str = "Reset";
+pub const RESET_AVERAGES_HINT: &str = "Reset : repartir d'une moyenne vide";
+pub const BUTTON_CAPTURE_MEASUREMENT: &str = "Capture Measurement";
+pub const TAB_OVERLAYS: &str = "Overlays";
+pub const TAB_LEVELS: &str = "Levels";
+pub const BUTTON_REMOVE: &str = "Remove";
+pub const REMOVE_HINT: &str = "Remove : supprimer les overlays sélectionnés";
+pub const AVERAGE_HINT: &str = "Average : moyenne des overlays sélectionnés (au moins deux)";
+pub const SAVE_HINT: &str = "Save : enregistrer les overlays en CSV";
+pub const OVERLAY_PROPERTIES: &str = "Propriétés";
+pub const OVERLAY_PROPERTIES_GLYPH: &str = "···";
+pub const OVERLAY_SELECT_HINT: &str = "Clic : sélectionner · double-clic : renommer";
+pub const NOTIFY_OVERLAYS_REMOVED: &str = "Overlays supprimés";
+pub const LEVEL_SIGNAL: &str = "Signal";
+pub const LEVEL_REFERENCE: &str = "Reference";
+pub const LEVEL_PEAK: &str = "Peak";
+pub const LEVEL_RMS: &str = "RMS";
+pub const LEVEL_UNIT: &str = "dBFS";
+pub const GROUP_TRANSFER_FUNCTION: &str = "Transfer Function";
+pub const GROUP_EXTERNAL: &str = "External";
+pub const VIEW_VIRTUAL_EQ: &str = "Virtual EQ";
+pub const ACTION_VIEW_VIRTUAL_EQ: &str = "Module Virtual EQ (Delay Analysis, Virtual EQ)";
+pub const FULL_VIEW: &str = "Full View";
+pub const FULL_VIEW_HINT: &str = "Full View : limites par défaut (ou double-clic sur le graphe)";
+pub const DISPLAY_TITLE: &str = "Display";
+pub const SHOW_COHERENCE: &str = "Show Coherence";
+pub const COHERENCE_MASK: &str = "Mask γ²";
+pub const COHERENCE_MASK_HINT: &str =
+    "Seuil de cohérence : les points en dessous ne sont pas tracés";
+pub const SMOOTHING: &str = "Smoothing";
+pub const UNIT: &str = "Unit";
+pub const MODULE_DELAY_ANALYSIS: &str = "Delay Analysis";
+pub const MODULE_VIRTUAL_EQ: &str = "Virtual EQ";
+pub const MOUSE_PEEK: &str = "Peek";
+pub const MOUSE_DRAG: &str = "Drag";
+pub const MOUSE_ZOOM: &str = "Zoom";
+pub const MOUSE_PEEK_HINT: &str = "Peek : lire les valeurs, le glisser ne zoome pas";
+pub const MOUSE_DRAG_HINT: &str = "Drag : glisser pour déplacer le graphe";
+pub const MOUSE_ZOOM_HINT: &str =
+    "Zoom : glisser pour zoomer (largeur = fréquence, hauteur = niveau), double-clic pour revenir";
+pub const MOUSE_BAR_IDLE: &str = "—";
+pub const SETUP_PREFIX: &str = "Setup:";
+pub const SETUP_LIVE_SIGNAL: &str = "Live Signal";
+pub const SETUP_FILE_SIGNAL: &str = "File";
+pub const SETUP_PLAY_REFERENCE: &str = "Play+Reference Signal";
+pub const SETUP_REFERENCE_LOOPBACK: &str = "Reference";
+pub const SETUP_NO_DEVICE: &str = "carte par défaut";
+pub const TOOLS_COLOR_SCHEME: &str = "Color Scheme";
+pub const TOOLS_NIGHT: &str = "Night";
+pub const TOOLS_DAYLIGHT: &str = "Daylight";
+pub const TOOLS_GENERAL: &str = "General";
+pub const TOOLS_CHECK_UPDATES: &str = "Check for Updates";
+pub const ALIGNMENT_DELAY_MS: &str = "Delay [ms]";
+pub const ALIGNMENT_INV_POL: &str = "Inv Pol";
+pub const ALIGNMENT_DELAY_PICKER: &str = "Delay";
+pub const ALIGNMENT_REFERENCE_PICKER: &str = "Reference";
+pub const NOTIFY_DELAY_RESTORED: &str = "Delay Offset rétabli";
 
 pub const STATUS_STOPPED: &str = "Stopped";
 pub const STATUS_WARMING_UP: &str = "Warm-up";
@@ -116,8 +201,8 @@ pub const GENERATOR_OFF: &str = "off";
 pub const TAB_TRACES: &str = "Traces";
 pub const TAB_ALIGNMENT: &str = "Alignment";
 pub const TAB_EQ: &str = "EQ";
-pub const EMPTY_TRACES_TITLE: &str = "Aucune trace";
-pub const EMPTY_TRACES_BODY: &str = "Appuyez sur S pour figer la mesure en cours dans une trace.";
+pub const EMPTY_TRACES_TITLE: &str = "Aucun overlay";
+pub const EMPTY_TRACES_BODY: &str = "Capture Measurement (S) mémorise la mesure en cours.";
 pub const EMPTY_ALIGNMENT_TITLE: &str = "Aligner deux sources";
 pub const EMPTY_ALIGNMENT_BODY: &str =
     "Capturez au moins deux traces (par exemple tête et sub), puis choisissez-les ici.";
@@ -125,7 +210,7 @@ pub const EMPTY_EQ_TITLE: &str = "EQ virtuel";
 pub const EMPTY_EQ_BODY: &str = "Double-cliquez sur le tracé ou appuyez sur E pour ajouter un filtre. Aucun traitement n'est appliqué au son.";
 
 pub const PLOT_EMPTY_TITLE: &str = "Prêt à mesurer";
-pub const PLOT_EMPTY_BODY: &str = "Appuyez sur Espace pour démarrer la mesure continue.";
+pub const PLOT_EMPTY_BODY: &str = "Start Analysis (Espace) démarre la mesure continue.";
 pub const PLOT_WARMING_UP: &str = "Remplissage de la fenêtre d'analyse…";
 pub const COHERENCE_LABEL: &str = "Coherence";
 pub const AXIS_DB: &str = "dB";
@@ -134,18 +219,19 @@ pub const COHERENCE_AXIS_MIN: &str = "0";
 pub const LIVE_TRACE_LABEL: &str = "Live";
 pub const PLOT_ACCESSIBLE_LABEL: &str = "Réponse en fréquence (magnitude) et cohérence";
 pub const PHASE_PLOT_ACCESSIBLE_LABEL: &str = "Tracé de phase";
+pub const DELAY_ANALYSIS_PLOT_LABEL: &str = "Delay Analysis : sommes Pos, Neg, Flat et Custom";
 pub const IMPULSE_PLOT_ACCESSIBLE_LABEL: &str = "Tracé de la réponse impulsionnelle";
 pub const AXIS_DEGREES: &str = "°";
 pub const AXIS_MILLISECONDS: &str = "ms · 0 = délai appliqué";
 pub const AXIS_AMPLITUDE: &str = "×";
-pub const IMPULSE_EMPTY: &str = "Lancez la mesure (Espace) pour afficher la réponse impulsionnelle";
-pub const VIEW_MAGNITUDE: &str = "Magnitude";
-pub const VIEW_PHASE: &str = "Phase";
+pub const IMPULSE_EMPTY: &str = "Start Analysis (Espace) pour afficher la réponse impulsionnelle";
+pub const VIEW_MAGNITUDE: &str = "Mag";
+pub const VIEW_PHASE: &str = "Phs";
 pub const VIEW_IMPULSE: &str = "IR";
 pub const VIEW_IMPULSE_HINT: &str = "Réponse impulsionnelle";
 pub const VIEW_MAIN_LABEL: &str = "View";
 pub const VIEW_UPPER_LABEL: &str = "Top";
-pub const VIEW_STACKED: &str = "Superposer";
+pub const VIEW_STACKED: &str = "Deux graphes";
 pub const PANE_SPLITTER_LABEL: &str = "Séparation des deux vues";
 pub const PANE_SPLITTER_HINT: &str =
     "Glisser pour redimensionner · double-clic : taille par défaut";
@@ -154,11 +240,11 @@ pub const VIEW_EXIT_FULLSCREEN: &str = "Quitter le plein écran";
 pub const IMPULSE_SCALE_LINEAR: &str = "Lin";
 pub const IMPULSE_SCALE_DB: &str = "dB";
 pub const IMPULSE_SCALE_HINT: &str = "Échelle de la réponse impulsionnelle : linéaire ou en dB";
-pub const ACTION_VIEW_MAGNITUDE: &str = "Vue magnitude";
-pub const ACTION_VIEW_PHASE: &str = "Vue phase";
-pub const ACTION_VIEW_IMPULSE: &str = "Vue réponse impulsionnelle (IR)";
-pub const ACTION_TOGGLE_STACKED_VIEWS: &str = "Superposer deux vues";
-pub const ACTION_TOGGLE_FULLSCREEN: &str = "Plein écran (tracés seuls)";
+pub const ACTION_VIEW_MAGNITUDE: &str = "Graphe Mag (magnitude)";
+pub const ACTION_VIEW_PHASE: &str = "Graphe Phs (phase)";
+pub const ACTION_VIEW_IMPULSE: &str = "Graphe IR (réponse impulsionnelle)";
+pub const ACTION_TOGGLE_STACKED_VIEWS: &str = "Un ou deux graphes";
+pub const ACTION_TOGGLE_FULLSCREEN: &str = "Plein écran (graphes seuls)";
 pub const ACTION_CHECK_FOR_UPDATES: &str = "Rechercher les mises à jour";
 pub const ACTION_OPEN_UPDATE_PAGE: &str = "Télécharger la nouvelle version";
 pub const ACTION_DISMISS_UPDATE: &str = "Masquer la nouvelle version";
@@ -214,12 +300,12 @@ pub const WIZARD_PREVIEW_ERROR: &str = "La carte ne peut pas être ouverte";
 pub const NOTIFY_DELAY_FOUND: &str = "Délai trouvé";
 pub const NOTIFY_DELAY_APPLIED: &str = "Délai appliqué";
 pub const NOTIFY_DELAY_DRIFT: &str = "Délai changé";
-pub const NOTIFY_TRACKING_ON: &str = "Track activé (suivi du délai)";
-pub const NOTIFY_TRACKING_OFF: &str = "Track désactivé (suivi du délai)";
-pub const ACTION_TOGGLE_DELAY_TRACKING: &str = "Track : suivi du délai";
+pub const NOTIFY_TRACKING_ON: &str = "Auto activé (suivi du délai)";
+pub const NOTIFY_TRACKING_OFF: &str = "Auto désactivé (suivi du délai)";
+pub const ACTION_TOGGLE_DELAY_TRACKING: &str = "Auto : suivi continu du délai";
 pub const ACTION_NUDGE_DELAY_DOWN: &str = "Délai −0,01 ms";
 pub const ACTION_NUDGE_DELAY_UP: &str = "Délai +0,01 ms";
-pub const BUTTON_TRACKING: &str = "Track";
+pub const BUTTON_TRACKING: &str = "Auto";
 pub const TRACKING_ON_GLYPH: &str = "●";
 pub const TRACKING_OFF_GLYPH: &str = "○";
 pub const BUTTON_NUDGE_DOWN: &str = "−";
@@ -233,19 +319,19 @@ pub const NOTIFY_LATENCY_CALIBRATED: &str = "Latence de la carte calibrée";
 pub const ERROR_SOURCE_UNAVAILABLE: &str = "source audio indisponible";
 
 pub const CSV_FREQUENCY_HEADER: &str = "Fréquence (Hz)";
-pub const TRACES_AVERAGE: &str = "Moyenne des sélectionnées";
-pub const TRACES_EXPORT_CSV: &str = "Exporter CSV";
+pub const TRACES_AVERAGE: &str = "Average";
+pub const TRACES_EXPORT_CSV: &str = "Save";
 pub const TRACE_DELETE: &str = "Supprimer la trace";
 pub const TRACE_DELETE_GLYPH: &str = "×";
 pub const NOTIFY_TRACE_DELETED: &str = "Trace supprimée";
 pub const TRACE_TOGGLE_VISIBLE: &str = "Afficher / masquer";
-pub const TRACE_VISIBLE_SHORT: &str = "Visible";
+pub const TRACE_VISIBLE_SHORT: &str = "V";
 pub const TRACE_SELECT: &str = "Sélectionner pour la moyenne";
 pub const TRACE_SELECT_SHORT: &str = "Sél.";
 pub const TRACE_COLOR: &str = "Changer la couleur";
-pub const TRACE_OFFSET: &str = "Décalage";
+pub const TRACE_OFFSET: &str = "Offset";
 pub const TRACE_SMOOTHING: &str = "Définition (lissage) de la trace";
-pub const TRACE_SMOOTHING_SHORT: &str = "Définition";
+pub const TRACE_SMOOTHING_SHORT: &str = "Smoothing";
 pub const TRACE_SMOOTHING_FIXED: &str =
     "Trace capturée par une version précédente : définition fixe";
 pub const TRACE_RENAME_HINT: &str = "Double-clic ou F2 pour renommer, Échap pour annuler";
@@ -287,13 +373,14 @@ pub const ALIGNMENT_CHOICE_NEGATIVE: &str = "Neg";
 pub const ALIGNMENT_CHOICE_FLAT: &str = "Flat";
 pub const ALIGNMENT_CHOICE_CUSTOM: &str = "Custom";
 pub const ALIGNMENT_UNITS: &str =
-    "Delay en ms (> 0 : retarder la trace Delay) · Pol de la trace Delay";
+    "Delay [ms] > 0 : retarder la trace Delay · Inv Pol : inverser la trace Delay";
 pub const ALIGNMENT_POLARITY_ROW: &str = "Pol";
 pub const ALIGNMENT_POLARITY_NORMAL: &str = "+";
 pub const ALIGNMENT_POLARITY_INVERTED: &str = "−";
 pub const ALIGNMENT_CUSTOM_DELAY_LABEL: &str = "Delay Custom (ms, > 0 : retarder la trace Delay)";
 pub const ALIGNMENT_CUSTOM_POLARITY_LABEL: &str = "Polarité inversée (Custom)";
 pub const ALIGNMENT_APPLIED: &str = "Réglage à recopier dans le processeur";
+pub const ALIGNMENT_APPLIED_SHORT: &str = "Processeur";
 pub const ALIGNMENT_NO_DELAY: &str = "Aucun délai";
 pub const ALIGNMENT_NO_SOLUTION: &str = "Pas de Pos / Neg / Flat : il faut la phase des deux traces dans la plage (une moyenne de traces n'en a pas). Custom reste disponible.";
 pub const ALIGNMENT_SUM_SHOW_HINT: &str = "Clic : afficher sa somme Reference + Delay sur le tracé";
@@ -932,6 +1019,103 @@ pub fn wizard_step(index: usize, total: usize) -> String {
     format!("Étape {index} sur {total}")
 }
 
+pub fn display_option_label(option: &str) -> String {
+    format!("{DISPLAY_TITLE} : {option}")
+}
+
+pub fn version_label(version: impl std::fmt::Display) -> String {
+    format!("{APP_NAME} {version}")
+}
+
+pub fn calibrated_latency(milliseconds: f64) -> String {
+    format!("Calibrated: {}", format_milliseconds(milliseconds))
+}
+
+pub fn peak_applied(milliseconds: f64) -> String {
+    format!("{DELAY_OFFSET} : {}", format_milliseconds(milliseconds))
+}
+
+pub fn delay_restored(milliseconds: f64) -> String {
+    format!(
+        "{NOTIFY_DELAY_RESTORED} : {}",
+        format_milliseconds(milliseconds)
+    )
+}
+
+pub fn overlays_removed(count: usize) -> String {
+    format!("{NOTIFY_OVERLAYS_REMOVED} : {count}")
+}
+
+pub fn channel_number(index: usize) -> String {
+    (index + 1).to_string()
+}
+
+pub fn signal_channel_label(index: usize) -> String {
+    format!("{SIGNAL_CHANNEL} {}", index + 1)
+}
+
+pub fn reference_channel_label(index: usize) -> String {
+    format!("{REFERENCE_CHANNEL} {}", index + 1)
+}
+
+pub fn play_channel_label(index: usize) -> String {
+    format!("{PLAY_CHANNEL} {}", index + 1)
+}
+
+pub fn fft_size_choice(length: usize, sample_rate_hz: u32) -> String {
+    let rate = f64::from(sample_rate_hz.max(1));
+    let duration_s = length as f64 / rate;
+    format!(
+        "{} · {} s · {} Hz",
+        format_fft_length(length),
+        format_decimal(duration_s, 2),
+        format_decimal(rate / length.max(1) as f64, 2)
+    )
+}
+
+pub fn averages_choice(time_constant_s: Option<f64>) -> String {
+    time_constant_s.map_or_else(
+        || format!("{AVERAGING_INFINITE} (Inf)"),
+        |seconds| format!("Exp {}", format_seconds(seconds)),
+    )
+}
+
+pub fn setup_line(
+    file_mode: bool,
+    source: Option<&str>,
+    reference: Option<&str>,
+    generator: Option<(f32, &str)>,
+) -> String {
+    let signal = if file_mode {
+        SETUP_FILE_SIGNAL
+    } else {
+        SETUP_LIVE_SIGNAL
+    };
+    let mut parts = vec![format!(
+        "{SETUP_PREFIX} {signal} {}",
+        source.unwrap_or(SETUP_NO_DEVICE)
+    )];
+    if let Some(reference) = reference {
+        parts.push(format!("{SETUP_REFERENCE_LOOPBACK}: {reference}"));
+    }
+    if let Some((level_dbfs, outputs)) = generator {
+        parts.push(format!(
+            "{SETUP_PLAY_REFERENCE}: {OUTPUT_PINK_NOISE} {} on {outputs}",
+            format_dbfs(level_dbfs)
+        ));
+    }
+    parts.join(" / ")
+}
+
+pub fn output_channels(indices: &[usize]) -> String {
+    let numbers: Vec<String> = indices.iter().map(|index| channel_number(*index)).collect();
+    format!("out {}", numbers.join("+"))
+}
+
+pub fn readout_with_trace(readout: &str, trace: &str, value: &str) -> String {
+    format!("{readout}    {trace} : {value}")
+}
+
 pub fn crosshair_readout(frequency_hz: f64, level_db: f64) -> String {
     format!(
         "{} · {}",
@@ -1000,6 +1184,31 @@ mod tests {
             ),
             "Neg : −3,25 ms · Pol −"
         );
+    }
+
+    #[test]
+    fn setup_line_reads_like_the_systune_status_bar() {
+        assert_eq!(
+            setup_line(
+                false,
+                Some("UAX 2-2 · 48,0 kHz"),
+                None,
+                Some((-20.0, "out 1+2"))
+            ),
+            "Setup: Live Signal UAX 2-2 · 48,0 kHz / Play+Reference Signal: Pink Noise −20,0 dBFS on out 1+2"
+        );
+        assert_eq!(
+            setup_line(
+                true,
+                Some("Fichier a.wav · 48,0 kHz"),
+                Some("entrée 2"),
+                None
+            ),
+            "Setup: File Fichier a.wav · 48,0 kHz / Reference: entrée 2"
+        );
+        assert_eq!(fft_size_choice(32_768, 48_000), "32k · 0,68 s · 1,46 Hz");
+        assert_eq!(averages_choice(None), "∞ (Inf)");
+        assert_eq!(averages_choice(Some(2.0)), "Exp 2 s");
     }
 
     #[test]

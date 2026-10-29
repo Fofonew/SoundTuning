@@ -80,6 +80,15 @@ Cocher, dater et noter les observations. Matériel de référence : UAX 2-2, mic
 - [ ] Windows : réduire la fenêtre (bouton « Réduire ») pendant une mesure, attendre 30 s, la restaurer : l'affichage reprend à la bonne taille, sans gel ni zone noire. Si le problème persiste : relancer avec `set WGPU_BACKEND=gl` puis `soundtuning.exe` et noter le résultat.
 - [ ] Redimensionner jusqu'à la taille minimale (1024 × 600 points) : aucun chevauchement.
 
+## Interface façon SysTune (D-051, D-052)
+- [ ] Fenêtre en cinq zones lisible à 1 m en régie (Nuit) et au soleil (Plein jour) : panneau Measure à gauche, deux graphes avec Display, barre souris, barre d'état « Setup: … ».
+- [ ] Signal Channel, Reference Channel (OUT / numéro) et Play Channel : un clic change le canal et relance la mesure sur la vraie carte ; les vu-mètres de l'onglet Levels suivent.
+- [ ] Peak : le délai trouvé s'affiche dans Delay Offset ; Cmd/Ctrl+Z revient à l'ancien délai ; Auto suit le délai en continu.
+- [ ] Delay Offset : saisie au clavier, glisser et molette, au centième de ms.
+- [ ] Peek / Drag / Zoom : comportement du glisser gauche dans chaque mode ; clic droit = déplacer dans tous les modes.
+- [ ] Virtual EQ › Delay Analysis sur un vrai couple tête / sub : graphe des quatre sommes, colonnes Pos / Neg / Flat / Custom, réglage à recopier.
+- [ ] Fenêtre 1280 × 720 et 1024 × 600 sous Windows (125–150 %) : panneau Measure lisible, liste Overlays utilisable, rien de coupé dans la barre d'état.
+
 ## Packaging
 
 - [ ] Télécharger l'artefact CI `soundtuning-macos-latest` (`SoundTuning-macos.zip`), décompresser : l'application n'est pas signée, macOS la met en quarantaine (« endommagée ») ; l'ouvrir par clic droit → Ouvrir, ou `xattr -cr SoundTuning.app`. Au premier démarrage de la mesure, macOS demande l'accès au micro avec le texte de `NSMicrophoneUsageDescription`.
