@@ -91,7 +91,7 @@ Cocher, dater et noter les observations. Matériel de référence : UAX 2-2, mic
 
 ## Packaging
 
-- [ ] Télécharger l'artefact CI `soundtuning-macos-latest` (`SoundTuning-macos.zip`), décompresser : l'application n'est pas signée, macOS la met en quarantaine (« endommagée ») ; l'ouvrir par clic droit → Ouvrir, ou `xattr -cr SoundTuning.app`. Au premier démarrage de la mesure, macOS demande l'accès au micro avec le texte de `NSMicrophoneUsageDescription`.
+- [ ] Télécharger l'artefact CI `soundtuning-macos-latest` (`SoundTuning-macos.zip`), décompresser : l'application est signée ad hoc (non notariée) ; macOS ne doit plus dire « endommagée » mais « Apple n'a pas pu vérifier… » : Réglages Système › Confidentialité et sécurité › « Ouvrir quand même ». Au premier démarrage de la mesure, macOS demande l'accès au micro avec le texte de `NSMicrophoneUsageDescription`.
 - [ ] Windows : installeur `soundtuning_0.1.0_x64-setup.exe` (artefact `soundtuning-windows-latest`, compilé avec ASIO), voir `docs/WINDOWS.md`.
 
 ## Performance

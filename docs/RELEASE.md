@@ -17,6 +17,8 @@ Pré-requis : dépôt GitHub public (sinon le logiciel installé ne voit pas les
    - `SoundTuning-X.Y.Z-windows-x64-setup.exe` (installeur Windows, avec ASIO).
 5. Au lancement suivant, chaque SoundTuning connecté à internet affiche « SoundTuning X.Y.Z est disponible » avec un bouton « Télécharger ». Hors connexion, rien ne s'affiche et le logiciel fonctionne normalement.
 
-Installer la mise à jour : Windows, lancer le nouvel installeur (il remplace l'ancienne version) ; macOS, remplacer `SoundTuning.app` dans Applications. Les réglages et la session sont conservés (dossier de configuration de l'utilisateur).
+Installer la mise à jour : Windows, lancer le nouvel installeur (il remplace l'ancienne version) ; macOS, remplacer `SoundTuning.app` dans Applications.
+
+Première ouverture sur macOS : l'application est signée ad hoc mais pas notariée (pas de compte développeur Apple). macOS affiche « Apple n'a pas pu vérifier… » : Réglages Système › Confidentialité et sécurité › « Ouvrir quand même », ou clic droit › Ouvrir. Pour une version antérieure à 0.2.3 (paquet non signé, message « endommagée ») : `xattr -dr com.apple.quarantine /Applications/SoundTuning.app` dans le Terminal. Les réglages et la session sont conservés (dossier de configuration de l'utilisateur).
 
 En cas d'échec du workflow : supprimer le tag (`git push --delete origin vX.Y.Z` puis `git tag -d vX.Y.Z`), corriger, recommencer avec le même numéro.

@@ -395,3 +395,8 @@ Non corrigé, justifié :
     - l'espacement de 2 px entre boutons accolés est un jeton nommé (`size::SEGMENT_GAP`).
   - Assumé : changer de canal relance la mesure, comme Appliquer dans les réglages audio. Un flux `cpal` ne change pas de canal à chaud ; le relancer est le seul moyen sûr, et cela dure moins d'une seconde.
   - Non changé : la clé du cache des sommes clone l'état d'alignement à chaque image (quelques dizaines d'octets) ; un compteur de révision serait plus sobre, sans gain mesurable (bench `ui_frame`).
+
+### D-053 — Application macOS signée ad hoc (signalé par l'utilisateur, 2026-11-08)
+- Constat : la v0.2.2 téléchargée s'ouvre avec « l'application est endommagée ». Seul l'exécutable portait la signature ad hoc posée par l'éditeur de liens ; le paquet `.app` n'était pas scellé (`codesign --verify` : « code has no resources but signature indicates they must be present »). Avec l'attribut de quarantaine d'un téléchargement, Gatekeeper refuse un paquet dont la signature est invalide et le dit « endommagé ».
+- Correction : la CI signe tout le paquet (`codesign --force --deep --sign -`) puis le vérifie (`codesign --verify --deep --strict`) avant de le zipper. Sans compte développeur Apple, pas de notarisation : macOS demande une fois « Ouvrir quand même » (procédure dans `docs/RELEASE.md`).
+- Contournement pour les versions déjà publiées : `xattr -dr com.apple.quarantine /Applications/SoundTuning.app`.

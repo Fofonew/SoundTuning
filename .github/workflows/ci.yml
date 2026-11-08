@@ -80,7 +80,10 @@ jobs:
       - run: cargo packager --release --formats ${{ matrix.formats }}
         working-directory: crates/app
       - if: runner.os == 'macOS'
-        run: ditto -c -k --keepParent target/packages/SoundTuning.app target/packages/SoundTuning-macos.zip
+        run: |
+          codesign --force --deep --sign - target/packages/SoundTuning.app
+          codesign --verify --deep --strict --verbose=2 target/packages/SoundTuning.app
+          ditto -c -k --keepParent target/packages/SoundTuning.app target/packages/SoundTuning-macos.zip
       - uses: actions/upload-artifact@v4
         with:
           name: soundtuning-${{ matrix.os }}
