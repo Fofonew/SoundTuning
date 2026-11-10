@@ -92,6 +92,7 @@ Cocher, dater et noter les observations. Matériel de référence : UAX 2-2, mic
 ## Packaging
 
 - [ ] Télécharger l'artefact CI `soundtuning-macos-latest` (`SoundTuning-macos.zip`), décompresser : l'application est signée ad hoc (non notariée) ; macOS ne doit plus dire « endommagée » mais « Apple n'a pas pu vérifier… » : Réglages Système › Confidentialité et sécurité › « Ouvrir quand même ». Au premier démarrage de la mesure, macOS demande l'accès au micro avec le texte de `NSMicrophoneUsageDescription`.
+- [ ] Icône (D-054) : le logo « Courbe » s'affiche dans le Finder, le Dock et ⌘-Tab sur macOS ; sous Windows sur l'installeur, la fenêtre et la barre des tâches (l'exe dans l'Explorateur garde l'icône par défaut, D-054).
 - [ ] Windows : installeur `soundtuning_0.1.0_x64-setup.exe` (artefact `soundtuning-windows-latest`, compilé avec ASIO), voir `docs/WINDOWS.md`.
 
 ## Performance

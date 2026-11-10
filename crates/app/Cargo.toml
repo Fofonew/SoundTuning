@@ -54,7 +54,11 @@ authors = ["Dimitri"]
 out-dir = "../../target/packages"
 binaries-dir = "../../target/release"
 binaries = [{ path = "soundtuning", main = true }]
+icons = ["assets/icon/SoundTuning.icns", "assets/icon/SoundTuning.ico"]
 
 [package.metadata.packager.macos]
 info-plist-path = "packaging/macos/Info.plist"
 minimum-system-version = "11.0"
+
+[package.metadata.packager.nsis]
+installer-icon = "assets/icon/SoundTuning.ico"

@@ -22,6 +22,7 @@ use crate::measurement::{FilePacing, SourceSpec};
 
 const INITIAL_WINDOW_SIZE: [f32; 2] = [1440.0, 900.0];
 const MIN_WINDOW_SIZE: [f32; 2] = [1024.0, 600.0];
+const WINDOW_ICON_PNG: &[u8] = include_bytes!("../assets/icon/soundtuning-256.png");
 
 pub fn run() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
@@ -46,11 +47,16 @@ fn run_window(input_file: Option<std::path::PathBuf>) -> anyhow::Result<()> {
         };
         options.start_measurement = true;
     }
+    let mut viewport = eframe::egui::ViewportBuilder::default()
+        .with_title(text::APP_NAME)
+        .with_inner_size(INITIAL_WINDOW_SIZE)
+        .with_min_inner_size(MIN_WINDOW_SIZE);
+    match eframe::icon_data::from_png_bytes(WINDOW_ICON_PNG) {
+        Ok(icon) => viewport = viewport.with_icon(icon),
+        Err(error) => tracing::warn!("window icon not loaded: {error}"),
+    }
     let native_options = eframe::NativeOptions {
-        viewport: eframe::egui::ViewportBuilder::default()
-            .with_title(text::APP_NAME)
-            .with_inner_size(INITIAL_WINDOW_SIZE)
-            .with_min_inner_size(MIN_WINDOW_SIZE),
+        viewport,
         wgpu_options: wgpu_options(),
         ..eframe::NativeOptions::default()
     };
@@ -77,4 +83,22 @@ fn wgpu_options() -> eframe::egui_wgpu::WgpuConfiguration {
         setup.instance_descriptor.backends = eframe::wgpu::Backends::DX12;
     }
     options
+}
+
+#[cfg(test)]
+mod tests {
+    use super::WINDOW_ICON_PNG;
+
+    const WINDOW_ICON_SIDE_PX: u32 = 256;
+
+    #[test]
+    fn window_icon_decodes_to_square_rgba() {
+        let icon = eframe::icon_data::from_png_bytes(WINDOW_ICON_PNG).expect("icon decodes");
+        assert_eq!(icon.width, WINDOW_ICON_SIDE_PX);
+        assert_eq!(icon.height, WINDOW_ICON_SIDE_PX);
+        assert_eq!(
+            icon.rgba.len(),
+            (WINDOW_ICON_SIDE_PX * WINDOW_ICON_SIDE_PX * 4) as usize
+        );
+    }
 }
