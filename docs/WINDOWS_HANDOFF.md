@@ -36,7 +36,11 @@ Carte son de l'utilisateur : Tascam UX2 (nom Windows « UX2-2 »), pilotes WASAP
 
 ## Tâches à faire sur le PC
 
-### 1. Liste des périphériques et détection « même carte »
+### ~~1. Liste des périphériques et détection « même carte »~~ — fait le 2026-11-23 (D-062)
+
+La carte de l'utilisateur est une **Swissonic UA-2X2** (pas une Tascam), sur le pilote générique de Windows, sans pilote ASIO. Noms WASAPI : « Ligne (UA-2X2) » (entrée, 44,1 kHz seulement) et « Haut-parleurs (UA-2X2) » (sortie). Même carte reconnue (`uses_separate_clocks=false`), test unitaire ajouté. Seuls pilotes ASIO présents sur le PC : Ableton Move et Ableton Push. La tâche 2 demande donc d'abord un pilote ASIO pour la carte (voir D-062).
+
+Texte d'origine de la tâche 1 :
 
 - Lancer `soundtuning devices` (ou `cargo run --release -p app --features asio -- devices`) et copier la sortie : identifiants, noms, pilotes, canaux.
 - Vérifier que l'UX2 apparaît une fois en WASAPI (entrée et sortie, deux points d'accès) et une fois en ASIO.

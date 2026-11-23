@@ -256,6 +256,22 @@ mod tests {
     }
 
     #[test]
+    fn swissonic_endpoints_seen_on_windows_share_hardware() {
+        assert!(shares_hardware(
+            Some("wasapi:{0.0.1.00000000}.{8e6fca5e-02bb-4ef0-b450-0f682e90d41b}"),
+            "Ligne (UA-2X2)",
+            Some("wasapi:{0.0.0.00000000}.{19bcb41e-68f0-41f0-8ddd-aa03f1dba757}"),
+            "Haut-parleurs (UA-2X2)",
+        ));
+        assert!(!shares_hardware(
+            Some("wasapi:{0.0.1.00000000}.{8e6fca5e-02bb-4ef0-b450-0f682e90d41b}"),
+            "Ligne (UA-2X2)",
+            Some("wasapi:{0.0.0.00000000}.{4dccf91f-acde-461b-b177-f798962ccb7f}"),
+            "Haut-parleurs (PRO X 2 LIGHTSPEED)",
+        ));
+    }
+
+    #[test]
     fn the_same_device_id_shares_hardware() {
         assert!(shares_hardware(
             Some("coreaudio:uax"),

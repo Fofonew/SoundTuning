@@ -51,6 +51,8 @@ Vérifié automatiquement :
 - Benchs (médianes) : `engine_update` 0,82 ms, `delay_search` 0,91 ms, `plot_frame_prep` 0,087 ms, `optimal_alignment` 2,63 ms, `ui_frame_cpu_frozen` 0,35–0,48 ms : dans les budgets.
 - `soundtuning.exe devices` : 11 périphériques WASAPI listés (Realtek, casque, Voicemeeter, NVIDIA HDMI…).
 - Mode fichier (`--input-file`, WAV synthétique 48 kHz) : fenêtre prête en 0,47 s ; mesure, délai trouvé.
+- Carte branchée : Swissonic UA-2X2 (pilote générique de Windows, sans ASIO). Flux WASAPI réels ouverts avec `record` (rebouclée et interne), fréquence adaptée à 44,1 kHz, même carte reconnue (D-062).
+- `soundtuning.exe` n'a plus besoin du Visual C++ Redistributable : runtime intégré (D-062).
 - Corrigé pendant la session : fenêtre de console au lancement (D-059), icône et nom du `.exe` (D-059), interface redessinée à 165 images/s et CPU à 20 % (D-060 : plafond 60 fps, option 30 fps, ≈ 8,6 % en mode fichier). Ajouté : vu-mètre dans les boutons de canal (D-061).
 
 ## Procédure de test (à cocher sur le PC)
