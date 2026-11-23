@@ -64,6 +64,7 @@ fn harness(path: &std::path::Path) -> Harness<'static, SoundTuningApp> {
         }),
         start_measurement: true,
         updates: UpdateSource::Offline,
+        pace_frames: false,
     };
     let mut harness = Harness::builder()
         .with_size(egui::vec2(WINDOW[0], WINDOW[1]))

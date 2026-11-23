@@ -10,8 +10,9 @@ use crate::design::Palette;
 use crate::design::fonts;
 use crate::design::tokens::{radius, size, spacing, stroke, text_size};
 use crate::design::widgets::{
-    Emphasis, MeterReading, caption_cell, confidence_segments, field_caption, section_header,
-    sized_action_button, spin_label, tab_strip, toggle_button,
+    Emphasis, MeterReading, caption_cell, confidence_segments, field_caption,
+    metered_toggle_button, section_header, sized_action_button, spin_label, tab_strip,
+    toggle_button,
 };
 use crate::session::Session;
 use crate::text;
@@ -213,6 +214,7 @@ fn channel_buttons(
     is_selected: impl Fn(usize) -> bool,
     label: impl Fn(usize) -> String,
     enabled: bool,
+    selected_meter: Option<MeterReading>,
 ) -> Option<usize> {
     let mut clicked = None;
     let fits = count as f32 * (CHANNEL_BUTTON_WIDTH + size::SEGMENT_GAP) <= ui.available_width();
@@ -236,14 +238,16 @@ fn channel_buttons(
             return;
         }
         for index in 0..count {
+            let selected = is_selected(index);
             let response = ui
                 .add_enabled_ui(enabled, |ui| {
-                    toggle_button(
+                    metered_toggle_button(
                         ui,
                         palette,
                         &text::channel_number(index),
-                        is_selected(index),
+                        selected,
                         Some(CHANNEL_BUTTON_WIDTH),
+                        selected_meter.filter(|_| selected),
                     )
                 })
                 .inner;
@@ -281,6 +285,7 @@ fn input_section(
                 |index| index == measurement_channel,
                 text::signal_channel_label,
                 editable,
+                Some(model.measurement_meter),
             );
         },
     );
@@ -370,7 +375,14 @@ fn input_section(
         let internal = matches!(model.stream.reference, ReferenceMode::Internal);
         let out = ui
             .add_enabled_ui(editable, |ui| {
-                toggle_button(ui, palette, text::REFERENCE_CHANNEL_OUT, internal, None)
+                metered_toggle_button(
+                    ui,
+                    palette,
+                    text::REFERENCE_CHANNEL_OUT,
+                    internal,
+                    None,
+                    internal.then_some(model.reference_meter),
+                )
             })
             .inner
             .on_hover_text(if editable {
@@ -396,6 +408,7 @@ fn input_section(
             |index| loopback == Some(index),
             text::reference_channel_label,
             editable,
+            Some(model.reference_meter),
         ) && loopback != Some(index)
         {
             let mut stream = model.stream.clone();
@@ -680,6 +693,7 @@ fn output_section(
                 |index| selected.contains(&index),
                 text::play_channel_label,
                 editable,
+                None,
             ) {
                 let mut stream = model.stream.clone();
                 let channels = &mut stream.generator.output_channel_indices;

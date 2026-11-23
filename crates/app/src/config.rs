@@ -74,6 +74,28 @@ impl StoredAnalysis {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum FrameRateCap {
+    #[default]
+    Sixty,
+    Thirty,
+}
+
+impl FrameRateCap {
+    pub const ALL: [Self; 2] = [Self::Sixty, Self::Thirty];
+
+    pub fn frames_per_second(self) -> u32 {
+        match self {
+            Self::Sixty => 60,
+            Self::Thirty => 30,
+        }
+    }
+
+    pub fn frame_interval(self) -> std::time::Duration {
+        std::time::Duration::from_secs(1) / self.frames_per_second()
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct AppConfig {
@@ -89,6 +111,7 @@ pub struct AppConfig {
     pub upper_pane_fraction: f32,
     #[serde(default = "legacy_config_version")]
     pub config_version: u32,
+    pub frame_rate_cap: FrameRateCap,
 }
 
 fn clock_warning_key(route: &AudioRoute) -> String {
@@ -126,6 +149,7 @@ impl Default for AppConfig {
             plot_layout: PlotLayout::default(),
             upper_pane_fraction: DEFAULT_UPPER_PANE_FRACTION,
             config_version: CURRENT_CONFIG_VERSION,
+            frame_rate_cap: FrameRateCap::default(),
         }
     }
 }
@@ -416,5 +440,27 @@ mod tests {
         assert_eq!(config.theme, Theme::Daylight);
         assert!(!config.wizard_completed);
         assert_eq!(config.stream.sample_rate_hz, 48_000);
+        assert_eq!(config.frame_rate_cap, FrameRateCap::Sixty);
+    }
+
+    #[test]
+    fn frame_rate_caps_never_exceed_sixty_frames_per_second() {
+        let fastest = std::time::Duration::from_secs(1) / 60;
+        for cap in FrameRateCap::ALL {
+            assert!(cap.frames_per_second() <= 60);
+            assert!(cap.frame_interval() >= fastest);
+        }
+        assert_eq!(FrameRateCap::default(), FrameRateCap::Sixty);
+    }
+
+    #[test]
+    fn frame_rate_cap_survives_a_json_round_trip() {
+        let config = AppConfig {
+            frame_rate_cap: FrameRateCap::Thirty,
+            ..AppConfig::default()
+        };
+        let json = serde_json::to_string(&config).unwrap();
+        let restored: AppConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(restored.frame_rate_cap, FrameRateCap::Thirty);
     }
 }

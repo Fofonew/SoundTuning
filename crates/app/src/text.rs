@@ -163,6 +163,12 @@ pub const TOOLS_NIGHT: &str = "Night";
 pub const TOOLS_DAYLIGHT: &str = "Daylight";
 pub const TOOLS_GENERAL: &str = "General";
 pub const TOOLS_CHECK_UPDATES: &str = "Check for Updates";
+pub const TOOLS_FRAME_RATE: &str = "Frame Rate";
+pub const TOOLS_FRAME_RATE_HELP: &str = "Cadence d'affichage maximale. 30 fps soulage les ordinateurs peu puissants ; la mesure et sa précision ne changent pas.";
+
+pub fn frame_rate_label(frames_per_second: u32) -> String {
+    format!("{frames_per_second} fps")
+}
 pub const ALIGNMENT_DELAY_MS: &str = "Delay [ms]";
 pub const ALIGNMENT_INV_POL: &str = "Inv Pol";
 pub const ALIGNMENT_DELAY_PICKER: &str = "Delay";

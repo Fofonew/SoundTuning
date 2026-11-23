@@ -319,6 +319,39 @@ fn threaded_engine_publishes_snapshots_from_a_file_source() {
     drop(engine);
 }
 
+#[test]
+fn threaded_engine_notifies_the_listener_after_each_published_snapshot() {
+    let mut noise = NoiseSource::new(78);
+    let signal = noise.pink_signal(48_000);
+    let recording = Arc::new(StereoRecording {
+        sample_rate_hz: SAMPLE_RATE_HZ,
+        frames: stereo_frames(&signal, &signal),
+    });
+    let notifications = Arc::new(std::sync::atomic::AtomicU64::new(0));
+    let counter = Arc::clone(&notifications);
+    let listener: engine::SnapshotListener = Arc::new(move || {
+        counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    });
+    let mut engine = EngineHandle::spawn_with_listener(
+        Box::new(RecordingCursor::new(recording, true)),
+        EngineConfig::default(),
+        Arc::new(DisplayGrid::default()),
+        Some(listener),
+    )
+    .unwrap();
+    let started = Instant::now();
+    loop {
+        let sequence = engine.latest_snapshot().sequence;
+        let notified = notifications.load(std::sync::atomic::Ordering::Relaxed);
+        if sequence > 5 && notified >= sequence {
+            break;
+        }
+        assert!(started.elapsed() < Duration::from_secs(20), "no snapshot");
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    drop(engine);
+}
+
 fn core_with_policy(policy: DelayPolicy) -> (MeasurementCore, DelayEstimator) {
     let core = MeasurementCore::new(
         SAMPLE_RATE_HZ,

@@ -414,6 +414,37 @@ pub struct MeterReading {
 
 pub const METER_FLOOR_DBFS: f32 = -60.0;
 const METER_WARNING_DBFS: f32 = -6.0;
+const BUTTON_METER_FILL_OPACITY: f32 = 0.5;
+const BUTTON_METER_INSET: f32 = 2.0;
+
+pub fn meter_fraction(dbfs: f32) -> f32 {
+    ((dbfs - METER_FLOOR_DBFS) / -METER_FLOOR_DBFS).clamp(0.0, 1.0)
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MeterZone {
+    Normal,
+    NearClipping,
+    Clipping,
+}
+
+pub fn meter_zone(reading: MeterReading) -> MeterZone {
+    if reading.clipped {
+        MeterZone::Clipping
+    } else if reading.peak_dbfs > METER_WARNING_DBFS {
+        MeterZone::NearClipping
+    } else {
+        MeterZone::Normal
+    }
+}
+
+pub fn meter_color(palette: &Palette, reading: MeterReading) -> Color32 {
+    match meter_zone(reading) {
+        MeterZone::Clipping => palette.danger,
+        MeterZone::NearClipping => palette.warning,
+        MeterZone::Normal => palette.success,
+    }
+}
 
 pub fn level_meter(ui: &mut Ui, palette: &Palette, label: &str, reading: MeterReading) {
     let label_galley =
@@ -452,16 +483,9 @@ pub fn level_meter(ui: &mut Ui, palette: &Palette, label: &str, reading: MeterRe
         vec2(total_width, size::METER_HEIGHT),
     );
     painter.rect_filled(bar, CornerRadius::same(2), palette.surface_hover);
-    let fraction = |dbfs: f32| ((dbfs - METER_FLOOR_DBFS) / -METER_FLOOR_DBFS).clamp(0.0, 1.0);
-    let rms_width = bar.width() * fraction(reading.rms_dbfs);
-    let peak_x = bar.left() + bar.width() * fraction(reading.peak_dbfs);
-    let fill_color = if reading.clipped {
-        palette.danger
-    } else if reading.peak_dbfs > METER_WARNING_DBFS {
-        palette.warning
-    } else {
-        palette.success
-    };
+    let rms_width = bar.width() * meter_fraction(reading.rms_dbfs);
+    let peak_x = bar.left() + bar.width() * meter_fraction(reading.peak_dbfs);
+    let fill_color = meter_color(palette, reading);
     painter.rect_filled(
         Rect::from_min_size(bar.left_top(), vec2(rms_width, bar.height())),
         CornerRadius::same(2),
@@ -554,6 +578,17 @@ pub fn toggle_button(
     selected: bool,
     width: Option<f32>,
 ) -> Response {
+    metered_toggle_button(ui, palette, label, selected, width, None)
+}
+
+pub fn metered_toggle_button(
+    ui: &mut Ui,
+    palette: &Palette,
+    label: &str,
+    selected: bool,
+    width: Option<f32>,
+    meter: Option<MeterReading>,
+) -> Response {
     let width = width.unwrap_or_else(|| toggle_button_width(ui, label));
     let (rect, response) =
         ui.allocate_exact_size(vec2(width, size::MIN_CLICK_HEIGHT), Sense::click());
@@ -567,6 +602,11 @@ pub fn toggle_button(
         } else {
             (palette.surface_raised, palette.border)
         };
+        let border = match meter.map(meter_zone) {
+            Some(MeterZone::Clipping) => palette.danger,
+            Some(MeterZone::NearClipping) => palette.warning,
+            Some(MeterZone::Normal) | None => border,
+        };
         let painter = ui.painter();
         painter.rect(
             rect,
@@ -575,6 +615,29 @@ pub fn toggle_button(
             Stroke::new(stroke::BORDER, border),
             StrokeKind::Inside,
         );
+        if let Some(reading) = meter {
+            let track = rect.shrink(BUTTON_METER_INSET);
+            let color = meter_color(palette, reading);
+            let rms_height = track.height() * meter_fraction(reading.rms_dbfs);
+            painter.rect_filled(
+                Rect::from_min_max(
+                    egui::pos2(track.left(), track.bottom() - rms_height),
+                    track.right_bottom(),
+                ),
+                CornerRadius::same(radius::SMALL.saturating_sub(1)),
+                color.gamma_multiply(BUTTON_METER_FILL_OPACITY),
+            );
+            let peak_y = track.bottom() - track.height() * meter_fraction(reading.peak_dbfs);
+            if reading.peak_dbfs > METER_FLOOR_DBFS {
+                painter.line_segment(
+                    [
+                        egui::pos2(track.left(), peak_y),
+                        egui::pos2(track.right(), peak_y),
+                    ],
+                    Stroke::new(stroke::FOCUS, color),
+                );
+            }
+        }
         if response.has_focus() {
             painter.rect_stroke(
                 rect.expand(2.0),
@@ -677,4 +740,35 @@ pub fn caption_cell(ui: &mut Ui, palette: &Palette, text: &str, width: f32) -> R
         palette.text_muted,
     );
     response
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn reading(peak_dbfs: f32, clipped: bool) -> MeterReading {
+        MeterReading {
+            peak_dbfs,
+            rms_dbfs: peak_dbfs - 3.0,
+            clipped,
+        }
+    }
+
+    #[test]
+    fn meter_zones_turn_yellow_near_clipping_and_red_when_clipping() {
+        assert_eq!(meter_zone(reading(-20.0, false)), MeterZone::Normal);
+        assert_eq!(meter_zone(reading(-3.0, false)), MeterZone::NearClipping);
+        assert_eq!(meter_zone(reading(-0.1, true)), MeterZone::Clipping);
+        let palette = crate::design::Theme::Night.palette();
+        assert_eq!(meter_color(palette, reading(-3.0, false)), palette.warning);
+        assert_eq!(meter_color(palette, reading(0.0, true)), palette.danger);
+        assert_eq!(meter_color(palette, reading(-30.0, false)), palette.success);
+    }
+
+    #[test]
+    fn meter_fraction_spans_the_floor_to_full_scale() {
+        assert_eq!(meter_fraction(METER_FLOOR_DBFS - 10.0), 0.0);
+        assert_eq!(meter_fraction(0.0), 1.0);
+        assert!((meter_fraction(METER_FLOOR_DBFS / 2.0) - 0.5).abs() < 1e-6);
+    }
 }

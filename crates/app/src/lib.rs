@@ -25,6 +25,7 @@ const MIN_WINDOW_SIZE: [f32; 2] = [1024.0, 600.0];
 const WINDOW_ICON_PNG: &[u8] = include_bytes!("../assets/icon/soundtuning-256.png");
 
 pub fn run() -> anyhow::Result<()> {
+    attach_to_launching_terminal();
     tracing_subscriber::fmt()
         .with_max_level(tracing::Level::INFO)
         .with_target(false)
@@ -37,6 +38,16 @@ pub fn run() -> anyhow::Result<()> {
         None => run_window(cli.input_file),
     }
 }
+
+#[cfg(windows)]
+fn attach_to_launching_terminal() {
+    const ATTACH_PARENT_PROCESS: u32 = u32::MAX;
+    let _launched_from_terminal =
+        win32console::console::WinConsole::attach_console(ATTACH_PARENT_PROCESS).is_ok();
+}
+
+#[cfg(not(windows))]
+fn attach_to_launching_terminal() {}
 
 fn run_window(input_file: Option<std::path::PathBuf>) -> anyhow::Result<()> {
     let mut options = AppOptions::live();

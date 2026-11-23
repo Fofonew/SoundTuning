@@ -9,7 +9,7 @@ use audio_io::{
     StreamHealth,
 };
 use dsp_core::DisplayGrid;
-use engine::{EngineCommand, EngineHandle, MeasurementSnapshot};
+use engine::{EngineCommand, EngineHandle, MeasurementSnapshot, SnapshotListener};
 
 use crate::config::AppConfig;
 use crate::design::widgets::{METER_FLOOR_DBFS, MeterReading};
@@ -135,9 +135,14 @@ pub struct MeasurementController {
     reference_silent_frames: u64,
     measurement_silent_frames: u64,
     last_meter_update: Instant,
+    snapshot_listener: Option<SnapshotListener>,
 }
 
 impl MeasurementController {
+    pub fn set_snapshot_listener(&mut self, listener: SnapshotListener) {
+        self.snapshot_listener = Some(listener);
+    }
+
     pub fn new(source: SourceSpec, config: &AppConfig) -> Self {
         let grid = Arc::new(DisplayGrid::default());
         let display = MeasurementSnapshot::empty(
@@ -157,6 +162,7 @@ impl MeasurementController {
             reference_silent_frames: 0,
             measurement_silent_frames: 0,
             last_meter_update: Instant::now(),
+            snapshot_listener: None,
         }
     }
 
@@ -251,10 +257,11 @@ impl MeasurementController {
         let source = self.source.clone();
         let config = config.clone();
         let grid = Arc::clone(&self.grid);
+        let listener = self.snapshot_listener.clone();
         let spawned = std::thread::Builder::new()
             .name("measurement-start".into())
             .spawn(move || {
-                let result = open_measurement(&source, &config, grid);
+                let result = open_measurement(&source, &config, grid, listener);
                 if let Err(error) = &result {
                     tracing::error!(%error, "could not start the measurement");
                 }
@@ -363,6 +370,7 @@ fn open_measurement(
     source: &SourceSpec,
     config: &AppConfig,
     grid: Arc<DisplayGrid>,
+    listener: Option<SnapshotListener>,
 ) -> Result<RunningMeasurement, String> {
     match source {
         SourceSpec::Live => {
@@ -381,8 +389,9 @@ fn open_measurement(
             let health = Some(Arc::clone(session.health()));
             let generator = Some(Arc::clone(session.generator()));
             let uses_separate_clocks = session.uses_separate_clocks();
-            let engine = EngineHandle::spawn(Box::new(frames), engine_config, grid)
-                .map_err(|error| error.to_string())?;
+            let engine =
+                EngineHandle::spawn_with_listener(Box::new(frames), engine_config, grid, listener)
+                    .map_err(|error| error.to_string())?;
             Ok(RunningMeasurement {
                 engine,
                 _live_session: Some(session),
@@ -424,7 +433,7 @@ fn open_measurement(
                     )
                 }
             };
-            let engine = EngineHandle::spawn(source, engine_config, grid)
+            let engine = EngineHandle::spawn_with_listener(source, engine_config, grid, listener)
                 .map_err(|error| error.to_string())?;
             Ok(RunningMeasurement {
                 engine,

@@ -84,6 +84,7 @@ Cocher, dater et noter les observations. Matériel de référence : UAX 2-2, mic
 ## Interface façon SysTune (D-051, D-052)
 - [ ] Fenêtre en cinq zones lisible à 1 m en régie (Nuit) et au soleil (Plein jour) : panneau Measure à gauche, deux graphes avec Display, barre souris, barre d'état « Setup: … ».
 - [ ] Signal Channel, Reference Channel (OUT / numéro) et Play Channel : un clic change le canal et relance la mesure sur la vraie carte ; les vu-mètres de l'onglet Levels suivent.
+- [ ] Vu-mètre dans les boutons de canal (D-061) : le bouton sélectionné de Signal Channel et de Reference Channel se remplit selon le niveau ; jaune au-dessus de −6 dBFS, rouge avec bordure rouge à l'écrêtage ; lisible à 1 m dans les deux thèmes.
 - [ ] Peak : le délai trouvé s'affiche dans Delay Offset ; Cmd/Ctrl+Z revient à l'ancien délai ; Auto suit le délai en continu.
 - [ ] Delay Offset : saisie au clavier, glisser et molette, au centième de ms.
 - [ ] Peek / Drag / Zoom : comportement du glisser gauche dans chaque mode ; clic droit = déplacer dans tous les modes.
@@ -99,7 +100,8 @@ Cocher, dater et noter les observations. Matériel de référence : UAX 2-2, mic
 ## Performance
 
 - [ ] Démarrage jusqu'à la première image utilisable < 1 s (release, Apple Silicon).
-- [ ] CPU < 10 % d'un cœur en mesure continue, réglages par défaut (Moniteur d'activité).
+- [ ] CPU < 10 % d'un cœur en mesure continue, réglages par défaut (Moniteur d'activité). Sur un écran à 120 Hz ou plus, l'affichage ne dépasse pas 60 fps (D-060).
+- [ ] Tools → Frame Rate en 30 fps : courbes et zoom toujours fluides, CPU en baisse ; le réglage est retrouvé au lancement suivant.
 - [ ] Courbes fluides, sans saccade au zoom, au survol et en édition d'EQ.
 
 ## Visuel

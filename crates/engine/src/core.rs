@@ -252,6 +252,10 @@ impl MeasurementCore {
         self.source_finished = finished;
     }
 
+    pub fn frames_until_next_hop(&self) -> usize {
+        self.settings.hop.saturating_sub(self.frames_since_hop)
+    }
+
     pub fn push_frames(
         &mut self,
         frames: &[StereoFrame],

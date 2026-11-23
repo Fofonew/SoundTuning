@@ -123,6 +123,7 @@ pub fn file_options(theme: Theme, start: bool) -> AppOptions {
         }),
         start_measurement: start,
         updates: UpdateSource::Offline,
+        pace_frames: false,
     }
 }
 
@@ -137,6 +138,7 @@ pub fn first_launch_options() -> AppOptions {
         initial_config: Some(AppConfig::default()),
         start_measurement: false,
         updates: UpdateSource::Offline,
+        pace_frames: false,
     }
 }
 

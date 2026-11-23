@@ -74,7 +74,13 @@ Cause inconnue : à diagnostiquer avant toute correction.
   - c. Ne pas le faire : ASIO donne déjà la latence minimale et l'accès direct.
 - Si c'est implémenté : tester la latence (Peak sur câble), l'absence de craquements et le comportement quand un autre programme tient déjà la carte.
 
-### 5. Icône de `soundtuning.exe` (reste de D-054)
+### ~~5. Icône de `soundtuning.exe` (reste de D-054)~~ — fait le 2026-11-23 (D-059)
+
+Fait dans la première session Windows : `crates/app/build.rs` avec `winresource` (hôte et cible Windows seulement), icône et métadonnées « SoundTuning » vérifiées sur le `.exe`. Reste à voir : l'icône dans le menu Démarrer après installation, et la CI Windows.
+
+Même session (D-059 à D-061) : plus de fenêtre de console au lancement, affichage plafonné à 60 fps (option 30 fps), vu-mètre dans les boutons de canal. La Tascam UX2 n'était pas branchée (absente de `soundtuning.exe devices`) : les tâches 1 à 4 restent à faire avec la carte. ASIO pas encore compilé sur ce PC (LLVM absent).
+
+Texte d'origine de la tâche 5 :
 
 - L'exe et les raccourcis du menu Démarrer gardent l'icône par défaut. Ajouter `winresource` en dépendance de build (`cargo add --build winresource -p app`). Écrire un `build.rs` qui n'agit que si l'hôte et la cible sont Windows (`cfg!(windows)` et `CARGO_CFG_TARGET_OS`), pour ne pas casser `cargo check --target x86_64-pc-windows-msvc` depuis macOS. Icône : `crates/app/assets/icon/SoundTuning.ico`.
 - Vérifier l'icône dans l'Explorateur, dans le menu Démarrer après installation, et que la CI Windows passe.

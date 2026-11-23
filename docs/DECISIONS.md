@@ -405,7 +405,7 @@ Non corrigé, justifié :
 - Dessin : la courbe de mesure blanche sur la grille, avec la bande de cohérence bleue en dessous, dans un carré arrondi sombre aux couleurs de l'interface (`#12161C`, `#F2F4F7`, `#56B4E9`).
 - Sources vectorielles dans `crates/app/assets/icon/` : `soundtuning.svg` (pleine taille, Windows et fenêtre) et `soundtuning-macos.svg` (marge de la grille d'icônes macOS, carré de 824 px sur 1024). `scripts/icons.sh` régénère `SoundTuning.icns` (iconutil), `SoundTuning.ico` (7 tailles PNG, de 16 à 256 px) et `soundtuning-256.png` ; il demande `rsvg-convert` (Homebrew), sans dépendance Rust ajoutée.
 - Branchement : `icons` de cargo-packager (icône du `.app`), `installer-icon` de l'installeur NSIS, icône de la fenêtre et de la barre des tâches via `ViewportBuilder::with_icon` (PNG intégré au binaire).
-- Pas encore fait : l'icône intégrée à `soundtuning.exe` (Explorateur, raccourcis du menu Démarrer). Elle demande un script de build Windows (`winresource`) qu'on ne peut pas vérifier depuis macOS ; à ajouter avec un test sur une machine Windows.
+- Icône intégrée à `soundtuning.exe` (Explorateur, raccourcis du menu Démarrer) : faite et vérifiée sur Windows en D-059.
 
 ### D-055 — Delay Offset et Peak comme SysTune : délai total, sans calibrage (demande de l'utilisateur, 2026-11-23 ; remplace le calibrage de latence de §2.1)
 - Demande : « sur systune il est toujours en partant de zero alors que la on peux calibrer et mettre un delais en amont je veux pas de ca, je veux comme systune ».
@@ -439,3 +439,32 @@ Non corrigé, justifié :
     - un niveau de −20 dBFS choisi explicitement avant la mise à jour passe aussi à −6 ;
     - le calibrage reste dans le moteur, non relié à l'interface (D-055) ;
     - les jauges de la section Input et l'onglet Levels montrent les mêmes mesures, en deux formats.
+
+### D-059 — Première session sur un PC Windows : sous-système graphique, icône de l'exécutable (2026-11-23)
+- Contexte : première exécution sur un vrai PC (Windows 11, Rust 1.99.1 MSVC, Build Tools 2022). Compilation, clippy, fmt, 336 tests et benchs au vert ; `soundtuning.exe devices` liste les périphériques WASAPI ; fenêtre prête en 0,47 s.
+- Constat 1 : l'exécutable était lié en sous-système **console**. Lancé depuis le menu Démarrer ou l'Explorateur, il ouvrait une fenêtre de terminal noire à côté de l'interface. La CI ne pouvait pas le voir.
+- Décision 1 : `#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]` dans `main.rs`. Les commandes `devices` et `record`, `--help` et les journaux restent visibles depuis un terminal : au démarrage, le processus s'attache à la console de son parent (`AttachConsole(ATTACH_PARENT_PROCESS)`), sans effet quand il est lancé depuis l'Explorateur. Les builds de débogage restent en sous-système console.
+- Dépendance hors stack : `win32console` 0.1.5 (MIT, cible `cfg(windows)` uniquement). L'appel Win32 demande du `unsafe`, interdit dans le workspace (`unsafe_code = "forbid"`) ; cette crate l'encapsule derrière `WinConsole::attach_console`. Alternatives écartées : `windows-sys` (demande du `unsafe` chez nous) ; un second exécutable console (deux binaires à empaqueter et à documenter).
+- Conséquence assumée : un programme graphique ne retient pas l'invite. Dans PowerShell ou cmd, l'invite revient avant la fin de la commande, puis la sortie s'affiche. Pour attendre la fin (utile pour `record`), rediriger la sortie : `.\soundtuning.exe record --seconds 10 --output test.wav | Out-Host` (procédure dans `docs/WINDOWS.md`).
+- Décision 2 : `crates/app/build.rs` intègre au `.exe` l'icône `SoundTuning.ico` et les métadonnées (ProductName, FileDescription, InternalName « SoundTuning » ; sans elles, le Gestionnaire des tâches affichait « app »). Dépendance de build `winresource` 0.1.34 (MIT, hôte Windows uniquement) ; le script ne fait rien quand la cible n'est pas Windows, et rien non plus sur un hôte macOS (le `cargo check --target x86_64-pc-windows-msvc` de `verify` n'est pas touché).
+
+### D-060 — Cadence d'affichage plafonnée à 60 fps, option 30 fps, rafraîchissement à l'arrivée des instantanés (2026-11-23, demandé par l'utilisateur : « 60fps c'est maximum »)
+- Constat : sur un écran à 165 Hz, l'interface se redessinait à chaque rafraîchissement de l'écran pendant la mesure (`request_repaint()` continu), soit 165 images/s : 20,3 % d'un cœur en mesure continue (mode fichier), au-dessus des 10 % exigés.
+- Décisions :
+  - Limiteur de cadence (`FramePacer`) au début de chaque image : jamais plus que le plafond choisi, interactions comprises (survol, zoom, glisser). Échéances sur une grille régulière, sans dérive : un retard repart de l'instant présent.
+  - Réglage « Frame Rate » dans l'onglet Tools : 60 fps (défaut) ou 30 fps pour les ordinateurs peu puissants. Enregistré dans la configuration (`frame_rate_cap`) ; la mesure n'est pas touchée, seul l'affichage l'est.
+  - Pendant la mesure, l'interface ne redessine plus en continu : le moteur appelle un écouteur après chaque instantané publié (`EngineHandle::spawn_with_listener`, appel sur le thread moteur, jamais dans un callback audio), qui demande une image. S'y ajoute un rafraîchissement de secours toutes les 50 ms pour les vu-mètres et le démarrage. Les courbes suivent donc la cadence des instantanés (≈ 23,4/s à H = 2048), sans images inutiles.
+  - L'écouteur demande l'image avec un délai de 1 ms et non zéro : une demande à délai nul produit deux images dans egui 0.37 (« Each request results in two repaints », `context.rs`).
+  - Thread moteur : quand la source est vide, il dort jusqu'au prochain pas prévu, entre 2 et 10 ms (`idle_wait`), au lieu de 2 ms fixes. Avant, il se réveillait ≈ 500 fois/s (4 % d'un cœur, surtout en temps noyau) ; les commandes et les résultats du délai restent traités en moins de 10 ms.
+- Revue `ecc:rust-reviewer` :
+  - Corrigé : `idle_wait` est devenue privée, l'unité « fps » est utilisée partout, un test d'aller-retour JSON couvre `frame_rate_cap`.
+  - Assumé : le limiteur dort sur le thread d'interface, au plus un intervalle (16,7 ms à 60 fps). C'est ce qui plafonne aussi les images dues à la souris, comme demandé. Sous Windows, `std::thread::sleep` utilise un minuteur haute résolution ; la cadence mesurée suit bien les instantanés (≈ 26 images/s).
+  - Sans risque : sans console, `println!` ne panique pas, car la bibliothèque standard ignore les handles invalides sous Windows. L'affichage dans un vrai terminal reste à cocher dans `docs/WINDOWS.md`.
+- Mesures (PC de test, mode fichier temps réel, écran 165 Hz, CPU total du processus) : 20,3 % → 7,3 à 10,8 % selon le bruit du système (≈ 8,6 % en moyenne sur trois passes de 30 s), dont ≈ 2,6 % pour le moteur, proche de son coût de calcul (0,8 ms × 23 pas/s). Le contrôle en mesure réelle reste dans `docs/MANUAL_TESTS.md`.
+
+### D-061 — Vu-mètre dans les boutons de canal, comme SysTune (2026-11-23, demandé par l'utilisateur)
+- Le bouton du canal sélectionné porte son vu-mètre : Signal Channel → niveau de la mesure ; Reference Channel → niveau de la référence (OUT en référence interne : signal émis ; 1, 2… en référence rebouclée).
+- Remplissage vertical depuis le bas (RMS, opacité 0,5) et trait horizontal pour la crête, même échelle que les vu-mètres Levels (plancher −60 dBFS). Vert ; jaune au-dessus de −6 dBFS (presque saturé) ; rouge à l'écrêtage. La bordure prend la couleur jaune ou rouge pour rester lisible à 1 m.
+- Vertical plutôt qu'horizontal : les boutons font 28 px de large ; un remplissage horizontal se lisait mal et son trait de crête se confondait avec la bordure (capture Windows hors écran, vérifiée).
+- Fonctions partagées avec les vu-mètres Levels (`meter_fraction`, `meter_zone`, `meter_color`) : mêmes seuils partout.
+- Complète D-058 (session Mac du même jour, fusionnée ensuite) : les jauges Signal / Reference de la section Input restent ; le bouton du canal choisi montre le même niveau, aux mêmes seuils (−60 dBFS, −6 dBFS) et avec le même CLIP tenu 2 s. Les jauges servent à lire la valeur ; le bouton dit d'un coup d'œil quel canal sature.

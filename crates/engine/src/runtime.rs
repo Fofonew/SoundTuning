@@ -14,7 +14,14 @@ use crate::settings::{AnalysisSettings, DelayPolicy};
 use crate::snapshot::MeasurementSnapshot;
 
 const COMMAND_QUEUE_CAPACITY: usize = 256;
-const IDLE_WAIT: Duration = Duration::from_millis(2);
+const MIN_IDLE_WAIT: Duration = Duration::from_millis(2);
+const MAX_IDLE_WAIT: Duration = Duration::from_millis(10);
+
+fn idle_wait(frames_until_next_hop: usize, sample_rate_hz: u32) -> Duration {
+    let until_next_hop =
+        Duration::from_secs_f64(frames_until_next_hop as f64 / f64::from(sample_rate_hz.max(1)));
+    until_next_hop.clamp(MIN_IDLE_WAIT, MAX_IDLE_WAIT)
+}
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct EngineConfig {
@@ -22,6 +29,8 @@ pub struct EngineConfig {
     pub policy: DelayPolicy,
     pub system_latency_ms: Option<f64>,
 }
+
+pub type SnapshotListener = Arc<dyn Fn() + Send + Sync>;
 
 enum ControlMessage {
     Command(EngineCommand),
@@ -41,6 +50,15 @@ impl EngineHandle {
         source: Box<dyn FrameSource>,
         config: EngineConfig,
         grid: Arc<DisplayGrid>,
+    ) -> Result<Self, EngineError> {
+        Self::spawn_with_listener(source, config, grid, None)
+    }
+
+    pub fn spawn_with_listener(
+        source: Box<dyn FrameSource>,
+        config: EngineConfig,
+        grid: Arc<DisplayGrid>,
+        on_snapshot_published: Option<SnapshotListener>,
     ) -> Result<Self, EngineError> {
         let sample_rate_hz = source.sample_rate_hz();
         let mut core = MeasurementCore::new(
@@ -65,6 +83,7 @@ impl EngineHandle {
                     delay_estimator,
                     command_receiver,
                     snapshot_input,
+                    on_snapshot_published,
                 );
             })
             .map_err(EngineError::Thread)?;
@@ -132,6 +151,7 @@ fn run_engine_loop(
     mut delay_estimator: DelayEstimator,
     commands: Receiver<ControlMessage>,
     mut snapshots: Input<MeasurementSnapshot>,
+    on_snapshot_published: Option<SnapshotListener>,
 ) {
     let mut frames: Vec<StereoFrame> = Vec::with_capacity(crate::settings::MAX_HOP_FRAMES);
     let mut source_finished = false;
@@ -151,7 +171,8 @@ fn run_engine_loop(
         }
 
         frames.clear();
-        let report = source.read_frames(&mut frames, core.settings().hop);
+        let requested_frames = core.settings().hop;
+        let report = source.read_frames(&mut frames, requested_frames);
         if report.discontinuity {
             core.note_discontinuity();
             state_changed = true;
@@ -168,12 +189,36 @@ fn run_engine_loop(
             match core.fill_snapshot(snapshots.input_buffer_mut()) {
                 Ok(()) => {
                     snapshots.publish();
+                    if let Some(listener) = &on_snapshot_published {
+                        listener();
+                    }
                 }
                 Err(error) => tracing::error!(%error, "snapshot preparation failed"),
             }
         }
-        if frames.is_empty() {
-            std::thread::sleep(IDLE_WAIT);
+        let source_drained = frames.len() < requested_frames;
+        if source_drained {
+            std::thread::sleep(idle_wait(
+                core.frames_until_next_hop(),
+                core.sample_rate_hz(),
+            ));
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const SAMPLE_RATE_HZ: u32 = 48_000;
+
+    #[test]
+    fn idle_wait_sleeps_until_the_next_hop_within_bounds() {
+        assert_eq!(idle_wait(2048, SAMPLE_RATE_HZ), MAX_IDLE_WAIT);
+        assert_eq!(idle_wait(0, SAMPLE_RATE_HZ), MIN_IDLE_WAIT);
+        let six_milliseconds_of_frames = 288;
+        let wait = idle_wait(six_milliseconds_of_frames, SAMPLE_RATE_HZ);
+        assert!(wait.abs_diff(Duration::from_millis(6)) < Duration::from_micros(1));
+        assert_eq!(idle_wait(2048, 0), MAX_IDLE_WAIT);
     }
 }

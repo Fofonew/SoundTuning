@@ -35,10 +35,32 @@ cargo build --release -p app --features asio
 
 La feature `asio` du crate `app` active `audio-io/asio`, qui active `cpal/asio`. Le binaire intègre du code du SDK Steinberg : vérifier ses conditions de licence avant toute diffusion publique de l'installeur.
 
+### Commandes dans un terminal
+
+En release, `soundtuning.exe` est une application graphique (sans fenêtre de console au lancement, D-059). Depuis PowerShell ou cmd, la sortie de `devices`, `record` et `--help` s'affiche bien dans le terminal, mais l'invite revient avant la fin de la commande. Pour attendre la fin, rediriger la sortie :
+
+```powershell
+.\target\release\soundtuning.exe devices | Out-Host
+.\target\release\soundtuning.exe record --seconds 10 --output test.wav | Out-Host
+```
+
+## Session du 2026-11-23 (PC Windows 11, RTX 5070 Ti, écran 3440 × 1440 à 165 Hz)
+
+Vérifié automatiquement :
+- `cargo build --release`, `cargo clippy -D warnings`, `cargo fmt --check` : au vert ; `cargo test --workspace` : 336 tests (les 13 tests de captures restent réservés à macOS).
+- Benchs (médianes) : `engine_update` 0,82 ms, `delay_search` 0,91 ms, `plot_frame_prep` 0,087 ms, `optimal_alignment` 2,63 ms, `ui_frame_cpu_frozen` 0,35–0,48 ms : dans les budgets.
+- `soundtuning.exe devices` : 11 périphériques WASAPI listés (Realtek, casque, Voicemeeter, NVIDIA HDMI…).
+- Mode fichier (`--input-file`, WAV synthétique 48 kHz) : fenêtre prête en 0,47 s ; mesure, délai trouvé.
+- Corrigé pendant la session : fenêtre de console au lancement (D-059), icône et nom du `.exe` (D-059), interface redessinée à 165 images/s et CPU à 20 % (D-060 : plafond 60 fps, option 30 fps, ≈ 8,6 % en mode fichier). Ajouté : vu-mètre dans les boutons de canal (D-061).
+
 ## Procédure de test (à cocher sur le PC)
 
 ### Démarrage et interface
 - [ ] `soundtuning.exe` s'ouvre en moins d'une seconde (build release) ; l'assistant de premier lancement s'affiche.
+- [ ] Lancé par double-clic dans l'Explorateur ou depuis le menu Démarrer : aucune fenêtre de console noire ; l'icône « Courbe » apparaît sur le `.exe`, dans la barre des tâches et dans Alt+Tab ; le Gestionnaire des tâches affiche « SoundTuning ».
+- [ ] Dans un terminal : `soundtuning.exe devices` affiche la liste (l'invite peut revenir avant, voir « Commandes dans un terminal »).
+- [ ] Tools → Frame Rate : 60 fps par défaut ; en 30 fps, les courbes restent fluides au zoom et la charge CPU baisse.
+- [ ] Vu-mètre dans les boutons de canal : le bouton Signal Channel sélectionné se remplit selon le niveau du micro, jaune au-dessus de −6 dBFS, rouge (bordure comprise) à l'écrêtage ; idem pour le bouton de Reference Channel sélectionné (OUT ou 1/2).
 - [ ] Polices Inter et JetBrains Mono correctes (accents français, symboles ≈ · − γ²).
 - [ ] Raccourcis : `Ctrl+K` (palette), `Ctrl+Z` / `Ctrl+Maj+Z`, `Ctrl +` / `Ctrl −` (zoom de l'interface) ; les libellés affichent « Ctrl+K » et non « ⌘K ».
 - [ ] Thèmes Nuit / Plein jour (L) ; mise à l'échelle Windows 125 % et 150 % sans flou ni chevauchement.
@@ -83,7 +105,7 @@ cargo packager --release --formats nsis
 
 La compilation release précède `cargo packager`, qui empaquette le binaire déjà construit (sans `--features asio`, l'installeur est sans ASIO).
 
-L'installeur est écrit dans `target\packages\soundtuning_0.1.0_x64-setup.exe`.
+L'installeur est écrit dans `target\packages\soundtuning_<version>_x64-setup.exe` (produit et vérifié le 2026-11-23 : `soundtuning_0.2.3_x64-setup.exe`, 7,3 Mo, sans ASIO). Pour installer `cargo-packager` dans le dépôt plutôt que dans `~\.cargo` : `cargo install cargo-packager --locked --version 0.11.8 --root target\tools`, puis `..\..\target\tools\bin\cargo-packager.exe --release --formats nsis` depuis `crates\app`.
 
 - [ ] L'installeur s'exécute, installe SoundTuning dans le menu Démarrer et le désinstalle proprement.
 - [ ] L'application installée démarre, retrouve sa configuration dans `%APPDATA%\SoundTuning\`.

@@ -47,6 +47,8 @@ const CONFIG_SAVE_DELAY: Duration = Duration::from_millis(800);
 const SESSION_SAVE_DELAY: Duration = Duration::from_secs(2);
 const EXPORT_FILE_PREFIX: &str = "soundtuning";
 const IDLE_REPAINT_INTERVAL: Duration = Duration::from_millis(250);
+const METER_REPAINT_INTERVAL: Duration = Duration::from_millis(50);
+const SINGLE_REPAINT_DELAY: Duration = Duration::from_millis(1);
 const LOW_COHERENCE_BAND_HZ: (f64, f64) = (100.0, 10_000.0);
 const MILLISECONDS_PER_SECOND: f64 = 1000.0;
 const DELAY_NUDGE_MS: f64 = 0.01;
@@ -81,6 +83,34 @@ const MONITOR_FILL_LIMIT: f32 = 0.95;
 pub fn window_exceeds_monitor(inner_size: egui::Vec2, monitor_size: egui::Vec2) -> bool {
     inner_size.x > monitor_size.x * MONITOR_FILL_LIMIT
         || inner_size.y > monitor_size.y * MONITOR_FILL_LIMIT
+}
+
+#[derive(Debug, Default)]
+pub struct FramePacer {
+    last_frame_started_at: Option<Instant>,
+}
+
+impl FramePacer {
+    pub fn next_frame_start(&self, now: Instant, frame_interval: Duration) -> Instant {
+        match self.last_frame_started_at {
+            Some(last) if last + frame_interval > now => last + frame_interval,
+            _ => now,
+        }
+    }
+
+    pub fn wait_for_next_frame(&mut self, frame_interval: Duration) -> Instant {
+        let frame_start = self.next_frame_start(Instant::now(), frame_interval);
+        let wait = frame_start.saturating_duration_since(Instant::now());
+        if !wait.is_zero() {
+            std::thread::sleep(wait);
+        }
+        self.last_frame_started_at = Some(frame_start);
+        frame_start
+    }
+}
+
+pub fn measurement_repaint_delay(frame_elapsed: Duration, frame_interval: Duration) -> Duration {
+    frame_interval.saturating_sub(frame_elapsed)
 }
 
 pub fn central_area_fraction(window_width: f32, window_height: f32, side_panel_open: bool) -> f32 {
@@ -122,6 +152,7 @@ pub struct AppOptions {
     pub initial_config: Option<AppConfig>,
     pub start_measurement: bool,
     pub updates: UpdateSource,
+    pub pace_frames: bool,
 }
 
 impl AppOptions {
@@ -135,6 +166,7 @@ impl AppOptions {
             initial_config: None,
             start_measurement: false,
             updates: UpdateSource::GitHub,
+            pace_frames: true,
         }
     }
 }
@@ -182,6 +214,7 @@ pub struct SoundTuningApp {
     updates: UpdateChecker,
     available_update: Option<Release>,
     url_to_open: Option<String>,
+    frame_pacer: Option<FramePacer>,
 }
 
 impl SoundTuningApp {
@@ -194,9 +227,14 @@ impl SoundTuningApp {
         let is_file_mode = matches!(options.source, SourceSpec::File { .. });
         let wizard = (!config.wizard_completed && !is_file_mode)
             .then(|| Wizard::new(options.devices.devices()));
-        let measurement = MeasurementController::new(options.source.clone(), &config);
+        let mut measurement = MeasurementController::new(options.source.clone(), &config);
+        let repaint_context = context.clone();
+        measurement.set_snapshot_listener(std::sync::Arc::new(move || {
+            repaint_context.request_repaint_after(SINGLE_REPAINT_DELAY);
+        }));
         let loaded = options.session_store.load();
         let mut app = Self {
+            frame_pacer: options.pace_frames.then(FramePacer::default),
             config,
             store: options.store,
             config_dirty_since: None,
@@ -1507,6 +1545,11 @@ impl SoundTuningApp {
 
 impl eframe::App for SoundTuningApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        let frame_interval = self.config.frame_rate_cap.frame_interval();
+        let frame_started_at = match self.frame_pacer.as_mut() {
+            Some(pacer) => pacer.wait_for_next_frame(frame_interval),
+            None => Instant::now(),
+        };
         let context = ui.ctx().clone();
         self.fit_window_to_monitor(&context);
         self.apply_theme(&context);
@@ -1579,7 +1622,10 @@ impl eframe::App for SoundTuningApp {
         self.save_config_if_due();
         self.save_session_if_due();
         if self.measurement.is_running() {
-            context.request_repaint();
+            context.request_repaint_after(measurement_repaint_delay(
+                frame_started_at.elapsed(),
+                METER_REPAINT_INTERVAL.max(frame_interval),
+            ));
         } else {
             context.request_repaint_after(IDLE_REPAINT_INTERVAL);
         }
@@ -1634,6 +1680,7 @@ impl SoundTuningApp {
         }
         let mut control_commands = Vec::new();
         let mut audio_commands = Vec::new();
+        let mut frame_rate_changed = false;
         let mut analysis = self.config.analysis.clone();
         let mut analysis_changed = false;
         if panel_open {
@@ -1686,7 +1733,14 @@ impl SoundTuningApp {
                         }
                         ControlTab::Tools => {
                             ui.add_space(spacing::SM);
-                            tools_general(ui, palette, theme, self.is_mac, actions);
+                            frame_rate_changed = tools_general(
+                                ui,
+                                palette,
+                                theme,
+                                &mut self.config.frame_rate_cap,
+                                self.is_mac,
+                                actions,
+                            );
                             ui.add_space(spacing::MD);
                             if let Some(panel) = self.audio_settings.as_mut() {
                                 audio_commands = audio_panel::show(
@@ -1706,6 +1760,9 @@ impl SoundTuningApp {
         }
         for command in audio_commands {
             self.apply_audio_command(command);
+        }
+        if frame_rate_changed {
+            self.mark_config_dirty();
         }
 
         let layout = self.config.plot_layout;
@@ -2205,10 +2262,12 @@ fn tools_general(
     ui: &mut egui::Ui,
     palette: &crate::design::Palette,
     theme: Theme,
+    frame_rate_cap: &mut crate::config::FrameRateCap,
     is_mac: bool,
     actions: &mut Vec<Action>,
-) {
+) -> bool {
     use crate::design::widgets::{field_caption, section_header, toggle_button};
+    let mut frame_rate_changed = false;
     section_header(ui, palette, text::TOOLS_GENERAL);
     field_caption(ui, palette, text::TOOLS_COLOR_SCHEME);
     ui.horizontal(|ui| {
@@ -2244,6 +2303,29 @@ fn tools_general(
             actions.push(Action::OpenPalette);
         }
     });
+    field_caption(ui, palette, text::TOOLS_FRAME_RATE);
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = size::SEGMENT_GAP;
+        let choices = crate::config::FrameRateCap::ALL;
+        let gaps = size::SEGMENT_GAP * (choices.len() - 1) as f32;
+        let width = (ui.available_width() - gaps) / choices.len() as f32;
+        for candidate in choices {
+            let label = text::frame_rate_label(candidate.frames_per_second());
+            let response = toggle_button(
+                ui,
+                palette,
+                &label,
+                *frame_rate_cap == candidate,
+                Some(width),
+            )
+            .on_hover_text(text::TOOLS_FRAME_RATE_HELP);
+            if response.clicked() && *frame_rate_cap != candidate {
+                *frame_rate_cap = candidate;
+                frame_rate_changed = true;
+            }
+        }
+    });
+    frame_rate_changed
 }
 
 fn stored_overlay(trace: &crate::session::Trace, style: TraceStyle) -> OverlayTrace<'_> {
@@ -2306,5 +2388,46 @@ mod tests {
             assert!(fraction >= 0.70, "{width}x{height}: {fraction}");
         }
         assert!(central_area_fraction(1440.0, 900.0, false) > 0.8);
+    }
+
+    #[test]
+    fn measurement_repaints_are_scheduled_one_interval_after_the_frame_start() {
+        let interval = crate::config::FrameRateCap::Sixty.frame_interval();
+        let elapsed = Duration::from_millis(4);
+        assert_eq!(
+            measurement_repaint_delay(elapsed, interval) + elapsed,
+            interval
+        );
+        assert_eq!(
+            measurement_repaint_delay(Duration::from_millis(40), interval),
+            Duration::ZERO
+        );
+    }
+
+    #[test]
+    fn frame_pacer_holds_frames_to_the_cap_without_drifting() {
+        let interval = crate::config::FrameRateCap::Thirty.frame_interval();
+        let origin = Instant::now();
+        let pacer = FramePacer {
+            last_frame_started_at: Some(origin),
+        };
+        let early = origin + Duration::from_millis(5);
+        assert_eq!(pacer.next_frame_start(early, interval), origin + interval);
+        let late = origin + interval * 3;
+        assert_eq!(pacer.next_frame_start(late, interval), late);
+        assert_eq!(
+            FramePacer::default().next_frame_start(early, interval),
+            early
+        );
+    }
+
+    #[test]
+    fn frame_pacer_never_renders_faster_than_the_cap() {
+        let interval = Duration::from_millis(5);
+        let mut pacer = FramePacer::default();
+        let first = pacer.wait_for_next_frame(interval);
+        let second = pacer.wait_for_next_frame(interval);
+        assert!(second - first >= interval);
+        assert!(Instant::now() >= second);
     }
 }
