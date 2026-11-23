@@ -20,7 +20,6 @@ pub enum Action {
     Redo,
     ToggleSidePanel,
     ToggleGenerator,
-    CalibrateLatency,
     AddEqFilter,
     ExportSession,
     RestartMeasurement,
@@ -37,10 +36,11 @@ pub enum Action {
     CheckForUpdates,
     OpenUpdatePage,
     DismissUpdate,
+    HideSeparateClocksWarning,
 }
 
 impl Action {
-    pub const ALL: [Self; 31] = [
+    pub const ALL: [Self; 30] = [
         Self::ToggleMeasurement,
         Self::FindDelay,
         Self::ApplyDelay,
@@ -57,7 +57,6 @@ impl Action {
         Self::Redo,
         Self::ToggleSidePanel,
         Self::ToggleGenerator,
-        Self::CalibrateLatency,
         Self::AddEqFilter,
         Self::ExportSession,
         Self::RestartMeasurement,
@@ -120,7 +119,6 @@ impl Action {
             Self::Redo => text::ACTION_REDO,
             Self::ToggleSidePanel => text::ACTION_TOGGLE_SIDE_PANEL,
             Self::ToggleGenerator => text::ACTION_TOGGLE_GENERATOR,
-            Self::CalibrateLatency => text::ACTION_CALIBRATE_LATENCY,
             Self::AddEqFilter => text::ACTION_ADD_EQ_FILTER,
             Self::ExportSession => text::ACTION_EXPORT_SESSION,
             Self::RestartMeasurement => text::ACTION_RESTART_MEASUREMENT,
@@ -137,6 +135,7 @@ impl Action {
             Self::CheckForUpdates => text::ACTION_CHECK_FOR_UPDATES,
             Self::OpenUpdatePage => text::ACTION_OPEN_UPDATE_PAGE,
             Self::DismissUpdate => text::ACTION_DISMISS_UPDATE,
+            Self::HideSeparateClocksWarning => text::ACTION_HIDE_SEPARATE_CLOCKS,
         }
     }
 
@@ -173,12 +172,12 @@ impl Action {
             )),
             Self::ResetView
             | Self::ViewVirtualEq
-            | Self::CalibrateLatency
             | Self::ExportSession
             | Self::RestartMeasurement
             | Self::CheckForUpdates
             | Self::OpenUpdatePage
-            | Self::DismissUpdate => None,
+            | Self::DismissUpdate
+            | Self::HideSeparateClocksWarning => None,
         }
     }
 

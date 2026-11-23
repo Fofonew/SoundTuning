@@ -406,3 +406,36 @@ Non corrigé, justifié :
 - Sources vectorielles dans `crates/app/assets/icon/` : `soundtuning.svg` (pleine taille, Windows et fenêtre) et `soundtuning-macos.svg` (marge de la grille d'icônes macOS, carré de 824 px sur 1024). `scripts/icons.sh` régénère `SoundTuning.icns` (iconutil), `SoundTuning.ico` (7 tailles PNG, de 16 à 256 px) et `soundtuning-256.png` ; il demande `rsvg-convert` (Homebrew), sans dépendance Rust ajoutée.
 - Branchement : `icons` de cargo-packager (icône du `.app`), `installer-icon` de l'installeur NSIS, icône de la fenêtre et de la barre des tâches via `ViewportBuilder::with_icon` (PNG intégré au binaire).
 - Pas encore fait : l'icône intégrée à `soundtuning.exe` (Explorateur, raccourcis du menu Démarrer). Elle demande un script de build Windows (`winresource`) qu'on ne peut pas vérifier depuis macOS ; à ajouter avec un test sur une machine Windows.
+
+### D-055 — Delay Offset et Peak comme SysTune : délai total, sans calibrage (demande de l'utilisateur, 2026-11-23 ; remplace le calibrage de latence de §2.1)
+- Demande : « sur systune il est toujours en partant de zero alors que la on peux calibrer et mettre un delais en amont je veux pas de ca, je veux comme systune ».
+- L'application ne renseigne plus `system_latency_ms` au moteur : Delay Offset, Peak, A, Auto, −/+ et la distance affichent le délai total mesuré, latence de la carte comprise. Le bouton Calibrate, l'action « Calibrer la latence » (palette), les bandeaux « latence non calibrée », « calibrage en cours / impossible », la notification « latence calibrée » et le marquage « ≈ » de la distance disparaissent.
+- Le moteur garde la soustraction d'une latence (`EngineConfig::system_latency_ms`, `SetSystemLatencyMs`, calibrage) et ses tests d'acceptation (SPEC §13) : rien n'est assoupli, la fonction n'est simplement plus appelée par l'interface.
+- Les latences mémorisées dans `config.json` sont ignorées (champ supprimé, serde l'ignore à la lecture). Les traces déjà enregistrées gardent leur `system_latency_ms` (temps d'arrivée = compensation − latence). Entre deux traces capturées après ce changement, la latence de la carte est la même et s'annule dans l'alignement ; aligner une trace d'avant la mise à jour (latence soustraite) avec une trace nouvelle décale leur écart de cette latence : recapturer l'ancienne.
+
+### D-056 — Horloges distinctes : même carte reconnue sous Windows, bandeau masquable (signalé par l'utilisateur, 2026-11-23)
+- Constat : sous Windows (WASAPI), l'entrée et la sortie d'une même carte sont deux points d'accès d'identifiants différents (« Entrée ligne (UX2-2) », « Haut-parleurs (UX2-2) ») ; la comparaison des identifiants déclenchait à tort « deux périphériques différents ».
+- Correction : `audio_io::shares_hardware` considère que c'est la même carte si les identifiants sont égaux, si les noms sont égaux, ou si le nom entre parenthèses en fin de libellé (nom du matériel sous Windows) est identique, sans tenir compte de la casse. Heuristique sur les noms Windows : à confirmer sur le PC de l'utilisateur (`docs/WINDOWS_HANDOFF.md`).
+- Le bandeau a un bouton « Masquer » qui le supprime pour cette paire entrée / sortie seulement (`hidden_clock_warning_routes` dans la configuration) : il réapparaît avec une autre paire de cartes.
+- Sur macOS (identifiants `coreaudio:`), seule l'égalité des identifiants compte : deux interfaces identiques (même nom, identifiants différents) restent deux cartes. L'heuristique sur les noms ne sert que pour WASAPI et ASIO. Limite connue : sous Windows, un libellé générique (« (USB Audio Device) ») porté par deux cartes différentes serait pris pour une seule carte.
+
+### D-057 — Niveau de sortie : curseur, 0 dBFS maximum, −6 dBFS par défaut (demande de l'utilisateur, 2026-11-23)
+- Le niveau du Pink Noise se règle avec un curseur pleine largeur dans Output (pas de 0,5 dB, flèches du clavier) suivi d'une valeur modifiable. Plage −60 à 0 dBFS (avant : −60 à −6).
+- Échelle : le niveau est le gain appliqué au générateur. À 0 dB, le bruit rose a un RMS de −14,3 dBFS et des crêtes entre −0,8 et −0,3 dBFS (simulations de l'algorithme sur 2 et 10 millions d'échantillons, soit jusqu'à 3 min 30 à 48 kHz) : pas d'écrêtage observé, mais aucune marge ; le bruit blanc atteint la pleine échelle.
+- Défaut −6 dBFS (crêtes ≈ −6 dBFS, RMS ≈ −20 dBFS), dans la fourchette proposée par l'utilisateur (−3, −6 ou 0). Le niveau par défaut de SysTune n'a pas été vérifié dans sa documentation.
+- Migration : la configuration porte une version (`config_version` = 1) ; une configuration plus ancienne restée au défaut précédent (−20 dBFS) passe à −6 dBFS, un niveau choisi par l'utilisateur est conservé.
+
+### D-058 — Jauges d'entrée toujours visibles, CLIP tenu 2 s (demande de l'utilisateur, 2026-11-23)
+- Section Input : jauges horizontales Signal et Reference (RMS en barre, crête en trait, valeur crête en dBFS, repères −48 / −24 / −12 / −6, témoin CLIP), sous Reference Channel, pour régler le gain d'entrée de la carte sans changer d'onglet. L'onglet Levels reste disponible.
+- Écrêtage : le témoin du `LevelMeter` restait verrouillé pour toujours (`reset_clip` n'était jamais appelé), si bien que le bandeau d'écrêtage ne disparaissait jamais. `take_snapshot` lit et réarme désormais le témoin d'un seul `swap` atomique (aucun écrêtage perdu entre la lecture et le réarmement) ; l'interface le tient allumé 2 s (`CLIP_HOLD_SECONDS`) : on voit l'écrêtage et sa fin pendant qu'on baisse le gain.
+- Panneau : la ligne Signal / Pink Noise devient « Pink Noise » + curseur, pour que l'ajout des jauges ne fasse pas défiler le panneau à 1440 × 900.
+- Revue `ecc:rust-reviewer` (D-055 à D-058).
+  - Corrigé :
+    - faux « même carte » entre deux interfaces CoreAudio de même nom ;
+    - bandeau masqué pour toutes les cartes → masqué par paire ;
+    - écrêtage perdu entre lecture et réarmement → `swap` ;
+    - jauge non dessinée si la barre fait moins de 24 px.
+  - Assumé :
+    - un niveau de −20 dBFS choisi explicitement avant la mise à jour passe aussi à −6 ;
+    - le calibrage reste dans le moteur, non relié à l'interface (D-055) ;
+    - les jauges de la section Input et l'onglet Levels montrent les mêmes mesures, en deux formats.

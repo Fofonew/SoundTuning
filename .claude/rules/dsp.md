@@ -23,7 +23,7 @@ paths: ["crates/dsp-core/**"]
 - Délai optimal : Δ ∈ [−50 ; +50] ms, recherche grossière puis fine au pas de 0,01 ms, p = ±1, bande [f1 ; f2] (défaut 60–150 Hz). Critères : niveau sommé moyen maximal, ou écart-type minimal du dB sommé.
 - Moyenne de traces : moyenne en puissance de |H|², affichée en dB.
 - EQ : biquads « Audio EQ Cookbook » (Bristow-Johnson) évalués en H(e^{jω}) sur la grille, à la fs de la mesure. Types : cloche, plateaux grave/aigu, coupe-bas/haut Butterworth 12/24 dB/oct et Linkwitz-Riley 24/48 dB/oct (cascades), notch. Q et largeur de bande en octaves affichables.
-- Référence interne : délai acoustique = délai mesuré − latence système calibrée.
+- Référence interne : le moteur sait soustraire une latence système (`system_latency_ms`), mais l'application ne la renseigne plus : le délai affiché est le délai total, comme SysTune (D-055).
 
 ## Numérique
 

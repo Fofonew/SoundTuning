@@ -70,13 +70,9 @@ impl LevelMeter {
         MeterSnapshot {
             peak_dbfs: amplitude_to_dbfs(peak),
             rms_dbfs: amplitude_to_dbfs(mean_square.max(0.0).sqrt()),
-            clipped: self.clipped.load(Ordering::Relaxed),
+            clipped: self.clipped.swap(false, Ordering::Relaxed),
             consecutive_silent_frames: self.consecutive_silent_frames.load(Ordering::Relaxed),
         }
-    }
-
-    pub fn reset_clip(&self) {
-        self.clipped.store(false, Ordering::Relaxed);
     }
 }
 
@@ -110,16 +106,14 @@ mod tests {
     }
 
     #[test]
-    fn peak_resets_after_read_but_clip_is_sticky() {
+    fn peak_and_clip_report_what_happened_since_the_last_read() {
         let meter = LevelMeter::default();
         meter.record_samples([1.0_f32, -1.0].into_iter());
-        let _ = meter.take_snapshot();
+        assert!(meter.take_snapshot().clipped);
         meter.record_samples([0.1_f32].into_iter());
         let snapshot = meter.take_snapshot();
         assert!((snapshot.peak_dbfs + 20.0).abs() < 0.01);
-        assert!(snapshot.clipped);
-        meter.reset_clip();
-        assert!(!meter.take_snapshot().clipped);
+        assert!(!snapshot.clipped);
     }
 
     #[test]

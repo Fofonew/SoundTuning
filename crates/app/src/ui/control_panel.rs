@@ -29,7 +29,18 @@ const DELAY_TEXT_STYLE: &str = "delay-offset";
 const DELAY_VALUE_HEIGHT: f32 = 44.0;
 const GENERATOR_DRAG_SPEED_DB: f64 = 0.5;
 const GENERATOR_MIN_DBFS: f64 = -60.0;
-const GENERATOR_MAX_DBFS: f64 = -6.0;
+const GENERATOR_MAX_DBFS: f64 = 0.0;
+const GENERATOR_SLIDER_STEP_DB: f64 = 0.5;
+const GENERATOR_VALUE_WIDTH: f32 = 64.0;
+const INPUT_METER_CAPTION_WIDTH: f32 = 64.0;
+const INPUT_METER_HEIGHT: f32 = 10.0;
+const INPUT_METER_ROW_HEIGHT: f32 = 18.0;
+const INPUT_METER_VALUE_WIDTH: f32 = 32.0;
+const INPUT_METER_CLIP_WIDTH: f32 = 36.0;
+const INPUT_METER_FLOOR_DBFS: f32 = -60.0;
+const INPUT_METER_MIN_BAR_WIDTH: f32 = 24.0;
+const INPUT_METER_WARNING_DBFS: f32 = -6.0;
+const INPUT_METER_TICKS_DBFS: [f32; 4] = [-48.0, -24.0, -12.0, -6.0];
 const LIST_MIN_HEIGHT: f32 = 168.0;
 const METER_BAR_WIDTH: f32 = 14.0;
 const METER_TICKS_DBFS: [f32; 5] = [0.0, -18.0, -36.0, -54.0, -72.0];
@@ -63,14 +74,6 @@ pub struct DelayReadout {
     pub distance_m: Option<f64>,
     pub samples: Option<f64>,
     pub confidence_db: Option<f64>,
-    pub approximate: bool,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum LatencyStatus {
-    Calibrated(f64),
-    NotCalibrated,
-    NotNeeded,
 }
 
 pub struct ControlModel<'a> {
@@ -82,7 +85,6 @@ pub struct ControlModel<'a> {
     pub stream: &'a StreamSettings,
     pub input_channels: usize,
     pub output_channels: usize,
-    pub latency: LatencyStatus,
     pub sample_rate_hz: u32,
     pub reference_meter: MeterReading,
     pub measurement_meter: MeterReading,
@@ -307,13 +309,9 @@ fn input_section(
     if let (Some(distance), Some(samples)) = (model.delay.distance_m, model.delay.samples) {
         ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
             ui.label(
-                RichText::new(text::delay_details(
-                    distance,
-                    samples,
-                    model.delay.approximate,
-                ))
-                .font(fonts::value(text_size::CAPTION))
-                .color(palette.text_muted),
+                RichText::new(text::delay_details(distance, samples))
+                    .font(fonts::value(text_size::CAPTION))
+                    .color(palette.text_muted),
             );
         });
     }
@@ -407,44 +405,119 @@ fn input_section(
             changes.commands.push(ControlCommand::ApplyStream(stream));
         }
     });
-    if model.latency == LatencyStatus::NotNeeded {
+    ui.add_space(spacing::XS);
+    input_meters(ui, palette, model);
+}
+
+fn input_meters(ui: &mut egui::Ui, palette: &Palette, model: &ControlModel<'_>) {
+    input_meter_row(ui, palette, text::LEVEL_SIGNAL, model.measurement_meter);
+    input_meter_row(ui, palette, text::LEVEL_REFERENCE, model.reference_meter);
+}
+
+fn input_meter_row(ui: &mut egui::Ui, palette: &Palette, label: &str, reading: MeterReading) {
+    let width = ui.available_width();
+    let (rect, response) =
+        ui.allocate_exact_size(vec2(width, INPUT_METER_ROW_HEIGHT), Sense::hover());
+    let value_text = text::format_meter_dbfs(reading.peak_dbfs);
+    let accessible = if reading.clipped {
+        format!("{label} {value_text} {}", text::LEVEL_CLIP)
+    } else {
+        format!("{label} {value_text}")
+    };
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Meter, true, &accessible));
+    if !ui.is_rect_visible(rect) {
         return;
     }
-    ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = spacing::SM;
-        let can_calibrate = model.running;
-        let width = CHANNEL_CAPTION_WIDTH;
-        if sized_action_button(
-            ui,
-            palette,
-            text::BUTTON_CALIBRATE_LATENCY,
-            None,
-            Emphasis::Secondary,
-            can_calibrate,
-            width,
-        )
-        .on_hover_text(Action::CalibrateLatency.label())
-        .clicked()
-        {
-            actions.push(Action::CalibrateLatency);
-        }
-        let status = match model.latency {
-            LatencyStatus::Calibrated(milliseconds) => text::calibrated_latency(milliseconds),
-            LatencyStatus::NotCalibrated => text::LATENCY_NOT_CALIBRATED.to_owned(),
-            LatencyStatus::NotNeeded => String::new(),
-        };
-        ui.add(
-            egui::Label::new(
-                RichText::new(status)
-                    .font(fonts::ui(text_size::CAPTION))
-                    .color(match model.latency {
-                        LatencyStatus::NotCalibrated => palette.warning,
-                        _ => palette.text_muted,
-                    }),
-            )
-            .truncate(),
+    let painter = ui.painter_at(rect);
+    let center_y = rect.center().y;
+    painter.text(
+        pos2(rect.left(), center_y),
+        Align2::LEFT_CENTER,
+        label,
+        fonts::ui_medium(text_size::CAPTION),
+        palette.text_muted,
+    );
+    let clip = Rect::from_center_size(
+        pos2(rect.right() - INPUT_METER_CLIP_WIDTH / 2.0, center_y),
+        vec2(INPUT_METER_CLIP_WIDTH, INPUT_METER_ROW_HEIGHT - spacing::XS),
+    );
+    painter.rect_filled(
+        clip,
+        CornerRadius::same(radius::SMALL),
+        if reading.clipped {
+            palette.danger
+        } else {
+            palette.surface_hover
+        },
+    );
+    painter.text(
+        clip.center(),
+        Align2::CENTER_CENTER,
+        text::LEVEL_CLIP,
+        fonts::ui_semibold(text_size::CAPTION),
+        if reading.clipped {
+            palette.surface
+        } else {
+            palette.text_muted
+        },
+    );
+    painter.text(
+        pos2(clip.left() - spacing::XS, center_y),
+        Align2::RIGHT_CENTER,
+        &value_text,
+        fonts::value(text_size::CAPTION),
+        if reading.clipped {
+            palette.danger
+        } else {
+            palette.text_primary
+        },
+    );
+    let bar = Rect::from_min_max(
+        pos2(
+            rect.left() + INPUT_METER_CAPTION_WIDTH,
+            center_y - INPUT_METER_HEIGHT / 2.0,
+        ),
+        pos2(
+            clip.left() - spacing::XS - INPUT_METER_VALUE_WIDTH,
+            center_y + INPUT_METER_HEIGHT / 2.0,
+        ),
+    );
+    if bar.width() < INPUT_METER_MIN_BAR_WIDTH {
+        return;
+    }
+    painter.rect_filled(
+        bar,
+        CornerRadius::same(radius::SMALL),
+        palette.surface_hover,
+    );
+    let x_for = |dbfs: f32| {
+        let fraction = ((dbfs - INPUT_METER_FLOOR_DBFS) / -INPUT_METER_FLOOR_DBFS).clamp(0.0, 1.0);
+        bar.left() + fraction * bar.width()
+    };
+    let fill = if reading.clipped {
+        palette.danger
+    } else if reading.peak_dbfs > INPUT_METER_WARNING_DBFS {
+        palette.warning
+    } else {
+        palette.success
+    };
+    painter.rect_filled(
+        Rect::from_min_max(bar.left_top(), pos2(x_for(reading.rms_dbfs), bar.bottom())),
+        CornerRadius::same(radius::SMALL),
+        fill,
+    );
+    let peak_x = x_for(reading.peak_dbfs);
+    painter.line_segment(
+        [pos2(peak_x, bar.top()), pos2(peak_x, bar.bottom())],
+        Stroke::new(stroke::TRACE_LIVE, fill),
+    );
+    for tick in INPUT_METER_TICKS_DBFS {
+        let x = x_for(tick);
+        painter.line_segment(
+            [pos2(x, bar.top()), pos2(x, bar.bottom())],
+            Stroke::new(stroke::BORDER, palette.surface),
         );
-    });
+    }
 }
 
 fn delay_value(
@@ -562,29 +635,40 @@ fn output_section(
     if play.clicked() && editable {
         actions.push(Action::ToggleGenerator);
     }
-    caption_row(ui, palette, text::OUTPUT_SIGNAL, |ui| {
-        ui.label(
-            RichText::new(text::OUTPUT_PINK_NOISE)
-                .font(fonts::label())
-                .color(palette.text_primary),
-        );
-        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            let mut level = f64::from(model.stream.generator.level_dbfs);
-            let response = ui.add_enabled(
+    caption_row(ui, palette, text::OUTPUT_PINK_NOISE, |ui| {
+        let mut level = f64::from(model.stream.generator.level_dbfs);
+        let gaps = spacing::XS + 2.0 * ui.spacing().item_spacing.x;
+        ui.spacing_mut().slider_width =
+            (ui.available_width() - GENERATOR_VALUE_WIDTH - gaps).max(0.0);
+        let slider = ui
+            .add_enabled(
                 editable,
-                egui::DragValue::new(&mut level)
-                    .speed(GENERATOR_DRAG_SPEED_DB)
-                    .range(GENERATOR_MIN_DBFS..=GENERATOR_MAX_DBFS)
-                    .custom_formatter(|value, _| text::format_dbfs(value as f32))
-                    .custom_parser(text::parse_number),
-            );
-            spin_label(&response, text::OUTPUT_LEVEL_LABEL);
-            if response.changed() {
-                changes
-                    .commands
-                    .push(ControlCommand::SetGeneratorLevel(level as f32));
-            }
-        });
+                egui::Slider::new(&mut level, GENERATOR_MIN_DBFS..=GENERATOR_MAX_DBFS)
+                    .step_by(GENERATOR_SLIDER_STEP_DB)
+                    .trailing_fill(true)
+                    .show_value(false),
+            )
+            .on_hover_text(text::OUTPUT_LEVEL_HINT);
+        spin_label(&slider, text::OUTPUT_LEVEL_LABEL);
+        ui.add_space(spacing::XS);
+        let value = ui
+            .add_enabled_ui(editable, |ui| {
+                ui.add_sized(
+                    vec2(GENERATOR_VALUE_WIDTH, size::BUTTON_HEIGHT),
+                    egui::DragValue::new(&mut level)
+                        .speed(GENERATOR_DRAG_SPEED_DB)
+                        .range(GENERATOR_MIN_DBFS..=GENERATOR_MAX_DBFS)
+                        .custom_formatter(|value, _| text::format_level_db(value))
+                        .custom_parser(text::parse_number),
+                )
+            })
+            .inner;
+        spin_label(&value, text::OUTPUT_LEVEL_VALUE_LABEL);
+        if slider.changed() || value.changed() {
+            changes
+                .commands
+                .push(ControlCommand::SetGeneratorLevel(level as f32));
+        }
     });
     if model.output_channels > 0 {
         caption_row(ui, palette, text::PLAY_CHANNEL, |ui| {

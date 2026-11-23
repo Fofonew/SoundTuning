@@ -14,13 +14,9 @@ pub struct BannerInputs {
     pub running: bool,
     pub start_error: Option<String>,
     pub alert: Option<InputAlert>,
-    pub live_internal_reference: bool,
-    pub latency_calibrated: bool,
     pub separate_clocks: bool,
     pub low_coherence: bool,
     pub clipping: bool,
-    pub calibrating: bool,
-    pub calibration_failed: bool,
     pub file_finished: bool,
     pub available_update: Option<Version>,
 }
@@ -71,23 +67,13 @@ pub fn collect_banners(inputs: &BannerInputs) -> Vec<Banner> {
     if inputs.running && inputs.clipping {
         banners.push(banner(Tone::Danger, text::BANNER_CLIPPING, None));
     }
-    if inputs.running && inputs.calibrating {
-        banners.push(banner(Tone::Accent, text::BANNER_CALIBRATION_RUNNING, None));
-    } else if inputs.running && inputs.calibration_failed {
-        banners.push(banner(
-            Tone::Warning,
-            text::BANNER_CALIBRATION_FAILED,
-            Some((text::BUTTON_RETRY, Action::CalibrateLatency)),
-        ));
-    } else if inputs.running && inputs.live_internal_reference && !inputs.latency_calibrated {
-        banners.push(banner(
-            Tone::Warning,
-            text::BANNER_LATENCY_NOT_CALIBRATED,
-            Some((text::BUTTON_CALIBRATE, Action::CalibrateLatency)),
-        ));
-    }
     if inputs.running && inputs.separate_clocks {
-        banners.push(banner(Tone::Warning, text::BANNER_SEPARATE_CLOCKS, None));
+        banners.push(Banner {
+            tone: Tone::Warning,
+            text: text::BANNER_SEPARATE_CLOCKS.to_owned(),
+            action: None,
+            secondary_action: Some((text::BUTTON_HIDE_WARNING, Action::HideSeparateClocksWarning)),
+        });
     }
     if inputs.running && inputs.low_coherence && inputs.alert.is_none() {
         banners.push(banner(Tone::Warning, text::BANNER_LOW_COHERENCE, None));
@@ -169,16 +155,17 @@ mod tests {
     }
 
     #[test]
-    fn uncalibrated_internal_reference_offers_calibration() {
+    fn the_separate_clocks_warning_can_be_hidden() {
         let banners = collect_banners(&BannerInputs {
             running: true,
-            live_internal_reference: true,
+            separate_clocks: true,
             ..BannerInputs::default()
         });
         assert_eq!(banners.len(), 1);
+        assert_eq!(banners[0].tone, Tone::Warning);
         assert_eq!(
-            banners[0].action.map(|(_, action)| action),
-            Some(Action::CalibrateLatency)
+            banners[0].secondary_action,
+            Some((text::BUTTON_HIDE_WARNING, Action::HideSeparateClocksWarning))
         );
     }
 

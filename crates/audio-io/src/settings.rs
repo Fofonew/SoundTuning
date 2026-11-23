@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use crate::generator::NoiseKind;
 
 pub const DEFAULT_SAMPLE_RATE_HZ: u32 = 48_000;
-const DEFAULT_GENERATOR_LEVEL_DBFS: f32 = -20.0;
+const DEFAULT_GENERATOR_LEVEL_DBFS: f32 = -6.0;
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub enum ReferenceMode {

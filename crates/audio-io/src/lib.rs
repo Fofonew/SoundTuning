@@ -15,7 +15,7 @@ mod wav_writer;
 
 pub use aligner::{InternalReferenceAligner, LoopbackFrameSource};
 pub use clock::{StreamClock, playback_to_capture_offset_frames};
-pub use devices::{DeviceInfo, list_devices};
+pub use devices::{DeviceInfo, list_devices, shares_hardware};
 pub use error::AudioIoError;
 pub use file_source::{FilePlayback, RecordingCursor, StereoRecording};
 pub use frames::{FrameSource, GeneratorSample, InputFrame, ReadReport, StereoFrame};

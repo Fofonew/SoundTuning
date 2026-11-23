@@ -100,6 +100,45 @@ fn list_host_devices(
     Ok(devices)
 }
 
+const COREAUDIO_HOST: &str = "coreaudio";
+
+pub fn shares_hardware(
+    input_id: Option<&str>,
+    input_name: &str,
+    output_id: Option<&str>,
+    output_name: &str,
+) -> bool {
+    if input_id.is_some() && input_id == output_id {
+        return true;
+    }
+    if [input_id, output_id]
+        .into_iter()
+        .flatten()
+        .any(|id| id_host(id) == Some(COREAUDIO_HOST))
+    {
+        return false;
+    }
+    if input_name.trim().eq_ignore_ascii_case(output_name.trim()) {
+        return true;
+    }
+    match (hardware_label(input_name), hardware_label(output_name)) {
+        (Some(input), Some(output)) => input.eq_ignore_ascii_case(output),
+        _ => false,
+    }
+}
+
+fn id_host(id: &str) -> Option<&str> {
+    id.split_once(':').map(|(host, _)| host)
+}
+
+fn hardware_label(endpoint_name: &str) -> Option<&str> {
+    let trimmed = endpoint_name.trim_end();
+    let inner = trimmed.strip_suffix(')')?;
+    let start = inner.rfind('(')?;
+    let label = inner.get(start + 1..)?.trim();
+    (!label.is_empty()).then_some(label)
+}
+
 fn max_channels(ranges: &[SupportedStreamConfigRange]) -> usize {
     ranges
         .iter()
@@ -198,6 +237,55 @@ mod tests {
         assert_eq!(usable_sample_rates(&ranges, 1), vec![44_100, 48_000]);
         assert_eq!(usable_sample_rates(&ranges, 2), vec![48_000]);
         assert!(usable_sample_rates(&ranges, 3).is_empty());
+    }
+
+    #[test]
+    fn windows_endpoints_of_one_card_share_hardware() {
+        assert!(shares_hardware(
+            Some("wasapi:{0.0.1.00000000}.{in}"),
+            "Entrée ligne (UX2-2)",
+            Some("wasapi:{0.0.0.00000000}.{out}"),
+            "Haut-parleurs (UX2-2)",
+        ));
+        assert!(shares_hardware(
+            None,
+            "Line (2- US-2x2 & US-4x4)",
+            None,
+            "Speakers (2- us-2x2 & us-4x4) ",
+        ));
+    }
+
+    #[test]
+    fn the_same_device_id_shares_hardware() {
+        assert!(shares_hardware(
+            Some("coreaudio:uax"),
+            "UA-25EX",
+            Some("coreaudio:uax"),
+            "UA-25EX",
+        ));
+    }
+
+    #[test]
+    fn two_cards_do_not_share_hardware() {
+        assert!(!shares_hardware(
+            Some("wasapi:in"),
+            "Microphone (Realtek Audio)",
+            Some("wasapi:out"),
+            "Haut-parleurs (UX2-2)",
+        ));
+        assert!(!shares_hardware(
+            Some("coreaudio:mic"),
+            "Micro MacBook Pro",
+            Some("coreaudio:speakers"),
+            "Haut-parleurs MacBook Pro",
+        ));
+        assert!(!shares_hardware(Some("a"), "Line ()", Some("b"), "Out ()"));
+        assert!(!shares_hardware(
+            Some("coreaudio:scarlett-a"),
+            "Scarlett 2i2 USB",
+            Some("coreaudio:scarlett-b"),
+            "Scarlett 2i2 USB",
+        ));
     }
 
     #[test]

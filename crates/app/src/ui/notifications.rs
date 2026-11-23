@@ -167,7 +167,6 @@ fn action_label(action: Action) -> &'static str {
     match action {
         Action::ApplyDelay => crate::text::BUTTON_FIND_DELAY,
         Action::Undo => crate::text::ACTION_UNDO,
-        Action::CalibrateLatency => crate::text::BUTTON_CALIBRATE,
         other => other.label(),
     }
 }

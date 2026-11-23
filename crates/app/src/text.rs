@@ -42,7 +42,6 @@ pub const ACTION_UNDO: &str = "Annuler";
 pub const ACTION_REDO: &str = "Rétablir";
 pub const ACTION_TOGGLE_SIDE_PANEL: &str = "Afficher / masquer le panneau Measure";
 pub const ACTION_TOGGLE_GENERATOR: &str = "Play Signal (pink noise) on / off";
-pub const ACTION_CALIBRATE_LATENCY: &str = "Calibrate : calibrer la latence de la carte";
 pub const ACTION_ADD_EQ_FILTER: &str = "Ajouter un filtre d'EQ";
 pub const ACTION_EXPORT_SESSION: &str = "Exporter (CSV, filtres)";
 pub const ACTION_RESTART_MEASUREMENT: &str = "Relancer la mesure";
@@ -79,7 +78,6 @@ pub const AUDIO_FILE_MODE_NOTE: &str =
 pub const NOTIFY_AUDIO_APPLIED: &str = "Réglages audio appliqués";
 pub const BUTTON_RETRY: &str = "Réessayer";
 pub const BUTTON_RESUME: &str = "Reprendre";
-pub const BUTTON_CALIBRATE: &str = "Calibrer";
 pub const BUTTON_DISMISS: &str = "Fermer";
 pub const BUTTON_NEXT: &str = "Suivant";
 pub const BUTTON_BACK: &str = "Retour";
@@ -102,15 +100,13 @@ pub const DELAY_OFFSET: &str = "Delay Offset [ms]";
 pub const DELAY_OFFSET_HINT: &str =
     "Délai appliqué à la référence. Saisie, molette ou glisser ; Peak le trouve, Auto le suit.";
 pub const BUTTON_AUTO: &str = "Auto";
-pub const BUTTON_CALIBRATE_LATENCY: &str = "Calibrate";
-pub const LATENCY_NOT_CALIBRATED: &str = "Latence non calibrée";
-pub const LATENCY_NOT_NEEDED: &str = "Référence rebouclée : pas de calibrage";
 pub const BUTTON_START_ANALYSIS: &str = "Start Analysis";
 pub const BUTTON_STOP_ANALYSIS: &str = "Stop Analysis";
 pub const BUTTON_PLAY_SIGNAL: &str = "Play Signal";
-pub const OUTPUT_SIGNAL: &str = "Signal";
 pub const OUTPUT_PINK_NOISE: &str = "Pink Noise";
 pub const OUTPUT_LEVEL_LABEL: &str = "Niveau du pink noise (dBFS)";
+pub const OUTPUT_LEVEL_VALUE_LABEL: &str = "Niveau du pink noise, saisie (dBFS)";
+pub const OUTPUT_LEVEL_HINT: &str = "Niveau du signal joué. 0 dBFS : crêtes du bruit rose juste sous la pleine échelle (RMS ≈ −14 dBFS). Glisser, flèches du clavier ou saisie.";
 pub const PLAY_CHANNEL: &str = "Play Channel";
 pub const FFT_SIZE: &str = "FFT Size";
 pub const AVERAGES: &str = "Averages";
@@ -129,6 +125,7 @@ pub const OVERLAY_SELECT_HINT: &str = "Clic : sélectionner · double-clic : ren
 pub const NOTIFY_OVERLAYS_REMOVED: &str = "Overlays supprimés";
 pub const LEVEL_SIGNAL: &str = "Signal";
 pub const LEVEL_REFERENCE: &str = "Reference";
+pub const LEVEL_CLIP: &str = "CLIP";
 pub const LEVEL_PEAK: &str = "Peak";
 pub const LEVEL_RMS: &str = "RMS";
 pub const LEVEL_UNIT: &str = "dBFS";
@@ -248,6 +245,9 @@ pub const ACTION_TOGGLE_FULLSCREEN: &str = "Plein écran (graphes seuls)";
 pub const ACTION_CHECK_FOR_UPDATES: &str = "Rechercher les mises à jour";
 pub const ACTION_OPEN_UPDATE_PAGE: &str = "Télécharger la nouvelle version";
 pub const ACTION_DISMISS_UPDATE: &str = "Masquer la nouvelle version";
+pub const ACTION_HIDE_SEPARATE_CLOCKS: &str =
+    "Ne plus signaler les horloges distinctes entre entrée et sortie";
+pub const BUTTON_HIDE_WARNING: &str = "Masquer";
 pub const BUTTON_DOWNLOAD_UPDATE: &str = "Télécharger";
 pub const BUTTON_LATER: &str = "Plus tard";
 pub const NOTIFY_UPDATE_CHECKING: &str = "Recherche des mises à jour…";
@@ -260,14 +260,9 @@ pub const BANNER_DISCONNECTED: &str =
 pub const BANNER_PERMISSION: &str = "Accès au micro refusé. Ouvrez Réglages Système › Confidentialité et sécurité › Micro, autorisez SoundTuning, puis réessayez.";
 pub const BANNER_SILENT_INPUT: &str = "L'entrée micro est entièrement muette. Vérifiez le câble, le gain et l'autorisation micro de macOS (Réglages Système › Confidentialité et sécurité › Micro).";
 pub const BANNER_SILENT_REFERENCE: &str = "Référence absente : aucun signal de référence. Vérifiez le générateur ou le câble de rebouclage de la console.";
-pub const BANNER_LATENCY_NOT_CALIBRATED: &str = "Latence de la carte non calibrée : le délai et la distance incluent la latence de la carte. Reliez une sortie à une entrée puis calibrez.";
-pub const BANNER_SEPARATE_CLOCKS: &str = "Entrée et sortie sur deux périphériques différents : horloges distinctes, mesure moins fiable.";
+pub const BANNER_SEPARATE_CLOCKS: &str = "Entrée et sortie sur deux cartes son différentes : horloges distinctes, la phase et le délai peuvent dériver lentement.";
 pub const BANNER_LOW_COHERENCE: &str = "Cohérence faible : rapprochez le micro, montez le niveau du signal ou réduisez le bruit ambiant.";
 pub const BANNER_CLIPPING: &str = "Écrêtage : baissez le gain d'entrée ou le niveau du générateur.";
-pub const BANNER_CALIBRATION_RUNNING: &str =
-    "Calibrage en cours : la sortie du générateur doit être reliée à l'entrée de mesure.";
-pub const BANNER_CALIBRATION_FAILED: &str =
-    "Calibrage impossible : aucun signal fiable sur le rebouclage. Vérifiez le câble.";
 pub const BANNER_FILE_FINISHED: &str = "Fin du fichier atteinte.";
 
 pub const PALETTE_PLACEHOLDER: &str = "Rechercher une commande…";
@@ -314,7 +309,6 @@ pub const KEY_ARROW_LEFT: &str = "←";
 pub const KEY_ARROW_RIGHT: &str = "→";
 pub const NOTIFY_THEME_NIGHT: &str = "Thème Nuit";
 pub const NOTIFY_THEME_DAY: &str = "Thème Plein jour";
-pub const NOTIFY_LATENCY_CALIBRATED: &str = "Latence de la carte calibrée";
 
 pub const ERROR_SOURCE_UNAVAILABLE: &str = "source audio indisponible";
 
@@ -734,6 +728,10 @@ pub fn format_axis_frequency(frequency_hz: f64) -> String {
     }
 }
 
+pub fn format_level_db(value: f64) -> String {
+    format!("{} dB", format_decimal(value, 1))
+}
+
 pub fn format_db(value: f64) -> String {
     let sign = if value > 0.0 { "+" } else { "" };
     format!("{sign}{} dB", format_decimal(value, 1))
@@ -887,8 +885,10 @@ pub fn file_source_label(file_name: &str, sample_rate_hz: u32) -> String {
     )
 }
 
+const DRIVER_WITHOUT_SUFFIX: &str = "CoreAudio";
+
 pub fn device_name(device: &audio_io::DeviceInfo) -> String {
-    if device.is_default_driver {
+    if device.driver == DRIVER_WITHOUT_SUFFIX {
         device.name.clone()
     } else {
         format!("{} ({})", device.name, device.driver)
@@ -980,10 +980,9 @@ pub fn delay_found(milliseconds: f64) -> String {
     )
 }
 
-pub fn delay_details(distance_m: f64, samples: f64, approximate: bool) -> String {
-    let prefix = if approximate { "≈ " } else { "" };
+pub fn delay_details(distance_m: f64, samples: f64) -> String {
     format!(
-        "{prefix}{} · {}",
+        "{} · {}",
         format_meters(distance_m),
         format_samples(samples)
     )
@@ -1008,13 +1007,6 @@ pub fn delay_applied(milliseconds: f64) -> String {
     )
 }
 
-pub fn latency_calibrated(milliseconds: f64) -> String {
-    format!(
-        "{NOTIFY_LATENCY_CALIBRATED} : {}",
-        format_milliseconds(milliseconds)
-    )
-}
-
 pub fn wizard_step(index: usize, total: usize) -> String {
     format!("Étape {index} sur {total}")
 }
@@ -1025,10 +1017,6 @@ pub fn display_option_label(option: &str) -> String {
 
 pub fn version_label(version: impl std::fmt::Display) -> String {
     format!("{APP_NAME} {version}")
-}
-
-pub fn calibrated_latency(milliseconds: f64) -> String {
-    format!("Calibrated: {}", format_milliseconds(milliseconds))
 }
 
 pub fn peak_applied(milliseconds: f64) -> String {
@@ -1241,7 +1229,7 @@ mod tests {
     }
 
     #[test]
-    fn devices_from_another_driver_show_it() {
+    fn windows_devices_always_show_their_driver() {
         let mut device = audio_io::DeviceInfo {
             id: "asio:UAX".into(),
             name: "UAX 2-2".into(),
@@ -1255,7 +1243,12 @@ mod tests {
             is_default_output: false,
         };
         assert_eq!(device_name(&device), "UAX 2-2 (ASIO)");
+        device.name = "Entrée ligne (UX2-2)".into();
+        device.driver = "WASAPI".into();
         device.is_default_driver = true;
-        assert_eq!(device_name(&device), "UAX 2-2");
+        assert_eq!(device_name(&device), "Entrée ligne (UX2-2) (WASAPI)");
+        device.name = "UA-25EX".into();
+        device.driver = "CoreAudio".into();
+        assert_eq!(device_name(&device), "UA-25EX");
     }
 }

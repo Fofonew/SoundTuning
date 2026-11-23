@@ -31,8 +31,8 @@ Ce document est la référence. Il est relu avant chaque phase. Toute adaptation
 
 - **Référence interne (défaut)** : x = échantillons émis par le générateur sur la sortie choisie (G ou D), y = entrée micro choisie (défaut : entrée 1). Le générateur publie ses échantillons vers le moteur (via `rtrb`) avec leur index de trame ; le moteur aligne x et y par index de trame et horodatage `cpal`.
   - Même périphérique en entrée et en sortie (cas UAX 2-2) : même horloge, mesure fiable. Le délai mesuré inclut la latence aller-retour de la carte (tampons + convertisseurs).
-  - **Calibrage de latence** : en un clic, avec un câble de la sortie générateur vers une entrée libre (ou vers l'entrée micro, micro débranché), le délai mesuré est mémorisé comme latence système pour le triplet (périphérique, fréquence, taille de tampon). Le délai acoustique affiché = délai mesuré − latence système. Sans calibrage, l'UI l'indique clairement (« latence non calibrée ») et la distance affichée est marquée approximative.
-  - Entrée et sortie sur des périphériques différents (ex. micro intégré du Mac) : horloges distinctes, dérive possible → mode marqué « moins fiable » dans l'UI, comme le prévoyait la spec initiale.
+  - **Délai comme SysTune (D-055, remplace le calibrage de latence)** : Delay Offset et Peak partent toujours de zéro et donnent le délai total entre la référence et le micro, latence de la carte comprise ; aucun calibrage, aucune latence ajoutée ou soustraite par l'application. Le moteur garde la possibilité de soustraire une latence (`EngineConfig::system_latency_ms`, testée) mais l'application ne la renseigne plus.
+  - Entrée et sortie sur des cartes différentes (ex. micro intégré du Mac) : horloges distinctes, dérive possible → bandeau d'avertissement, masquable (D-056). Deux points d'accès d'une même carte (Windows : « Entrée ligne (UX2-2) » et « Haut-parleurs (UX2-2) ») comptent comme une seule carte.
 - **Référence rebouclée** : x = une entrée de la carte (sortie console rebouclée), y = l'entrée micro. Indispensable pour mesurer sur la musique pendant le concert. Toutes les règles de la spec s'appliquent sans changement.
 
 L'assistant de premier lancement propose la référence interne par défaut et permet de choisir la référence rebouclée.
@@ -95,7 +95,7 @@ Tout se passe sur un seul écran principal ; la mesure ne s'interrompt jamais pe
 - **Annuler / rétablir** (Cmd/Ctrl+Z, Shift+Cmd/Ctrl+Z) pour traces, alignement et EQ.
 - **Aucune fenêtre modale pendant la mesure** : notifications non bloquantes avec action quand c'est utile (« Delay Offset [ms] : 12,43 ms — Annuler », « Délai changé — Peak »).
 - **Assistant de premier lancement en 3 étapes** : périphérique ; mode de référence et canaux (micro, référence ou sortie générateur) avec vu-mètres en direct ; test et démarrage. Ne réapparaît plus ensuite.
-- **États explicites**, chacun avec la marche à suivre : pas de signal, écrêtage, référence absente, cohérence faible, autorisation micro manquante, carte son déconnectée, latence non calibrée (référence interne).
+- **États explicites**, chacun avec la marche à suivre : pas de signal, écrêtage, référence absente, cohérence faible, autorisation micro manquante, carte son déconnectée, horloges distinctes (référence interne sur deux cartes, masquable).
 - **Animations** ≤ 150 ms, réservées aux changements d'état, jamais sur les courbes.
 - **Taille et lisibilité** : zones cliquables ≥ 28 px, chiffres du délai ≥ 28 pt, mise à l'échelle Cmd/Ctrl + et −, navigation clavier, libellés AccessKit sur tous les contrôles.
 
@@ -122,7 +122,7 @@ Tout se passe sur un seul écran principal ; la mesure ne s'interrompt jamais pe
 - Grille d'affichage logarithmique au 1/96 d'octave de 20 Hz à 20 kHz (≈ 957 points), calculée une fois. Lissage, cohérence et EQ sont évalués sur cette grille ; le tracé ne dessine que cette grille.
 - Lissage par fraction d'octave (aucun, 1/48, 1/24, 1/12, 1/6, 1/3) sur |H|² (domaine puissance), puis conversion en dB.
 - Délai : pic de |IFFT(Gxy)| sur une FFT longue dédiée (défaut 131072 points à 48 kHz, ≈ 2,7 s), calculée à basse cadence (≤ 2 fois/s), interpolation parabolique pour la précision sub-échantillon. Positif = micro en retard sur la référence. Confiance = rapport pic/bruit en dB.
-- Référence interne : délai acoustique = délai mesuré − latence système calibrée (§2.1).
+- Référence interne : le délai affiché est le délai total mesuré, latence de la carte comprise, comme SysTune (§2.1, D-055).
 - Compensation : ligne à retard d'un nombre entier d'échantillons sur la référence ; réglage fin par pas de 0,01 ms en rotation de phase e^{+jωτ} sur H.
 - Distance = délai × c, c = 331,3·√(1 + T/273,15) m/s, T en °C réglable (défaut 20 °C).
 - Sommation de deux traces : |H_A + p·H_B·e^{−jωΔ}|, Δ signé (positif = retarder B, négatif = retarder A), polarité p = ±1.
@@ -148,9 +148,9 @@ Tout se passe sur un seul écran principal ; la mesure ne s'interrompt jamais pe
 
 1. **Audio**
    - Choix du périphérique, de la fréquence d'échantillonnage, de la taille de tampon, du mode de référence, du canal référence (rebouclée) ou de la sortie générateur (interne), du canal mesure ; préréglages de configuration rappelables.
-   - Vu-mètres référence et mesure (dBFS, crête, témoin d'écrêtage).
-   - Générateur bruit rose / bruit blanc sur une sortie choisie (G, D, ou les deux), niveau réglable.
-   - Référence interne (§2.1) avec calibrage de latence en un clic ; marquée moins fiable si entrée et sortie sont sur des périphériques différents.
+   - Vu-mètres référence et mesure (dBFS, crête, témoin d'écrêtage) toujours visibles dans la section Input pour régler le gain d'entrée ; témoin CLIP tenu 2 s (D-058).
+   - Générateur bruit rose / bruit blanc sur une sortie choisie (G, D, ou les deux), niveau réglable au curseur de −60 à 0 dBFS, −6 dBFS par défaut (D-057).
+   - Référence interne (§2.1), sans calibrage ; avertissement masquable si entrée et sortie sont sur deux cartes différentes.
    - Entrée entièrement nulle : alerte qui évoque les autorisations micro de macOS. Carte son déconnectée : alerte non bloquante et reprise en un clic.
 2. **Vue magnitude** (vue principale) : voir §6. Démarrer / arrêter / figer ; réglages lissage, taille FFT, moyennage, seuil de cohérence.
 3. **Traces mémorisées**

@@ -46,7 +46,8 @@ La feature `asio` du crate `app` active `audio-io/asio`, qui active `cpal/asio`.
 ### Audio WASAPI (par défaut)
 - [ ] `soundtuning.exe devices` liste la carte avec ses entrées et sorties.
 - [ ] Référence interne : bruit rose sur la sortie choisie, micro sur l'entrée 1, vu-mètres cohérents, délai trouvé et appliqué.
-- [ ] Calibrage de latence (câble sortie → entrée) : valeur stable à ±1 échantillon sur 3 redémarrages.
+- [ ] Câble sortie → entrée en référence interne : Peak donne la latence de la carte, stable à ±1 échantillon sur 3 redémarrages (pas de calibrage, D-055).
+- [ ] Entrée et sortie de la même carte (ex. « Entrée ligne (UX2-2) » et « Haut-parleurs (UX2-2) ») : pas de bandeau « horloges distinctes » (D-056). Avec deux cartes différentes, le bandeau apparaît et « Masquer » le fait disparaître pour cette paire de cartes.
 - [ ] Référence rebouclée : mesure sur la musique avec la console sur l'entrée 2.
 - [ ] Débrancher la carte pendant la mesure : bandeau « Carte son déconnectée », reprise en un clic après rebranchement.
 - [ ] CPU < 10 % d'un cœur en mesure continue (Gestionnaire des tâches, onglet Détails).
@@ -54,7 +55,7 @@ La feature `asio` du crate `app` active `audio-io/asio`, qui active `cpal/asio`.
 ### Audio ASIO (installeur de la CI ou build `--features asio`)
 - [ ] Le pilote ASIO de la carte apparaît dans « Réglages audio » sous la forme « Nom (ASIO) ».
 - [ ] Choisir l'entrée ASIO : la sortie passe sur « Automatique — Nom (ASIO) » ; la mesure démarre.
-- [ ] Mesure en référence interne et rebouclée identique au test WASAPI ; latence calibrée plus faible (refaire le calibrage : la clé de latence dépend du pilote).
+- [ ] Mesure en référence interne et rebouclée identique au test WASAPI ; délai trouvé par Peak plus faible qu'en WASAPI (latence ASIO plus courte).
 - [ ] Taille de tampon : changer le tampon dans le panneau du pilote ASIO, relancer la mesure, aucun craquement.
 - [ ] Format 24 bits : si le pilote travaille en 24 bits, les vu-mètres et la mesure restent corrects (niveaux identiques à WASAPI à ±0,5 dB).
 - [ ] Pendant une mesure ASIO, ouvrir « Réglages audio » : l'entrée et la sortie ASIO restent sélectionnées.

@@ -18,12 +18,12 @@ Début de phase 3 : `ecc:frontend-design-direction`. À chaque revue visuelle : 
 
 ## Disposition (structure SysTune, D-051)
 
-- à gauche, panneau **Measure / Tools** repliable (P), comme la zone de contrôle de SysTune : sections Input (Signal Channel, Delay Offset en gros chiffres avec −/+, Peak, Auto, Reference Channel OUT/1/2…, Calibrate), Start Analysis / Stop Analysis et Freeze, Output (Play Signal, niveau du Pink Noise, Play Channel), Parameters (FFT Size, Averages, Reset), Capture Measurement, puis onglets Overlays (liste des traces : couleur, V, nom, propriétés ; Average, Save, Remove) et Levels (Signal et Reference en Peak / RMS dBFS) ; l'onglet Tools contient le Color Scheme, Check for Updates, Commands et les réglages audio ;
+- à gauche, panneau **Measure / Tools** repliable (P), comme la zone de contrôle de SysTune : sections Input (Signal Channel, Delay Offset en gros chiffres avec −/+, Peak, Auto, Reference Channel OUT/1/2…, jauges Signal et Reference avec témoin CLIP), Start Analysis / Stop Analysis et Freeze, Output (Play Signal, curseur de niveau du Pink Noise, Play Channel), Parameters (FFT Size, Averages, Reset), Capture Measurement, puis onglets Overlays (liste des traces : couleur, V, nom, propriétés ; Average, Save, Remove) et Levels (Signal et Reference en Peak / RMS dBFS) ; l'onglet Tools contient le Color Scheme, Check for Updates, Commands et les réglages audio ;
 - zone centrale ≥ 70 % de la surface : deux graphes superposés (un seul au choix, V), chacun avec sa barre de sélection (Transfer Function : IR, Mag, Phs ; External : Virtual EQ), sa légende et son panneau Display à droite (Show Coherence, Mask γ², Smoothing ; Unit pour l'IR ; Delay Analysis / Virtual EQ pour le module) ; bande de cohérence sous le graphe Mag ;
 - entre les deux graphes, la barre souris : coordonnées du pointeur et valeur de la trace la plus proche, modes Peek / Drag / Zoom, un ou deux graphes, plein écran ; elle sert aussi de séparation redimensionnable ;
 - en bas, barre d'état : état de la mesure, ligne « Setup: » (source, fréquence, référence, signal joué et sorties), Commands (Cmd/Ctrl+K) et version.
 - Délai courant toujours lisible à 1 m : Delay Offset en chiffres ≥ 28 pt dans la section Input.
-- Termes des boutons repris de SysTune (Start Analysis, Peak, Auto, Calibrate, Play Signal, Capture Measurement, Overlays, Average, Save, Remove, Display, Show Coherence, Smoothing, Peek, Drag, Zoom, Virtual EQ, Delay Analysis) ; aides et notifications en français.
+- Termes des boutons repris de SysTune (Start Analysis, Peak, Auto, Play Signal, Capture Measurement, Overlays, Average, Save, Remove, Display, Show Coherence, Smoothing, Peek, Drag, Zoom, Virtual EQ, Delay Analysis) ; aides et notifications en français.
 
 ## Tracé (painter egui, pas d'`egui_plot`)
 
@@ -38,7 +38,7 @@ Début de phase 3 : `ecc:frontend-design-direction`. À chaque revue visuelle : 
 - Chaque action principale : bouton visible sur l'écran principal **et** raccourci (Espace, D, A, S, F, 1–4, L, Cmd/Ctrl+K, Cmd/Ctrl+Z, Shift+Cmd/Ctrl+Z).
 - Palette de commandes (Cmd/Ctrl+K) : toutes les actions avec leurs raccourcis.
 - Aucune fenêtre modale pendant la mesure : notifications non bloquantes avec action (« Délai trouvé : 12,43 ms — Appliquer »).
-- États explicites avec marche à suivre : pas de signal, écrêtage, référence absente, cohérence faible, autorisation micro manquante, carte son déconnectée, latence non calibrée.
+- États explicites avec marche à suivre : pas de signal, écrêtage, référence absente, cohérence faible, autorisation micro manquante, carte son déconnectée, horloges distinctes (masquable).
 - Animations ≤ 150 ms, uniquement pour les changements d'état.
 - Zones cliquables ≥ 28 px ; mise à l'échelle Cmd/Ctrl + et − ; navigation clavier ; libellés AccessKit sur tous les contrôles.
 - Assistant de premier lancement en 3 étapes, une seule fois.

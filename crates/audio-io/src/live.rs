@@ -6,7 +6,7 @@ use rtrb::{Consumer, Producer, RingBuffer};
 
 use crate::aligner::{InternalReferenceAligner, LoopbackFrameSource};
 use crate::clock::StreamClock;
-use crate::devices::{find_device, sample_format_preference, usable_sample_rates};
+use crate::devices::{find_device, sample_format_preference, shares_hardware, usable_sample_rates};
 use crate::error::AudioIoError;
 use crate::frames::{FrameSource, GeneratorSample, InputFrame, ReadReport, StereoFrame};
 use crate::generator::{GeneratorControls, NoiseGenerator};
@@ -181,10 +181,20 @@ impl LiveSession {
                 .map(ToString::to_string),
             sample_rate_hz,
         };
+        let input_device_name = device_display_name(&input_device);
         let uses_separate_clocks = is_internal
-            && opened_output
-                .as_ref()
-                .is_some_and(|opened| opened.device_id != input_device_id);
+            && opened_output.as_ref().is_some_and(|opened| {
+                !shares_hardware(
+                    input_device_id.as_ref().map(ToString::to_string).as_deref(),
+                    &input_device_name,
+                    opened
+                        .device_id
+                        .as_ref()
+                        .map(ToString::to_string)
+                        .as_deref(),
+                    &opened.device_name,
+                )
+            });
         let output_device_name = opened_output
             .as_ref()
             .map(|opened| opened.device_name.clone());
@@ -214,7 +224,6 @@ impl LiveSession {
             stream.play()?;
         }
 
-        let input_device_name = device_display_name(&input_device);
         tracing::info!(
             input = %input_device_name,
             output = ?output_device_name,

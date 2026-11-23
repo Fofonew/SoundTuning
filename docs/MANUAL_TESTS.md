@@ -9,8 +9,9 @@ Cocher, dater et noter les observations. Matériel de référence : UAX 2-2, mic
 - [ ] Première ouverture sur macOS : la demande d'autorisation micro s'affiche ; si elle est refusée, l'alerte « autorisation micro manquante » explique où la rétablir.
 - [ ] Vu-mètres référence et mesure réagissent, crête et témoin d'écrêtage corrects.
 - [ ] Générateur bruit rose sur la sortie gauche, puis sur la sortie droite, niveau réglable, sans clic au démarrage ni à l'arrêt.
-- [ ] Référence interne : calibrage de latence avec un câble sortie → entrée ; noter la latence mesurée.
-- [ ] Référence interne : la latence calibrée reste identique (à ±1 échantillon) après arrêt/redémarrage du flux et après redémarrage de l'application.
+- [ ] Référence interne (D-055) : avec un câble sortie → entrée, Peak donne la latence de la carte (délai total, sans calibrage) ; valeur stable à ±1 échantillon après arrêt/redémarrage.
+- [ ] Jauges Signal / Reference de la section Input (D-058) : elles suivent le gain d'entrée de la carte ; en saturant l'entrée, CLIP s'allume en rouge puis s'éteint 2 s après la fin de l'écrêtage, et le bandeau d'écrêtage disparaît.
+- [ ] Niveau de sortie (D-057) : curseur Pink Noise de −60 à 0 dB, −6 dB par défaut (y compris après mise à jour depuis une version précédente restée à −20 dB) ; à 0 dB la jauge Reference ne doit pas indiquer CLIP en bruit rose.
 - [ ] Référence interne, micro à distance connue (ex. 3,43 m) : distance affichée cohérente (±5 cm).
 - [ ] Référence rebouclée : sortie console sur une entrée, mesure sur la musique, cohérence et délai stables.
 - [ ] Référence interne avec deux périphériques distincts (micro du Mac + sortie UAX) : le délai mesuré reste stable sur 5 min (dérive d'horloge éventuelle) ; noter la dérive observée.
@@ -37,7 +38,7 @@ Cocher, dater et noter les observations. Matériel de référence : UAX 2-2, mic
 
 ## Délais et alignement
 
-- [ ] Au démarrage de la mesure, le délai est trouvé et appliqué sans intervention (référence interne calibrée et rebouclée).
+- [ ] Au démarrage de la mesure, le délai est trouvé et appliqué sans intervention (référence interne et rebouclée).
 - [ ] Déplacer le micro d'environ 1 m pendant la mesure : notification « Délai changé : … — Appliquer » ; A applique le nouveau délai ; la notification ne se répète pas tant que le micro reste à la nouvelle place.
 - [ ] Touche T (ou bouton « Suivi ») : en suivi, le délai suit le micro sans notification ; désactivé, il reste figé.
 - [ ] ⇧← / ⇧→ et boutons − / + : le délai affiché varie de 0,01 ms par appui, la courbe de phase/le niveau des aigus réagit.

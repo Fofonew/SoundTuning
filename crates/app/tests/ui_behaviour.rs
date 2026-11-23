@@ -1400,3 +1400,36 @@ fn reset_restarts_the_averages_and_display_picks_the_virtual_eq_module() {
     assert_eq!(harness.state().module(), Some(ExternalModule::VirtualEq));
     harness.get_by_label(soundtuning::text::ACTION_ADD_EQ_FILTER);
 }
+
+#[test]
+fn input_meters_stay_visible_in_the_measure_panel() {
+    use egui_kittest::kittest::NodeT;
+    let mut harness = harness(file_options(Theme::Night, true));
+    wait_for_stable_measurement(&mut harness);
+    let labels: Vec<String> = harness
+        .query_all_by_role(Role::Meter)
+        .map(|node| node.accesskit_node().label().unwrap_or_default())
+        .collect();
+    for name in [
+        soundtuning::text::LEVEL_SIGNAL,
+        soundtuning::text::LEVEL_REFERENCE,
+    ] {
+        assert!(
+            labels
+                .iter()
+                .any(|label| label.starts_with(&format!("{name} "))),
+            "{name} missing in {labels:?}"
+        );
+    }
+}
+
+#[test]
+fn the_output_level_slider_is_on_the_measure_panel() {
+    let mut harness = harness(file_options(Theme::Night, false));
+    harness.step();
+    harness.get_by_role_and_label(Role::Slider, soundtuning::text::OUTPUT_LEVEL_LABEL);
+    harness.get_by_role_and_label(
+        Role::SpinButton,
+        soundtuning::text::OUTPUT_LEVEL_VALUE_LABEL,
+    );
+}

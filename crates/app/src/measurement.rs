@@ -16,6 +16,7 @@ use crate::design::widgets::{METER_FLOOR_DBFS, MeterReading};
 use crate::text;
 
 const METER_RELEASE_DB_PER_SECOND: f32 = 24.0;
+const CLIP_HOLD_SECONDS: f32 = 2.0;
 const SILENT_INPUT_ALERT_SECONDS: u64 = 2;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -59,7 +60,7 @@ impl FrameSource for MeteredRecording {
 struct Ballistics {
     peak_dbfs: f32,
     rms_dbfs: f32,
-    clipped: bool,
+    clip_hold_s: f32,
 }
 
 impl Default for Ballistics {
@@ -67,7 +68,7 @@ impl Default for Ballistics {
         Self {
             peak_dbfs: METER_FLOOR_DBFS,
             rms_dbfs: METER_FLOOR_DBFS,
-            clipped: false,
+            clip_hold_s: 0.0,
         }
     }
 }
@@ -80,14 +81,18 @@ impl Ballistics {
             .max(self.peak_dbfs - release)
             .max(METER_FLOOR_DBFS);
         self.rms_dbfs = snapshot.rms_dbfs.max(METER_FLOOR_DBFS);
-        self.clipped = snapshot.clipped;
+        self.clip_hold_s = if snapshot.clipped {
+            CLIP_HOLD_SECONDS
+        } else {
+            (self.clip_hold_s - elapsed_s).max(0.0)
+        };
     }
 
     fn reading(self) -> MeterReading {
         MeterReading {
             peak_dbfs: self.peak_dbfs,
             rms_dbfs: self.rms_dbfs,
-            clipped: self.clipped,
+            clipped: self.clip_hold_s > 0.0,
         }
     }
 }
@@ -366,7 +371,7 @@ fn open_measurement(
             let route = session.route().clone();
             let adjusted_sample_rate_hz = (route.sample_rate_hz != config.stream.sample_rate_hz)
                 .then_some(route.sample_rate_hz);
-            let engine_config = config.engine_config(&route);
+            let engine_config = config.engine_config();
             let frames = session
                 .take_frame_source()
                 .ok_or_else(|| text::ERROR_SOURCE_UNAVAILABLE.to_owned())?;
@@ -392,7 +397,7 @@ fn open_measurement(
         }
         SourceSpec::File { path, pacing } => {
             let route = config.configured_route();
-            let engine_config = config.engine_config(&route);
+            let engine_config = config.engine_config();
             let meters = Arc::new(MeterBank::default());
             let file_name = path.file_name().map_or_else(
                 || path.display().to_string(),
@@ -457,6 +462,27 @@ mod tests {
         ballistics.update(quiet, 0.5);
         assert!((ballistics.peak_dbfs - (-6.0 - 12.0)).abs() < 1.0e-3);
         assert_eq!(ballistics.rms_dbfs, -12.0);
+    }
+
+    #[test]
+    fn clipping_stays_lit_for_the_hold_time_then_clears() {
+        let mut ballistics = Ballistics::default();
+        let clipped = MeterSnapshot {
+            peak_dbfs: 0.0,
+            rms_dbfs: -6.0,
+            clipped: true,
+            consecutive_silent_frames: 0,
+        };
+        let clean = MeterSnapshot {
+            clipped: false,
+            ..clipped
+        };
+        ballistics.update(clipped, 0.016);
+        assert!(ballistics.reading().clipped);
+        ballistics.update(clean, CLIP_HOLD_SECONDS / 2.0);
+        assert!(ballistics.reading().clipped);
+        ballistics.update(clean, CLIP_HOLD_SECONDS);
+        assert!(!ballistics.reading().clipped);
     }
 
     #[test]

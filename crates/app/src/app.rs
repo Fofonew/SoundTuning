@@ -1,6 +1,6 @@
 use std::time::{Duration, Instant};
 
-use audio_io::{AudioRoute, DeviceInfo, ReferenceMode, list_devices};
+use audio_io::{DeviceInfo, ReferenceMode, list_devices};
 use dsp_core::distance_m_for_delay_ms;
 use eframe::egui::{self, CornerRadius, Frame, Margin, Panel, Stroke};
 use engine::EngineCommand;
@@ -25,7 +25,7 @@ use crate::ui::alignment_panel::{self, AlignmentCommand};
 use crate::ui::audio_panel::{self, AudioCommand, AudioSettingsPanel};
 use crate::ui::banners::{BannerInputs, collect_banners, show_banners};
 use crate::ui::control_panel::{
-    self, ControlCommand, ControlModel, ControlPanelState, ControlTab, DelayReadout, LatencyStatus,
+    self, ControlCommand, ControlModel, ControlPanelState, ControlTab, DelayReadout,
 };
 use crate::ui::display_panel;
 use crate::ui::eq_panel::{self, EqCommand};
@@ -841,13 +841,6 @@ impl SoundTuningApp {
         );
     }
 
-    fn current_route(&self) -> AudioRoute {
-        self.measurement
-            .route()
-            .cloned()
-            .unwrap_or_else(|| self.config.configured_route())
-    }
-
     fn available_devices(&mut self) -> Vec<DeviceInfo> {
         let mut devices = self.device_catalog.devices();
         if self.measurement.is_running() {
@@ -949,16 +942,10 @@ impl SoundTuningApp {
 
     fn apply_control_command(&mut self, command: ControlCommand) {
         match command {
-            ControlCommand::SetDelayMs(acoustic_ms) => {
-                let latency_ms = self
-                    .measurement
-                    .snapshot()
-                    .delay
-                    .system_latency_ms
-                    .unwrap_or(0.0);
+            ControlCommand::SetDelayMs(delay_ms) => {
                 self.delay_undo = None;
                 self.measurement
-                    .send(EngineCommand::SetCompensationMs(acoustic_ms + latency_ms));
+                    .send(EngineCommand::SetCompensationMs(delay_ms));
             }
             ControlCommand::ApplyStream(stream) => {
                 self.config.stream = stream;
@@ -1010,20 +997,6 @@ impl SoundTuningApp {
             |device| device.output_channel_count,
         );
         (inputs, outputs)
-    }
-
-    fn latency_status(&self) -> LatencyStatus {
-        if !self.config.uses_internal_reference() || self.measurement.is_file_mode() {
-            return LatencyStatus::NotNeeded;
-        }
-        match self
-            .config
-            .calibrated_latency_ms(&self.current_route())
-            .or(self.measurement.snapshot().delay.system_latency_ms)
-        {
-            Some(latency_ms) => LatencyStatus::Calibrated(latency_ms),
-            None => LatencyStatus::NotCalibrated,
-        }
     }
 
     fn setup_line(&self) -> String {
@@ -1199,6 +1172,12 @@ impl SoundTuningApp {
                 }
             }
             Action::DismissUpdate => self.available_update = None,
+            Action::HideSeparateClocksWarning => {
+                if let Some(route) = self.measurement.route().cloned() {
+                    self.config.hide_clock_warning(&route);
+                    self.mark_config_dirty();
+                }
+            }
             Action::ToggleTheme => {
                 self.config.theme = self.config.theme.toggled();
                 self.mark_config_dirty();
@@ -1222,10 +1201,6 @@ impl SoundTuningApp {
                     generator.set_enabled(self.config.stream.generator.enabled);
                 }
                 self.mark_config_dirty();
-            }
-            Action::CalibrateLatency => {
-                self.measurement
-                    .send(EngineCommand::StartLatencyCalibration);
             }
             Action::CaptureTrace => self.capture_trace(),
             Action::Undo if self.delay_undo.is_some() && self.measurement.is_running() => {
@@ -1307,19 +1282,6 @@ impl SoundTuningApp {
 
     fn process_engine_events(&mut self) {
         let delay = self.measurement.snapshot().delay;
-        let from_current_engine = self.measurement.snapshot().sequence > 0;
-        if let Some(latency_ms) = delay.system_latency_ms.filter(|_| from_current_engine) {
-            let key = self.config.latency_key(&self.current_route());
-            let stored = self.config.system_latency_ms.get(&key).copied();
-            if self.config.uses_internal_reference()
-                && stored.is_none_or(|stored| (stored - latency_ms).abs() > f64::EPSILON)
-            {
-                self.config.system_latency_ms.insert(key, latency_ms);
-                self.mark_config_dirty();
-                self.notifications
-                    .push(text::latency_calibrated(latency_ms), Tone::Success, None);
-            }
-        }
         if let Some(confident) = delay.latest_confident
             && confident.measured_at_sequence != self.last_notified_delay_sequence
             && self.awaiting_delay_result
@@ -1338,10 +1300,7 @@ impl SoundTuningApp {
             .filter(|drift| drift.abs() > DELAY_DRIFT_NOTIFY_MS);
         match (drift, delay.latest_confident) {
             (Some(drift_ms), Some(latest))
-                if running
-                    && !self.config.delay_tracking
-                    && !self.awaiting_delay_result
-                    && !delay.calibrating_latency =>
+                if running && !self.config.delay_tracking && !self.awaiting_delay_result =>
             {
                 if !self.drift_notified {
                     self.drift_notified = true;
@@ -1375,11 +1334,6 @@ impl SoundTuningApp {
                 acoustic_ms / MILLISECONDS_PER_SECOND * f64::from(snapshot.sample_rate_hz),
             ),
             confidence_db: delay.latest.map(|latest| latest.confidence_db),
-            approximate: self.is_live_internal()
-                && self
-                    .config
-                    .calibrated_latency_ms(&self.current_route())
-                    .is_none(),
         }
     }
 
@@ -1461,17 +1415,13 @@ impl SoundTuningApp {
             running: self.measurement.is_running(),
             start_error: self.measurement.last_error().map(str::to_owned),
             alert: self.measurement.input_alert(),
-            live_internal_reference: self.is_live_internal(),
-            latency_calibrated: self
-                .config
-                .calibrated_latency_ms(&self.current_route())
-                .is_some()
-                || snapshot.delay.system_latency_ms.is_some(),
-            separate_clocks: self.measurement.uses_separate_clocks(),
+            separate_clocks: self.measurement.uses_separate_clocks()
+                && self
+                    .measurement
+                    .route()
+                    .is_none_or(|route| !self.config.is_clock_warning_hidden(route)),
             low_coherence: self.low_coherence_cache.1 && self.measurement.is_running(),
             clipping: reference.clipped || measurement.clipped,
-            calibrating: snapshot.delay.calibrating_latency,
-            calibration_failed: snapshot.delay.calibration_failed,
             file_finished: snapshot.source_finished,
             available_update: self
                 .available_update
@@ -1690,7 +1640,6 @@ impl SoundTuningApp {
             let (reference_meter, measurement_meter) = self.measurement.meter_readings();
             let (input_channels, output_channels) = self.channel_counts();
             let delay = self.delay_readout();
-            let latency = self.latency_status();
             let stream = self.config.stream.clone();
             let file_mode = self.measurement.is_file_mode();
             let running = self.measurement.is_running();
@@ -1718,7 +1667,6 @@ impl SoundTuningApp {
                                 stream: &stream,
                                 input_channels,
                                 output_channels,
-                                latency,
                                 sample_rate_hz,
                                 reference_meter,
                                 measurement_meter,

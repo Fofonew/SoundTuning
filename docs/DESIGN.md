@@ -33,7 +33,7 @@ Fixée au début de la phase 3 (`ecc:frontend-design-direction`). Référence de
 | `text_primary` | `#E4E8EE` | `#0A0C0F` | texte principal (jamais de blanc pur la nuit) |
 | `text_muted` | `#8E98A5` | `#3E4752` | légendes, unités |
 | `accent` | `#56B4E9` | `#0060A0` | focus, sélection, action principale |
-| `warning` | `#E69F00` | `#9A5F00` | cohérence faible, latence non calibrée |
+| `warning` | `#E69F00` | `#9A5F00` | cohérence faible, horloges distinctes, niveau d'entrée > −6 dBFS |
 | `danger` | `#D55E00` | `#B23A00` | écrêtage, carte déconnectée |
 | `success` | `#009E73` | `#00704F` | mesure en cours, calage OK |
 | `plot_background` | `#090B0E` | `#FFFFFF` | zone de tracé |
@@ -65,10 +65,12 @@ Traces mémorisées (Okabe–Ito, dans l'ordre) : `#E69F00` orange, `#56B4E9` bl
 │ └──────────┘ ├────────────────────────────────────────────────────┬──────────┤
 │[−][+][Peak][Auto]│ ✥  Transfer Function …  External …             │ Display  │
 │Reference Ch [OUT][1][2]│ ▪Live ▪Trace 1 ▪Pos sum                  │☑ Show    │
-│[Calibrate] Calibrated │  graphe du bas (Mag)                       │ Coherence│
+│Signal ▮▮▮▮▯ −12 CLIP│  graphe du bas (Mag)                       │ Coherence│
+│Reference ▮▮▯ −18 CLIP│                                            │          │
 │[Stop Analysis][Freeze]│                                            │Mask γ²   │
 │─ Output ─────│                                                    │Smoothing │
 │[Play Signal] │  bande de cohérence (64 px)                        │          │
+│Pink Noise ━━━○ −6,0 dB│                                           │          │
 │─ Parameters ─│                                                    │          │
 │FFT Size, Averages [Reset]                                         │          │
 │[Capture Measurement]                                              │          │

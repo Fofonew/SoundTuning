@@ -166,3 +166,19 @@ Critères : hiérarchie visuelle, lisibilité à 1 m, alignements, espacements, 
   - Tools : Color Scheme, Check for Updates, Commands puis réglages audio ;
   - test de chevauchement à 1024×600, 1280×680 et 1440×900.
 - Captures après : `docs/ui-review/interface-systune/*-tour3-apres.png` (mesure Nuit et Plein jour, traces, alignement Nuit et Plein jour, EQ Nuit et Plein jour, réglages audio, phase, IR, premier lancement). Captures avant : `docs/ui-review/zoom-split-somme/`.
+
+## 2026-11-23 — Jauges d'entrée et curseur de niveau (D-057, D-058)
+
+- Tour 1 (`crates/app/tests/snapshots/measurement_night.png`) :
+  - les libellés « Reference » chevauchaient la barre ;
+  - les graduations chiffrées se superposaient (« -48-36-24-1260 ») ;
+  - la valeur « −6,0 dBFS » du niveau débordait. Elle élargissait le contenu défilant, donc tout le panneau : FFT Size, Capture Measurement et Remove étaient coupés à droite.
+- Corrections :
+  - libellés des jauges en taille caption sur 64 px ;
+  - graduations remplacées par des repères dans la barre (−48 / −24 / −12 / −6) ;
+  - valeur du niveau à largeur fixe (64 px, « −6,0 dB ») et largeur du curseur calculée avec les espacements ;
+  - lignes Signal et Pink Noise fusionnées (« Pink Noise » + curseur), pour que le panneau ne défile pas à 1440 × 900.
+- Tour 2 (`docs/ui-review/retours-2026-11-23/measurement_night.png`, `measurement_daylight.png`) :
+  - largeur du panneau identique à la version 0.2.3 ;
+  - jauges lisibles dans les deux thèmes ; CLIP éteint en gris, allumé en rouge ;
+  - aucune coupure.

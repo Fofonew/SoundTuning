@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use anyhow::Context;
@@ -18,7 +18,10 @@ const DEFAULT_SMOOTHING_FRACTION: u32 = 48;
 const MIN_AIR_TEMPERATURE_CELSIUS: f64 = -30.0;
 const MAX_AIR_TEMPERATURE_CELSIUS: f64 = 50.0;
 const MIN_GENERATOR_LEVEL_DBFS: f32 = -60.0;
-const MAX_GENERATOR_LEVEL_DBFS: f32 = -6.0;
+const MAX_GENERATOR_LEVEL_DBFS: f32 = 0.0;
+const CURRENT_CONFIG_VERSION: u32 = 1;
+const DEFAULT_DEVICE_KEY: &str = "default";
+const LEGACY_DEFAULT_GENERATOR_LEVEL_DBFS: f32 = -20.0;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
@@ -79,11 +82,31 @@ pub struct AppConfig {
     pub stream: StreamSettings,
     pub analysis: StoredAnalysis,
     pub delay_tracking: bool,
-    pub system_latency_ms: BTreeMap<String, f64>,
+    pub hidden_clock_warning_routes: BTreeSet<String>,
     pub air_temperature_celsius: f64,
     pub side_panel_open: bool,
     pub plot_layout: PlotLayout,
     pub upper_pane_fraction: f32,
+    #[serde(default = "legacy_config_version")]
+    pub config_version: u32,
+}
+
+fn clock_warning_key(route: &AudioRoute) -> String {
+    format!(
+        "{}|{}",
+        route
+            .input_device_id
+            .as_deref()
+            .unwrap_or(DEFAULT_DEVICE_KEY),
+        route
+            .output_device_id
+            .as_deref()
+            .unwrap_or(DEFAULT_DEVICE_KEY)
+    )
+}
+
+fn legacy_config_version() -> u32 {
+    0
 }
 
 impl Default for AppConfig {
@@ -97,11 +120,12 @@ impl Default for AppConfig {
                 ..StoredAnalysis::default()
             },
             delay_tracking: false,
-            system_latency_ms: BTreeMap::new(),
+            hidden_clock_warning_routes: BTreeSet::new(),
             air_temperature_celsius: DEFAULT_AIR_TEMPERATURE_CELSIUS,
             side_panel_open: true,
             plot_layout: PlotLayout::default(),
             upper_pane_fraction: DEFAULT_UPPER_PANE_FRACTION,
+            config_version: CURRENT_CONFIG_VERSION,
         }
     }
 }
@@ -109,6 +133,12 @@ impl Default for AppConfig {
 impl AppConfig {
     pub fn sanitized(mut self) -> Self {
         let defaults = Self::default();
+        if self.config_version < CURRENT_CONFIG_VERSION {
+            if self.stream.generator.level_dbfs == LEGACY_DEFAULT_GENERATOR_LEVEL_DBFS {
+                self.stream.generator.level_dbfs = defaults.stream.generator.level_dbfs;
+            }
+            self.config_version = CURRENT_CONFIG_VERSION;
+        }
         self.analysis = StoredAnalysis::from_settings(self.analysis.to_settings());
         if !audio_io::STANDARD_SAMPLE_RATES_HZ.contains(&self.stream.sample_rate_hz) {
             self.stream.sample_rate_hz = defaults.stream.sample_rate_hz;
@@ -128,8 +158,6 @@ impl AppConfig {
         if self.stream.generator.output_channel_indices.is_empty() {
             self.stream.generator.output_channel_indices = vec![0];
         }
-        self.system_latency_ms
-            .retain(|_, latency| latency.is_finite() && *latency >= 0.0);
         self.upper_pane_fraction = sanitized_upper_fraction(self.upper_pane_fraction);
         self
     }
@@ -146,30 +174,18 @@ impl AppConfig {
         }
     }
 
-    pub fn latency_key(&self, route: &AudioRoute) -> String {
-        format!(
-            "{}|{}|{}|{}",
-            route.input_device_id.as_deref().unwrap_or("default"),
-            route.output_device_id.as_deref().unwrap_or("default"),
-            route.sample_rate_hz,
-            self.stream
-                .buffer_frames
-                .map_or_else(|| "auto".to_owned(), |frames| frames.to_string())
-        )
+    pub fn is_clock_warning_hidden(&self, route: &AudioRoute) -> bool {
+        self.hidden_clock_warning_routes
+            .contains(&clock_warning_key(route))
+    }
+
+    pub fn hide_clock_warning(&mut self, route: &AudioRoute) {
+        self.hidden_clock_warning_routes
+            .insert(clock_warning_key(route));
     }
 
     pub fn uses_internal_reference(&self) -> bool {
         matches!(self.stream.reference, ReferenceMode::Internal)
-    }
-
-    pub fn calibrated_latency_ms(&self, route: &AudioRoute) -> Option<f64> {
-        if self.uses_internal_reference() {
-            self.system_latency_ms
-                .get(&self.latency_key(route))
-                .copied()
-        } else {
-            None
-        }
     }
 
     pub fn delay_policy(&self) -> DelayPolicy {
@@ -179,11 +195,11 @@ impl AppConfig {
         }
     }
 
-    pub fn engine_config(&self, route: &AudioRoute) -> EngineConfig {
+    pub fn engine_config(&self) -> EngineConfig {
         EngineConfig {
             settings: self.analysis.to_settings(),
             policy: self.delay_policy(),
-            system_latency_ms: self.calibrated_latency_ms(route),
+            system_latency_ms: None,
         }
     }
 }
@@ -309,9 +325,7 @@ mod tests {
             wizard_completed: true,
             ..AppConfig::default()
         };
-        config
-            .system_latency_ms
-            .insert(config.latency_key(&config.configured_route()), 7.3);
+        config.hide_clock_warning(&config.configured_route());
         store.save(&config).unwrap();
         assert_eq!(store.load(), config);
         std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
@@ -329,42 +343,71 @@ mod tests {
     }
 
     #[test]
-    fn latency_is_only_used_with_the_internal_reference() {
+    fn the_engine_never_receives_a_system_latency() {
         let mut config = AppConfig::default();
-        let route = config.configured_route();
-        config
-            .system_latency_ms
-            .insert(config.latency_key(&route), 5.0);
-        assert_eq!(config.engine_config(&route).system_latency_ms, Some(5.0));
+        assert_eq!(config.engine_config().system_latency_ms, None);
         config.stream.reference = ReferenceMode::Loopback {
             reference_channel_index: 1,
         };
-        assert_eq!(config.engine_config(&route).system_latency_ms, None);
+        assert_eq!(config.engine_config().system_latency_ms, None);
+    }
+
+    fn legacy_config_json(level_dbfs: f32) -> serde_json::Value {
+        let mut json = serde_json::to_value(AppConfig::default()).unwrap();
+        let object = json.as_object_mut().unwrap();
+        object.remove("config_version");
+        object.insert(
+            "system_latency_ms".into(),
+            serde_json::json!({"in|out|48000|auto": 7.3}),
+        );
+        json["stream"]["generator"]["level_dbfs"] = serde_json::json!(level_dbfs);
+        json
     }
 
     #[test]
-    fn latency_follows_the_output_actually_opened() {
+    fn an_old_config_moves_to_the_new_generator_default_and_drops_latencies() {
+        let old: AppConfig = serde_json::from_value(legacy_config_json(-20.0)).unwrap();
+        assert_eq!(old.config_version, 0);
+        let migrated = old.sanitized();
+        assert_eq!(
+            migrated.stream.generator.level_dbfs,
+            AppConfig::default().stream.generator.level_dbfs
+        );
+        assert_eq!(migrated.config_version, CURRENT_CONFIG_VERSION);
+    }
+
+    #[test]
+    fn a_level_chosen_by_the_user_survives_the_migration() {
+        let old: AppConfig = serde_json::from_value(legacy_config_json(-12.0)).unwrap();
+        assert_eq!(old.sanitized().stream.generator.level_dbfs, -12.0);
+    }
+
+    #[test]
+    fn a_hidden_clock_warning_only_applies_to_its_pair_of_devices() {
         let mut config = AppConfig::default();
-        config.stream.input_device_id = Some("coreaudio:mic".into());
-        let speakers = AudioRoute {
+        let mac = AudioRoute {
             input_device_id: Some("coreaudio:mic".into()),
             output_device_id: Some("coreaudio:speakers".into()),
             sample_rate_hz: 48_000,
         };
-        let headphones = AudioRoute {
+        let other = AudioRoute {
             output_device_id: Some("coreaudio:headphones".into()),
-            ..speakers.clone()
+            ..mac.clone()
         };
-        config
-            .system_latency_ms
-            .insert(config.latency_key(&speakers), 12.0);
-        assert_eq!(config.calibrated_latency_ms(&speakers), Some(12.0));
-        assert_eq!(config.calibrated_latency_ms(&headphones), None);
-        let resampled = AudioRoute {
+        config.hide_clock_warning(&mac);
+        assert!(config.is_clock_warning_hidden(&mac));
+        assert!(!config.is_clock_warning_hidden(&other));
+        assert!(config.is_clock_warning_hidden(&AudioRoute {
             sample_rate_hz: 44_100,
-            ..speakers
-        };
-        assert_eq!(config.calibrated_latency_ms(&resampled), None);
+            ..mac
+        }));
+    }
+
+    #[test]
+    fn the_generator_can_reach_full_scale() {
+        let mut config = AppConfig::default();
+        config.stream.generator.level_dbfs = 3.0;
+        assert_eq!(config.sanitized().stream.generator.level_dbfs, 0.0);
     }
 
     #[test]
