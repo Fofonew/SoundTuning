@@ -629,7 +629,7 @@ fn dragging_on_the_plot_zooms_into_the_selection_and_double_click_resets() {
     use eframe::egui::PointerButton;
     use soundtuning::plot::PlotView;
     let mut harness = common::fast_clock_harness(file_options(Theme::Night, true));
-    wait_until_running(&mut harness);
+    common::wait_for_stable_measurement(&mut harness);
     harness.run_steps(2);
     let rect = harness.state().last_plot_rect().unwrap();
     let initial = harness.state().plot_view();
@@ -643,6 +643,7 @@ fn dragging_on_the_plot_zooms_into_the_selection_and_double_click_resets() {
         Modifiers::NONE,
     );
     let wide = harness.state().plot_view();
+    let rect = harness.state().last_plot_rect().unwrap();
     assert!((wide.low_hz / 100.0 - 1.0).abs() < 0.03, "{wide:?}");
     assert!((wide.high_hz / 1000.0 - 1.0).abs() < 0.03, "{wide:?}");
     assert_eq!(
@@ -658,6 +659,7 @@ fn dragging_on_the_plot_zooms_into_the_selection_and_double_click_resets() {
         Modifiers::NONE,
     );
     let tall = harness.state().plot_view();
+    let rect = harness.state().last_plot_rect().unwrap();
     assert!(
         (tall.low_db + 6.0).abs() < 0.3 && (tall.high_db - 6.0).abs() < 0.3,
         "{tall:?}"
@@ -672,6 +674,7 @@ fn dragging_on_the_plot_zooms_into_the_selection_and_double_click_resets() {
         Modifiers::NONE,
     );
     let panned = harness.state().plot_view();
+    let rect = harness.state().last_plot_rect().unwrap();
     assert!(panned.low_hz > tall.low_hz, "{panned:?}");
     assert!(((panned.high_hz / panned.low_hz) / (tall.high_hz / tall.low_hz) - 1.0).abs() < 1.0e-6);
 
@@ -700,6 +703,7 @@ fn dragging_on_the_plot_zooms_into_the_selection_and_double_click_resets() {
     harness.run_steps(3);
     assert_eq!(harness.state().plot_view(), panned);
 
+    let rect = harness.state().last_plot_rect().unwrap();
     double_click(&mut harness, rect.center());
     assert_eq!(harness.state().plot_view(), PlotView::default());
 }
