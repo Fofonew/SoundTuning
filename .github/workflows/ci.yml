@@ -41,10 +41,16 @@ jobs:
       - run: cargo test --workspace
       - run: cargo bench --workspace --no-run
       - if: runner.os == 'Windows'
-        name: Install libclang for the ASIO bindings
+        name: Prepare the ASIO build (libclang and Steinberg SDK)
         run: |
           python -m pip install --disable-pip-version-check --target "$env:RUNNER_TEMP\libclang" libclang==18.1.1
           "LIBCLANG_PATH=$env:RUNNER_TEMP\libclang\clang\native" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          New-Item -ItemType Directory -Force "$env:RUNNER_TEMP\asiosdk" | Out-Null
+          Invoke-WebRequest -Uri https://www.steinberg.net/asiosdk -OutFile "$env:RUNNER_TEMP\asiosdk.zip"
+          & "$env:SystemRoot\System32\tar.exe" -xf "$env:RUNNER_TEMP\asiosdk.zip" -C "$env:RUNNER_TEMP\asiosdk"
+          $sdk = (Get-ChildItem "$env:RUNNER_TEMP\asiosdk" -Directory | Select-Object -First 1).FullName
+          if (-not (Test-Path "$sdk\common\asio.h")) { throw "ASIO SDK not found after extraction" }
+          "CPAL_ASIO_DIR=$sdk" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
       - if: runner.os == 'Windows'
         run: cargo check -p app --features asio
 
@@ -77,10 +83,16 @@ jobs:
       - if: runner.os == 'macOS'
         run: cargo build --release -p app
       - if: runner.os == 'Windows'
-        name: Install libclang for the ASIO bindings
+        name: Prepare the ASIO build (libclang and Steinberg SDK)
         run: |
           python -m pip install --disable-pip-version-check --target "$env:RUNNER_TEMP\libclang" libclang==18.1.1
           "LIBCLANG_PATH=$env:RUNNER_TEMP\libclang\clang\native" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          New-Item -ItemType Directory -Force "$env:RUNNER_TEMP\asiosdk" | Out-Null
+          Invoke-WebRequest -Uri https://www.steinberg.net/asiosdk -OutFile "$env:RUNNER_TEMP\asiosdk.zip"
+          & "$env:SystemRoot\System32\tar.exe" -xf "$env:RUNNER_TEMP\asiosdk.zip" -C "$env:RUNNER_TEMP\asiosdk"
+          $sdk = (Get-ChildItem "$env:RUNNER_TEMP\asiosdk" -Directory | Select-Object -First 1).FullName
+          if (-not (Test-Path "$sdk\common\asio.h")) { throw "ASIO SDK not found after extraction" }
+          "CPAL_ASIO_DIR=$sdk" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
       - if: runner.os == 'Windows'
         run: cargo build --release -p app --features asio
       - run: cargo packager --release --formats ${{ matrix.formats }}
