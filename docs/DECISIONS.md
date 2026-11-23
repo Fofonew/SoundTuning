@@ -480,3 +480,9 @@ Non corrigé, justifié :
   - `record` en référence rebouclée : la fréquence demandée de 48 kHz est adaptée à 44,1 kHz, avec le message prévu ;
   - `record` en référence interne, entrée et sortie de la UA-2X2 : `uses_separate_clocks=false` (pas de faux bandeau « horloges distinctes », D-056), générateur relu sur la référence ;
   - test unitaire `swissonic_endpoints_seen_on_windows_share_hardware` avec les vrais noms et identifiants.
+
+### D-063 — CI : libclang figé pour la compilation ASIO (2026-11-23)
+- Constat : depuis le 2026-11-23, l'étape `cargo check -p app --features asio` échoue sur le runner `windows-latest`, alors que la release v0.2.3 compilait encore avec ASIO le 2026-11-10 et qu'aucune dépendance n'a changé. En local sur le PC Windows, la même commande passe avec libclang 18.1.1 ; le SDK Steinberg est téléchargé et compilé normalement. Le journal de la CI demande une authentification et n'a pas pu être lu.
+- Cause supposée : la CI dépendait de LLVM préinstallé dans `C:\Program Files\LLVM\bin` sur l'image du runner.
+- Décision : la CI installe elle-même libclang 18.1.1 depuis PyPI (`pip install --target $RUNNER_TEMP\libclang libclang==18.1.1`), puis renseigne `LIBCLANG_PATH`, avant le check ASIO et avant le build de l'installeur. Version figée, indépendante de l'image du runner ; aucune dépendance Rust ajoutée. Même méthode possible en local sans installer LLVM (`docs/WINDOWS.md`).
+- Même journée : le test `dragging_on_the_plot_zooms_into_the_selection_and_double_click_resets` échouait par intermittence sous charge (CI, et localement 1 fois sur 6). Le graphe change de hauteur à l'arrivée du premier délai, et le test glissait avant. Il attend désormais une mesure stable (`wait_for_stable_measurement`) et relit la position du graphe avant chaque glisser. Les assertions sont inchangées ; 10 passages sur 10 au vert.

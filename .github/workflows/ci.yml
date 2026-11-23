@@ -41,9 +41,12 @@ jobs:
       - run: cargo test --workspace
       - run: cargo bench --workspace --no-run
       - if: runner.os == 'Windows'
+        name: Install libclang for the ASIO bindings
+        run: |
+          python -m pip install --disable-pip-version-check --target "$env:RUNNER_TEMP\libclang" libclang==18.1.1
+          "LIBCLANG_PATH=$env:RUNNER_TEMP\libclang\clang\native" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+      - if: runner.os == 'Windows'
         run: cargo check -p app --features asio
-        env:
-          LIBCLANG_PATH: C:\Program Files\LLVM\bin
 
   windows-cross-check:
     runs-on: macos-latest
@@ -74,9 +77,12 @@ jobs:
       - if: runner.os == 'macOS'
         run: cargo build --release -p app
       - if: runner.os == 'Windows'
+        name: Install libclang for the ASIO bindings
+        run: |
+          python -m pip install --disable-pip-version-check --target "$env:RUNNER_TEMP\libclang" libclang==18.1.1
+          "LIBCLANG_PATH=$env:RUNNER_TEMP\libclang\clang\native" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+      - if: runner.os == 'Windows'
         run: cargo build --release -p app --features asio
-        env:
-          LIBCLANG_PATH: C:\Program Files\LLVM\bin
       - run: cargo packager --release --formats ${{ matrix.formats }}
         working-directory: crates/app
       - if: runner.os == 'macOS'

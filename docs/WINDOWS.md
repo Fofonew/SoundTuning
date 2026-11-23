@@ -26,7 +26,7 @@ L'installeur produit par la CI est compilé **avec** ASIO : les pilotes ASIO ins
 
 Pour compiler soi-même avec ASIO :
 
-1. Installer LLVM (pour `bindgen`) : `winget install LLVM.LLVM`, puis vérifier `clang --version` (au besoin : `$env:LIBCLANG_PATH = "C:\Program Files\LLVM\bin"`).
+1. Installer LLVM (pour `bindgen`) : `winget install LLVM.LLVM`, puis vérifier `clang --version` (au besoin : `$env:LIBCLANG_PATH = "C:\Program Files\LLVM\bin"`). Sans rien installer sur le système (méthode de la CI, D-063) : `python -m pip install --target target\tools\libclang libclang==18.1.1`, puis `$env:LIBCLANG_PATH = "$PWD\target\tools\libclang\clang\native"`.
 2. Compiler avec la feature ; le SDK ASIO de Steinberg est téléchargé automatiquement pendant la compilation (ou, hors ligne, décompressé à la main et désigné par `$env:CPAL_ASIO_DIR = "C:\SDK\asiosdk"`) :
 
 ```powershell
